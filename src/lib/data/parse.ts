@@ -1,0 +1,132 @@
+import Papa from "papaparse";
+import type { Cell, ParseResult } from "./types";
+
+export const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
+export const MAX_ROWS = 200_000;
+
+/** Tokens treated as missing (case-sensitive, after trimming). Blank cells are always missing. */
+export const MISSING_TOKENS = new Set(["", "NA", "N/A", "n/a", "NULL", "null", "NaN", "#N/A"]);
+
+const NUMBER_RE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+
+/** A value that a spreadsheet could execute as a formula when re-opened. */
+export function isFormulaLike(value: string): boolean {
+  if (!/^[=+\-@\t\r]/.test(value)) return false;
+  return !NUMBER_RE.test(value.trim());
+}
+
+export function normaliseCell(raw: unknown): Cell {
+  if (raw === undefined || raw === null) return null;
+  const v = String(raw).trim();
+  return MISSING_TOKENS.has(v) ? null : v;
+}
+
+function makeId() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+/** Parse CSV text into a Dataset. Pure: no I/O, never executes content. */
+export function parseCsvText(
+  text: string,
+  name: string,
+  source: "upload" | "sample" = "upload",
+): ParseResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const sizeBytes = new Blob([text]).size;
+
+  if (sizeBytes > MAX_FILE_BYTES) {
+    return { ok: false, errors: [`The file is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB.`] };
+  }
+  const body = text.replace(/^\uFEFF/, "");
+  if (body.trim().length === 0) return { ok: false, errors: ["The file is empty."] };
+  if (body.includes("\u0000")) {
+    return { ok: false, errors: ["The file contains binary data. Is it really a CSV text file?"] };
+  }
+  if (body.includes("\uFFFD")) {
+    warnings.push(
+      "Some characters could not be read as UTF-8 and were replaced with '�'. Re-save the file as UTF-8 for accurate text.",
+    );
+  }
+
+  const parsed = Papa.parse<string[]>(body, { skipEmptyLines: "greedy", header: false });
+  const data = parsed.data;
+  if (data.length === 0) return { ok: false, errors: ["No rows were found in the file."] };
+
+  const header = data[0].map((h) => String(h ?? "").trim());
+  if (header.length < 1 || header.every((h) => h === "")) {
+    return { ok: false, errors: ["The first row must contain column names."] };
+  }
+
+  // Fill blank and duplicate column names deterministically.
+  const seen = new Map<string, number>();
+  const columns = header.map((h, i) => {
+    let base = h === "" ? `Column ${i + 1}` : h;
+    if (h === "") warnings.push(`Column ${i + 1} had no name and was called "${base}".`);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    if (count > 0) {
+      const renamed = `${base} (${count + 1})`;
+      warnings.push(`Duplicate column name "${base}" was renamed to "${renamed}".`);
+      base = renamed;
+    }
+    return base;
+  });
+
+  const bodyRows = data.slice(1);
+  if (bodyRows.length === 0) return { ok: false, errors: ["The file has column names but no data rows."] };
+  if (bodyRows.length > MAX_ROWS) {
+    return { ok: false, errors: [`The file has more than ${MAX_ROWS.toLocaleString()} rows, which is not yet supported.`] };
+  }
+
+  let malformed = 0;
+  const firstMalformed: number[] = [];
+  let formulaCells = 0;
+  const rows: Cell[][] = bodyRows.map((r, idx) => {
+    if (r.length !== columns.length) {
+      malformed++;
+      if (firstMalformed.length < 5) firstMalformed.push(idx + 2);
+    }
+    const out: Cell[] = [];
+    for (let c = 0; c < columns.length; c++) {
+      const cell = normaliseCell(r[c]);
+      if (cell !== null && isFormulaLike(cell)) formulaCells++;
+      out.push(cell);
+    }
+    return out;
+  });
+
+  if (malformed > 0) {
+    warnings.push(
+      `${malformed} row(s) had a different number of fields than the header (e.g. line ${firstMalformed.join(", ")}). Missing fields were treated as missing values; extra fields were ignored.`,
+    );
+  }
+  if (formulaCells > 0) {
+    warnings.push(
+      `${formulaCells} cell(s) start with =, +, - or @ and could be interpreted as spreadsheet formulas. They are shown as plain text and escaped on export.`,
+    );
+  }
+  for (const e of parsed.errors.slice(0, 3)) {
+    if (e.type === "Quotes") warnings.push(`Unbalanced quotes near row ${(e.row ?? 0) + 1}: ${e.message}.`);
+  }
+
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, dataset: { id: makeId(), name, source, columns, rows, sizeBytes, warnings } };
+}
+
+export async function parseCsvFile(file: File): Promise<ParseResult> {
+  if (file.size > MAX_FILE_BYTES) {
+    return { ok: false, errors: [`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is 20 MB.`] };
+  }
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+    return { ok: false, errors: ["Excel files are not supported yet. Save the sheet as CSV (UTF-8) and upload that instead."] };
+  }
+  if (!lower.endsWith(".csv") && !lower.endsWith(".txt") && file.type !== "text/csv") {
+    return { ok: false, errors: [`"${file.name}" does not look like a CSV file.`] };
+  }
+  const text = await file.text();
+  return parseCsvText(text, file.name);
+}
+
+export { NUMBER_RE };
