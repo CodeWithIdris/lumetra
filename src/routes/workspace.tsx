@@ -238,8 +238,6 @@ function Workspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {!ds && null}
-      {false && <EmptyState title="" />}
     </>
   );
 }
