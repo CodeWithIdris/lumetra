@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseCsvFile, parseCsvText } from "./data/parse";
 import { sampleCsv, SAMPLE_NAME } from "./data/sample";
 import type { Dataset } from "./data/types";
@@ -27,6 +27,8 @@ interface Store {
   loadFile: (file: File) => Promise<{ errors: string[] }>;
   loadSample: () => void;
   clearDataset: () => void;
+  /** Detach from a saved project (its data stays saved). Unsaved sessions are kept. */
+  startNew: () => void;
   saveAsProject: (name: string) => ProjectMeta | null;
   openProject: (id: string) => { error?: string };
   renameProject: (id: string, name: string) => void;
@@ -45,7 +47,13 @@ function nowIso() {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [ready, setReady] = useState(false);
-  const [active, setActive] = useState<Active | null>(null);
+  const [active, setActiveState] = useState<Active | null>(null);
+  // Ref mirrors state synchronously so back-to-back actions (e.g. startNew + loadSample) see the latest value.
+  const activeRef = useRef<Active | null>(null);
+  const setActive = useCallback((next: Active | null) => {
+    activeRef.current = next;
+    setActiveState(next);
+  }, []);
 
   useEffect(() => {
     setProjects(loadProjects());
@@ -64,28 +72,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   );
 
+  // Side effects (storage writes) happen outside state updaters so they run exactly once.
   const attach = useCallback(
     (dataset: Dataset, csv: string) => {
-      setActive((prev) => {
-        const projectId = prev?.projectId ?? null;
-        if (projectId) {
-          const stored = storeCsv(projectId, csv);
-          update(projectId, {
-            status: "data-loaded",
-            dataset: { name: dataset.name, rows: dataset.rows.length, columns: dataset.columns.length, source: dataset.source, stored },
-          });
-        }
-        return { dataset, csv, projectId };
-      });
+      const projectId = activeRef.current?.projectId ?? null;
+      if (projectId) {
+        const stored = replaceCsv(projectId, csv);
+        update(projectId, {
+          status: "data-loaded",
+          dataset: { name: dataset.name, rows: dataset.rows.length, columns: dataset.columns.length, source: dataset.source, stored },
+        });
+      }
+      setActive({ dataset, csv, projectId });
     },
-    [update],
+    [setActive, update],
   );
 
   const loadFile = useCallback(
     async (file: File) => {
-      const res = await parseCsvFile(file);
-      if (!res.ok) return { errors: res.errors };
-      attach(res.dataset, await file.text());
+      const { result, text } = await parseCsvFile(file);
+      if (!result.ok) return { errors: result.errors };
+      attach(result.dataset, text);
       return { errors: [] };
     },
     [attach],
@@ -98,14 +105,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [attach]);
 
   const clearDataset = useCallback(() => {
-    setActive((prev) => {
-      if (prev?.projectId) {
-        deleteCsv(prev.projectId);
-        update(prev.projectId, { status: "no-data", dataset: null });
-      }
-      return null;
-    });
-  }, [update]);
+    const cur = activeRef.current;
+    if (cur?.projectId) {
+      deleteCsv(cur.projectId);
+      update(cur.projectId, { status: "no-data", dataset: null });
+    }
+    setActive(null);
+  }, [setActive, update]);
+
+  const startNew = useCallback(() => {
+    if (activeRef.current?.projectId) setActive(null);
+  }, [setActive]);
 
   const saveAsProject = useCallback(
     (name: string) => {
@@ -154,7 +164,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       deleteCsv(id);
       commit(loadProjects().filter((p) => p.id !== id));
-      setActive((prev) => (prev?.projectId === id ? { ...prev, projectId: null } : prev));
+      const cur = activeRef.current;
+      if (cur?.projectId === id) setActive({ ...cur, projectId: null });
     },
     [commit],
   );
@@ -185,7 +196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const value: Store = {
-    ready, projects, active, activeProject, loadFile, loadSample, clearDataset, saveAsProject,
+    ready, projects, active, activeProject, loadFile, loadSample, clearDataset, startNew, saveAsProject,
     openProject, renameProject, deleteProject, setStatus, setObjective, resetAll,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

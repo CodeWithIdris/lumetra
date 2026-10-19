@@ -107,7 +107,7 @@ export function MethodNote() {
       <p><strong className="text-foreground">Missing values</strong> (blank cells and NA, N/A, NULL, NaN, #N/A) are excluded from every calculation. They are never treated as zero.</p>
       <p><strong className="text-foreground">Mean</strong> is the arithmetic mean. <strong className="text-foreground">Median</strong> is the middle value; for an even count it is the average of the two middle values.</p>
       <p><strong className="text-foreground">Standard deviation</strong> is the sample SD (divisor n − 1), computed with Welford's algorithm. It is undefined when n &lt; 2.</p>
-      <p><strong className="text-foreground">Histograms</strong> use equal-width bins; the number of bins follows Sturges' rule (⌈log₂ n⌉ + 1). Each bin includes its lower edge; the last also includes the maximum.</p>
+      <p><strong className="text-foreground">Histograms</strong> use equal-width bins; the number of bins follows Sturges' rule (⌈log₂ n⌉ + 1). Each bin includes its lower edge; the last also includes the maximum. Whole-number columns spanning 30 or fewer values get one bar per value instead.</p>
       <p><strong className="text-foreground">Frequencies</strong> are percentages of non-missing values, sorted by count.</p>
     </div>
   );
