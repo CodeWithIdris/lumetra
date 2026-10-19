@@ -64,28 +64,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   );
 
+  // Side effects (storage writes) happen outside state updaters so they run exactly once.
   const attach = useCallback(
     (dataset: Dataset, csv: string) => {
-      setActive((prev) => {
-        const projectId = prev?.projectId ?? null;
-        if (projectId) {
-          const stored = storeCsv(projectId, csv);
-          update(projectId, {
-            status: "data-loaded",
-            dataset: { name: dataset.name, rows: dataset.rows.length, columns: dataset.columns.length, source: dataset.source, stored },
-          });
-        }
-        return { dataset, csv, projectId };
-      });
+      const projectId = active?.projectId ?? null;
+      if (projectId) {
+        const stored = replaceCsv(projectId, csv);
+        update(projectId, {
+          status: "data-loaded",
+          dataset: { name: dataset.name, rows: dataset.rows.length, columns: dataset.columns.length, source: dataset.source, stored },
+        });
+      }
+      setActive({ dataset, csv, projectId });
     },
-    [update],
+    [active, update],
   );
 
   const loadFile = useCallback(
     async (file: File) => {
-      const res = await parseCsvFile(file);
-      if (!res.ok) return { errors: res.errors };
-      attach(res.dataset, await file.text());
+      const { result, text } = await parseCsvFile(file);
+      if (!result.ok) return { errors: result.errors };
+      attach(result.dataset, text);
       return { errors: [] };
     },
     [attach],
@@ -98,14 +97,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [attach]);
 
   const clearDataset = useCallback(() => {
-    setActive((prev) => {
-      if (prev?.projectId) {
-        deleteCsv(prev.projectId);
-        update(prev.projectId, { status: "no-data", dataset: null });
-      }
-      return null;
-    });
-  }, [update]);
+    if (active?.projectId) {
+      deleteCsv(active.projectId);
+      update(active.projectId, { status: "no-data", dataset: null });
+    }
+    setActive(null);
+  }, [active, update]);
 
   const saveAsProject = useCallback(
     (name: string) => {

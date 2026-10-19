@@ -69,3 +69,12 @@ export function clearAll() {
   if (!s) return;
   for (const k of Object.keys(s)) if (k.startsWith("lumetra.")) s.removeItem(k);
 }
+
+/**
+ * Replace a project's stored CSV. The previous copy is always removed first, so a
+ * failed write can never leave stale data that no longer matches the metadata.
+ */
+export function replaceCsv(projectId: string, csv: string): boolean {
+  deleteCsv(projectId);
+  return storeCsv(projectId, csv);
+}

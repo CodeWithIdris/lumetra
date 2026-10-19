@@ -96,6 +96,19 @@ export function parseCsvText(
     return out;
   });
 
+  const seenRows = new Set<string>();
+  let duplicates = 0;
+  for (const r of rows) {
+    const key = JSON.stringify(r);
+    if (seenRows.has(key)) duplicates++;
+    else seenRows.add(key);
+  }
+  if (duplicates > 0) {
+    warnings.push(
+      `${duplicates} row(s) are exact duplicates of an earlier row. They are kept and counted; remove them before importing if they are errors.`,
+    );
+  }
+
   if (malformed > 0) {
     warnings.push(
       `${malformed} row(s) had a different number of fields than the header (e.g. line ${firstMalformed.join(", ")}). Missing fields were treated as missing values; extra fields were ignored.`,
@@ -107,26 +120,37 @@ export function parseCsvText(
     );
   }
   for (const e of parsed.errors.slice(0, 3)) {
-    if (e.type === "Quotes") warnings.push(`Unbalanced quotes near row ${(e.row ?? 0) + 1}: ${e.message}.`);
+    if (e.type === "Quotes") warnings.push(`Unbalanced quotes near data row ${(e.row ?? 0) + 1}. Everything after it may have been merged into one cell — check the file.`);
   }
 
   if (errors.length) return { ok: false, errors };
   return { ok: true, dataset: { id: makeId(), name, source, columns, rows, sizeBytes, warnings } };
 }
 
-export async function parseCsvFile(file: File): Promise<ParseResult> {
+export async function parseCsvFile(file: File): Promise<{ result: ParseResult; text: string }> {
+  const fail = (msg: string) => ({ result: { ok: false as const, errors: [msg] }, text: "" });
+  if (file.size === 0) return fail(`"${file.name}" is empty.`);
   if (file.size > MAX_FILE_BYTES) {
-    return { ok: false, errors: [`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is 20 MB.`] };
+    return fail(`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is 20 MB.`);
   }
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-    return { ok: false, errors: ["Excel files are not supported yet. Save the sheet as CSV (UTF-8) and upload that instead."] };
+    return fail("Excel files are not supported yet. Save the sheet as CSV (UTF-8) and upload that instead.");
   }
   if (!lower.endsWith(".csv") && !lower.endsWith(".txt") && file.type !== "text/csv") {
-    return { ok: false, errors: [`"${file.name}" does not look like a CSV file.`] };
+    return fail(`"${file.name}" does not look like a CSV file. Only .csv and .txt files are accepted.`);
   }
-  const text = await file.text();
-  return parseCsvText(text, file.name);
+  let text: string;
+  try {
+    text = await file.text();
+  } catch {
+    return fail(`"${file.name}" could not be read.`);
+  }
+  try {
+    return { result: parseCsvText(text, file.name), text };
+  } catch (e) {
+    return fail(`The file could not be parsed: ${e instanceof Error ? e.message : "unknown error"}.`);
+  }
 }
 
 export { NUMBER_RE };
