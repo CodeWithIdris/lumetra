@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState, Notice, PageHeader } from "@/components/AppShell";
@@ -33,7 +33,9 @@ function Analyses() {
   const [error, setError] = useState<string | null>(null);
   const [reportFor, setReportFor] = useState<string | null>(null);
 
-  const sel = selected ?? eligible.map((p) => p.name);
+  // Selections never outlive the dataset they were made for.
+  useEffect(() => setSelected(null), [ds?.id]);
+  const sel = (selected ?? eligible.map((p) => p.name)).filter((n) => eligible.some((p) => p.name === n));
   const stale = report && reportFor !== ds?.id;
 
   function run() {

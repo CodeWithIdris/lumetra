@@ -38,6 +38,8 @@ function Workspace() {
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmReplace, setConfirmReplace] = useState(false);
+  const replace = () => (activeProject ? setConfirmReplace(true) : fileRef.current?.click());
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -77,7 +79,7 @@ function Workspace() {
         description="Files are parsed in your browser. Nothing is uploaded to a server."
         actions={ds && (
           <>
-            <Button variant="outline" onClick={() => fileRef.current?.click()}>Replace dataset</Button>
+            <Button variant="outline" onClick={replace}>Replace dataset</Button>
             <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmRemove(true)}>Remove</Button>
             <Button onClick={() => navigate({ to: "/analyses" })}>Analyse</Button>
           </>
@@ -222,6 +224,20 @@ function Workspace() {
         )}
       </div>
 
+      <AlertDialog open={confirmReplace} onOpenChange={setConfirmReplace}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Replace the data in “{activeProject?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The new file will replace this project's dataset and its results will need to be re-run. To keep both, remove the project link by starting a new analysis instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => fileRef.current?.click()}>Choose replacement file</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
         <AlertDialogContent>
           <AlertDialogHeader>
