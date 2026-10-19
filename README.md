@@ -1,29 +1,26 @@
-# Welcome to your Lovable project
+# Lumetra
 
-This project was built with [Lovable](https://lovable.dev).
+An open-source data intelligence workspace: turn raw data into reliable, understandable, defensible insights. Status: **early foundation (v0.1), not production-ready.** Licence not yet chosen.
 
-## Build with Lovable
+## Current capabilities
+- CSV import (UTF-8, ≤20 MB, ≤200k rows) parsed in the browser with PapaParse; validation for empty/binary/malformed rows, duplicate headers, encoding issues and spreadsheet-formula content.
+- Dataset inspection: inferred types (numeric/categorical/date/text/empty) with explanations, missing counts and %, searchable paginated rows.
+- Descriptive statistics: n, missing, mean, median, min, max, sample SD (n−1, Welford); frequency tables; histograms (Sturges) and bar charts; deterministic text summary; CSV export (formula-escaped).
+- Report preview (print to PDF via browser). Local projects in localStorage (datasets ≤2 MB stored).
+- Synthetic, seeded sample dataset.
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+Planned (labelled in-app, not implemented): Excel import, cross-tabs, correlation, group comparisons, PDF/Word export, dark theme.
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+## Setup
+```
+bun install
+bun run dev
+bunx vitest run
 ```
 
-## Built with
-
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+## Structure
+- `src/lib/data` — parsing, type inference, export, sample data
+- `src/lib/stats` — pure statistical computation and summaries
+- `src/lib/persistence` — local storage
+- `src/lib/store.tsx` — app state
+- `src/components`, `src/routes` — UI
