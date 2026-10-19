@@ -23,7 +23,7 @@ const STATUS: Record<ProjectMeta["status"], string> = {
 };
 
 function Projects() {
-  const { projects, ready, openProject, renameProject, deleteProject, active, activeProject } = useStore();
+  const { projects, ready, openProject, renameProject, deleteProject, active, activeProject, startNew } = useStore();
   const navigate = useNavigate();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -34,7 +34,7 @@ function Projects() {
       <PageHeader
         title="My Projects"
         description="Project details are saved in this browser only. Datasets up to 2 MB are stored with the project; larger files must be re-uploaded."
-        actions={<Button onClick={() => navigate({ to: "/workspace" })}>New analysis</Button>}
+        actions={<Button onClick={() => { startNew(); navigate({ to: "/workspace" }); }}>New analysis</Button>}
       />
       {active && !activeProject && (
         <div className="mb-4 rounded-md border border-warning-foreground/30 bg-warning px-3 py-2 text-[13px] text-warning-foreground">

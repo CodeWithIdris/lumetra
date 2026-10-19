@@ -17,7 +17,7 @@ const STEPS = [
 ] as const;
 
 function Overview() {
-  const { projects, ready, loadSample, openProject } = useStore();
+  const { projects, ready, loadSample, openProject, startNew } = useStore();
   const navigate = useNavigate();
   const recent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5);
 
@@ -32,10 +32,11 @@ function Overview() {
           Every number shown is computed from your data with a stated method. Processing happens on this device.
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
-          <Button onClick={() => navigate({ to: "/workspace" })}>Start a new analysis</Button>
+          <Button onClick={() => { startNew(); navigate({ to: "/workspace" }); }}>Start a new analysis</Button>
           <Button
             variant="outline"
             onClick={() => {
+              startNew();
               loadSample();
               navigate({ to: "/workspace" });
             }}

@@ -229,7 +229,7 @@ function Workspace() {
           <AlertDialogHeader>
             <AlertDialogTitle>Replace the data in “{activeProject?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              The new file will replace this project's dataset and its results will need to be re-run. To keep both, remove the project link by starting a new analysis instead.
+              The new file will replace this project's dataset and its results will need to be re-run. To keep this project unchanged, cancel and use “Start a new analysis” on the Overview instead.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

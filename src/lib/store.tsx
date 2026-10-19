@@ -27,6 +27,8 @@ interface Store {
   loadFile: (file: File) => Promise<{ errors: string[] }>;
   loadSample: () => void;
   clearDataset: () => void;
+  /** Detach from a saved project (its data stays saved). Unsaved sessions are kept. */
+  startNew: () => void;
   saveAsProject: (name: string) => ProjectMeta | null;
   openProject: (id: string) => { error?: string };
   renameProject: (id: string, name: string) => void;
@@ -103,6 +105,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     setActive(null);
   }, [active, update]);
+
+  const startNew = useCallback(() => {
+    if (active?.projectId) setActive(null);
+  }, [active]);
 
   const saveAsProject = useCallback(
     (name: string) => {
@@ -182,7 +188,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const value: Store = {
-    ready, projects, active, activeProject, loadFile, loadSample, clearDataset, saveAsProject,
+    ready, projects, active, activeProject, loadFile, loadSample, clearDataset, startNew, saveAsProject,
     openProject, renameProject, deleteProject, setStatus, setObjective, resetAll,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
