@@ -23,7 +23,7 @@ describe("parsing", () => {
     if (!r.ok) throw new Error("parse failed");
     expect(r.dataset.columns).toEqual(["name", "score", "group", "joined"]);
     expect(r.dataset.rows.length).toBe(9);
-    expect(r.dataset.rows[8][1]).toBeNull();
+    expect(r.dataset.rows[8]![1]).toBeNull();
   });
   it("rejects empty files and header-only files", () => {
     expect(parseCsvText("", "e.csv").ok).toBe(false);
@@ -37,7 +37,7 @@ describe("parsing", () => {
   it("warns about malformed rows and pads with missing", () => {
     const r = parseCsvText("a,b,c\n1,2\n1,2,3", "m.csv");
     if (!r.ok) throw new Error();
-    expect(r.dataset.rows[0][2]).toBeNull();
+    expect(r.dataset.rows[0]![2]).toBeNull();
     expect(r.dataset.warnings.some((w) => w.includes("1 row(s)"))).toBe(true);
   });
   it("flags formula-like cells but not negative numbers", () => {

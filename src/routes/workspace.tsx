@@ -15,7 +15,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/workspace")({
   validateSearch: (s: Record<string, unknown>): { notice?: string } =>
-    typeof s.notice === "string" ? { notice: s.notice } : {},
+    typeof s["notice"] === "string" ? { notice: s["notice"] } : {},
   head: () => pageMeta("Data Workspace", "Upload a CSV, inspect columns, types and missing values before analysing."),
   component: Workspace,
 });
@@ -48,7 +48,7 @@ function Workspace() {
     if (!ds) return [];
     const q = query.trim().toLowerCase();
     const idx = ds.rows.map((_, i) => i);
-    return q ? idx.filter((i) => ds.rows[i].some((c) => c !== null && c.toLowerCase().includes(q))) : idx;
+    return q ? idx.filter((i) => ds.rows[i]!.some((c) => c !== null && c.toLowerCase().includes(q))) : idx;
   }, [ds, query]);
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
 
@@ -198,7 +198,7 @@ function Workspace() {
                     {filtered.slice(page * PAGE, page * PAGE + PAGE).map((i) => (
                       <tr key={i} className="border-b last:border-0">
                         <td className="num px-3 py-1.5 text-muted-foreground">{i + 1}</td>
-                        {ds.rows[i].map((c, j) => (
+                        {ds.rows[i]!.map((c, j) => (
                           <td key={j} className="max-w-[240px] truncate whitespace-nowrap px-3 py-1.5">
                             {c === null ? <span className="italic text-muted-foreground">missing</span> : c}
                           </td>

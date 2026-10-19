@@ -58,7 +58,7 @@ export function summarise(r: DescriptiveReport): string[] {
   const withMissing = r.profiles.filter((p) => p.missing > 0).sort((a, b) => b.missingPct - a.missingPct);
   if (withMissing.length === 0) out.push("No missing values were detected.");
   else {
-    const top = withMissing[0];
+    const top = withMissing[0]!;
     out.push(
       `${withMissing.length} column(s) contain missing values; the most affected is "${top.name}" with ${top.missing} missing (${fmt(top.missingPct, 1)}%). Missing values were excluded from calculations, not replaced.`,
     );
@@ -77,7 +77,7 @@ export function summarise(r: DescriptiveReport): string[] {
   }
   for (const c of r.categorical) {
     if (c.rows.length === 0) continue;
-    const top = c.rows[0];
+    const top = c.rows[0]!;
     const tied = c.rows.filter((x) => x.count === top.count).length;
     out.push(
       tied > 1

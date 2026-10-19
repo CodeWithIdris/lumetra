@@ -9,7 +9,7 @@ export function isNumeric(v: string): boolean {
 
 export function isIsoDate(v: string): boolean {
   if (!ISO_DATE_RE.test(v)) return false;
-  const [y, m, d] = v.slice(0, 10).split("-").map(Number);
+  const [y = 0, m = 0, d = 0] = v.slice(0, 10).split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
