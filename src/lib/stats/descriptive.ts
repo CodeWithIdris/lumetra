@@ -90,7 +90,14 @@ export interface HistogramBin {
   label: string;
 }
 
-/** Equal-width histogram. Bin count by Sturges' rule. Bins are [lower, upper), the last is [lower, upper]. */
+export const MAX_DISCRETE_BINS = 30;
+
+/**
+ * Histogram.
+ * - Whole-number data spanning at most MAX_DISCRETE_BINS distinct integers gets one bar per
+ *   integer (e.g. a 1–5 rating scale), so no artificial empty bins appear between values.
+ * - Otherwise equal-width bins, count by Sturges' rule. Bins are [lower, upper), the last is [lower, upper].
+ */
 export function histogram(nums: number[], binCount?: number): HistogramBin[] {
   if (nums.length === 0) return [];
   let min = Infinity;
@@ -100,6 +107,12 @@ export function histogram(nums: number[], binCount?: number): HistogramBin[] {
     if (x > max) max = x;
   }
   if (min === max) return [{ lower: min, upper: max, count: nums.length, label: fmt(min) }];
+  if (binCount === undefined && nums.every(Number.isInteger) && max - min + 1 <= MAX_DISCRETE_BINS) {
+    const bins: HistogramBin[] = [];
+    for (let v = min; v <= max; v++) bins.push({ lower: v, upper: v, count: 0, label: fmt(v) });
+    for (const x of nums) bins[x - min]!.count++;
+    return bins;
+  }
   const k = binCount ?? Math.max(1, Math.ceil(Math.log2(nums.length)) + 1);
   const width = (max - min) / k;
   const bins: HistogramBin[] = Array.from({ length: k }, (_, i) => {
