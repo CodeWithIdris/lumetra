@@ -33,7 +33,7 @@ export function median(sorted: number[]): number | null {
   const n = sorted.length;
   if (n === 0) return null;
   const mid = Math.floor(n / 2);
-  return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return n % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 export function describe(nums: number[], missing = 0): NumericSummary {
@@ -44,7 +44,7 @@ export function describe(nums: number[], missing = 0): NumericSummary {
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < n; i++) {
-    const x = nums[i];
+    const x = nums[i]!;
     const delta = x - mean;
     mean += delta / (i + 1);
     m2 += delta * (x - mean);
@@ -110,7 +110,7 @@ export function histogram(nums: number[], binCount?: number): HistogramBin[] {
   for (const x of nums) {
     let i = Math.floor((x - min) / width);
     if (i >= k) i = k - 1;
-    bins[i].count++;
+    bins[i]!.count++;
   }
   return bins;
 }

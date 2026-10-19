@@ -53,7 +53,7 @@ export function parseCsvText(
   const data = parsed.data;
   if (data.length === 0) return { ok: false, errors: ["No rows were found in the file."] };
 
-  const header = data[0].map((h) => String(h ?? "").trim());
+  const header = data[0]!.map((h) => String(h ?? "").trim());
   if (header.length < 1 || header.every((h) => h === "")) {
     return { ok: false, errors: ["The first row must contain column names."] };
   }
