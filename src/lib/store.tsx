@@ -1,3 +1,4 @@
+import type React from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseCsvFile, parseCsvText } from "./data/parse";
 import { sampleCsv, SAMPLE_NAME } from "./data/sample";
@@ -9,6 +10,7 @@ import {
   loadProjects,
   saveProjects,
   storeCsv,
+  replaceCsv,
   type ProjectMeta,
   type ProjectStatus,
 } from "./persistence/projects";
@@ -38,7 +40,11 @@ interface Store {
   resetAll: () => void;
 }
 
-const Ctx = createContext<Store | null>(null);
+// Keep one context instance even when this module is hot-reloaded during development;
+// otherwise the provider and consumers can end up holding different context objects.
+const CTX_KEY = "__lumetraStoreContext__";
+const g = globalThis as unknown as Record<string, React.Context<Store | null> | undefined>;
+const Ctx: React.Context<Store | null> = g[CTX_KEY] ?? (g[CTX_KEY] = createContext<Store | null>(null));
 
 function nowIso() {
   return new Date().toISOString();

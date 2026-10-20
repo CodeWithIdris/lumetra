@@ -29,6 +29,7 @@ function Settings() {
             <li>No account, no server database, no AI service and no analytics on your data.</li>
             <li>Project details, and datasets up to 2 MB, are stored in this browser's local storage. Anyone with access to this browser profile can read them.</li>
             <li>Clearing your browser data also removes saved projects.</li>
+            <li>The only outside requests are for the typeface (Google Fonts). They contain no data from your files.</li>
           </ul>
         </section>
         <section className="panel p-5">
