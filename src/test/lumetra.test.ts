@@ -98,7 +98,7 @@ describe("descriptive statistics", () => {
     expect(f.missing).toBe(1);
   });
   it("histogram counts sum to n and include the maximum", () => {
-    const xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const xs = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 10];
     const bins = histogram(xs);
     expect(bins.reduce((a, b) => a + b.count, 0)).toBe(10);
     expect(bins.length).toBe(Math.ceil(Math.log2(10)) + 1);
