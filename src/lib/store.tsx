@@ -1,3 +1,4 @@
+import type React from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseCsvFile, parseCsvText } from "./data/parse";
 import { sampleCsv, SAMPLE_NAME } from "./data/sample";
