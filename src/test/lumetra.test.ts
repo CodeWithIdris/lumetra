@@ -118,3 +118,70 @@ describe("descriptive statistics", () => {
   });
   it("sample dataset is deterministic", () => expect(sampleCsv()).toBe(sampleCsv()));
 });
+
+describe("import edge cases", () => {
+  it("handles quoted fields, embedded commas, newlines and Unicode", () => {
+    const r = parseCsvText('city,note\n"São Paulo","a, b"\n"Zürich","line1\nline2"\n東京,"say ""hi"""', "u.csv");
+    if (!r.ok) throw new Error();
+    expect(r.dataset.rows).toEqual([["São Paulo", "a, b"], ["Zürich", "line1\nline2"], ["東京", 'say "hi"']]);
+  });
+  it("strips a UTF-8 BOM from the first header", () => {
+    const r = parseCsvText("\uFEFFid,x\n1,2", "b.csv");
+    if (!r.ok) throw new Error();
+    expect(r.dataset.columns[0]).toBe("id");
+  });
+  it("counts exact duplicate rows but keeps them", () => {
+    const r = parseCsvText("a,b\n1,2\n1,2\n3,4", "d.csv");
+    if (!r.ok) throw new Error();
+    expect(r.dataset.rows).toHaveLength(3);
+    expect(r.dataset.warnings.some((w) => w.startsWith("1 row(s) are exact duplicates"))).toBe(true);
+  });
+  it("rejects binary content", () => expect(parseCsvText("a\u0000b", "x.csv").ok).toBe(false));
+  it("warns on unreadable characters", () => {
+    const r = parseCsvText("a\n\uFFFD", "x.csv");
+    expect(r.ok && r.dataset.warnings.some((w) => w.includes("UTF-8"))).toBe(true);
+  });
+  it("parses 50,000 rows within limits", () => {
+    const lines = ["id,v,g"];
+    for (let i = 0; i < 50000; i++) lines.push(`${i},${i % 97},${i % 3 ? "a" : "b"}`);
+    const r = parseCsvText(lines.join("\n"), "big.csv");
+    if (!r.ok) throw new Error();
+    expect(r.dataset.rows).toHaveLength(50000);
+    const v = runDescriptive(r.dataset).numeric.find((n) => n.column === "v")!;
+    expect(v.summary.n).toBe(50000);
+  });
+});
+
+describe("statistics edge cases", () => {
+  it("constant values: SD 0, single histogram bin", () => {
+    const s = stats([3, 3, 3]);
+    expect(s.sd).toBe(0);
+    expect(s.mean).toBe(3);
+    expect(histogram([3, 3, 3])).toEqual([{ lower: 3, upper: 3, count: 3, label: "3" }]);
+  });
+  it("whole-number scales get one bar per value", () => {
+    const bins = histogram([1, 1, 2, 5, 5, 5]);
+    expect(bins.map((b) => [b.label, b.count])).toEqual([["1", 2], ["2", 1], ["3", 0], ["4", 0], ["5", 3]]);
+  });
+  it("missing % uses all rows as denominator", () => {
+    expect(profileColumn("x", 0, ["1", null, null, "4"]).missingPct).toBe(50);
+  });
+  it("empty column is not analysed numerically", () => {
+    const r = parseCsvText("a,b\n1,\n2,", "e.csv");
+    if (!r.ok) throw new Error();
+    const rep = runDescriptive(r.dataset);
+    expect(rep.numeric.map((n) => n.column)).toEqual(["a"]);
+    expect(rep.profiles[1]!.type).toBe("empty");
+  });
+  it("chart bins sum to the reported n", () => {
+    const r = parseCsvText(sampleCsv(), "s.csv", "sample");
+    if (!r.ok) throw new Error();
+    for (const n of runDescriptive(r.dataset).numeric) {
+      expect(n.bins.reduce((a, b) => a + b.count, 0)).toBe(n.summary.n);
+    }
+  });
+  it("frequency percentages sum to 100", () => {
+    const f = frequencies(["a", "b", "c", null]);
+    expect(f.rows.reduce((a, r) => a + r.pct, 0)).toBeCloseTo(100, 10);
+  });
+});
