@@ -10,62 +10,90 @@ import { runDescriptive, type DescriptiveReport } from "@/lib/stats/analysis";
 import { descriptiveToCsv, downloadText } from "@/lib/data/export";
 import { pageMeta } from "@/lib/meta";
 import { PersonaAnalysisView } from "@/components/PersonaAnalysisView";
-import { PERSONAS } from "@/lib/stats/personas";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, BarChart3 } from "lucide-react";
+import { PERSONAS, type PersonaId } from "@/lib/stats/personas";
+import {
+  Sparkles,
+  BarChart3,
+  Sliders,
+  Table2,
+  FileText,
+  Info,
+  Check,
+  ChevronDown,
+  Cpu,
+  TrendingUp,
+  Boxes,
+  Target,
+  HeartPulse,
+  Download,
+} from "lucide-react";
 
 export const Route = createFileRoute("/analyses")({
   head: () =>
-    pageMeta("Analyses", "Personalized and descriptive statistics tailored to your background."),
+    pageMeta(
+      "Analyses",
+      "Production-grade split-panel statistical workspace with tailored engines and descriptive reports.",
+    ),
   component: Analyses,
 });
+
+const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
+  engineer: Cpu,
+  economist: TrendingUp,
+  scientist: Boxes,
+  product: Target,
+  clinical: HeartPulse,
+};
 
 const CATALOGUE = [
   {
     id: "personalized",
-    name: "Personalized Toolkit",
-    desc: "Tailored to your active background & role.",
+    name: "Persona-Tailored Engine",
+    desc: "Domain-specific computations for active context.",
     ready: true,
   },
   {
     id: "descriptive",
-    name: "Descriptive statistics",
-    desc: "Mean, median, range, SD, frequencies and distributions.",
+    name: "Descriptive Statistics",
+    desc: "Moments, medians, IQR, standard deviations and histograms.",
     ready: true,
   },
   {
     id: "crosstab",
-    name: "Cross-tabulation",
-    desc: "Counts across two categorical variables.",
+    name: "Cross-Tabulation",
+    desc: "Contingency tables across two categorical dimensions.",
     ready: false,
   },
   {
     id: "correlation",
-    name: "Correlation",
-    desc: "Pearson and Spearman coefficients.",
+    name: "Correlation Matrix",
+    desc: "Full dataset Pearson and Spearman matrices.",
     ready: false,
   },
   {
     id: "ttest",
-    name: "Group comparison",
-    desc: "t-tests and non-parametric alternatives.",
+    name: "Two-Sample Comparison",
+    desc: "Hypothesis testing and group mean variance.",
     ready: false,
   },
 ] as const;
 
 function Analyses() {
-  const { active, setStatus, persona } = useStore();
+  const { active, setStatus, persona, setPersona } = useStore();
   const navigate = useNavigate();
   const ds = active?.dataset;
   const profiles = useMemo(() => (ds ? profileDataset(ds) : []), [ds]);
   const eligible = profiles.filter((p) => p.type === "numeric" || p.type === "categorical");
+
   const [selected, setSelected] = useState<string[] | null>(null);
   const [report, setReport] = useState<DescriptiveReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reportFor, setReportFor] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("personalized");
+  const [activeEngine, setActiveEngine] = useState<"personalized" | "descriptive">("personalized");
+  const [personaOpen, setPersonaOpen] = useState(false);
 
   useEffect(() => setSelected(null), [ds?.id]);
+
   const sel = (selected ?? eligible.map((p) => p.name)).filter((n) =>
     eligible.some((p) => p.name === n),
   );
@@ -74,7 +102,7 @@ function Analyses() {
   function run() {
     if (!ds) return;
     setError(null);
-    if (sel.length === 0) return setError("Select at least one column.");
+    if (sel.length === 0) return setError("Select at least one column for analysis.");
     try {
       setReport(runDescriptive(ds, sel));
       setReportFor(ds.id);
@@ -91,26 +119,37 @@ function Analyses() {
         <EmptyState
           title="No dataset loaded"
           action={
-            <Button onClick={() => navigate({ to: "/workspace" })}>Go to Data Workspace</Button>
+            <Button
+              className="bg-blue-600 text-xs text-white hover:bg-blue-700"
+              onClick={() => navigate({ to: "/workspace" })}
+            >
+              Go to Data Workspace
+            </Button>
           }
         >
-          Load a CSV file or load the specialized sample for your role first.
+          Import a CSV file or load a role-tailored benchmark dataset first to run statistical
+          routines.
         </EmptyState>
       </>
     );
   }
 
   const personaMeta = PERSONAS[persona];
+  const PersonaIcon = ROLE_ICONS[persona] || Cpu;
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        title="Analyses"
-        description={`Dataset: ${ds.name} · ${ds.rows.length.toLocaleString()} rows · Personalized for: ${personaMeta.shortRole}`}
+        title="Analysis Workspace"
+        description={`Dataset: ${ds.name} (${ds.rows.length.toLocaleString()} observations) • Active engine: ${
+          activeEngine === "personalized" ? `${personaMeta.shortRole} Toolkit` : "Descriptive Statistics"
+        }`}
         actions={
           report && !stale ? (
             <Button
               variant="outline"
+              size="sm"
+              className="h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
               onClick={() =>
                 downloadText(
                   `${ds.name.replace(/\.[^.]+$/, "")}-descriptives.csv`,
@@ -118,123 +157,194 @@ function Analyses() {
                 )
               }
             >
-              Export results (CSV)
+              <Download className="size-3.5 mr-1.5" />
+              Export CSV
             </Button>
           ) : undefined
         }
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="border border-white/10 bg-slate-900/80 p-1">
-          <TabsTrigger
-            value="personalized"
-            className="flex items-center gap-1.5 text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
-          >
-            <Sparkles className="size-3.5 text-indigo-300" />
-            <span>Personalized ({personaMeta.shortRole})</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="descriptive"
-            className="flex items-center gap-1.5 text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
-          >
-            <BarChart3 className="size-3.5" />
-            <span>General Descriptives</span>
-          </TabsTrigger>
-        </TabsList>
+      {/* Split-Panel Analytical Layout */}
+      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+        {/* SECONDARY PANEL: Context, Variables, Controls */}
+        <aside className="space-y-4">
+          {/* Active Context Card */}
+          <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+              Professional Context
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setPersonaOpen(!personaOpen)}
+                className="flex w-full items-center justify-between gap-2 rounded border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-left text-xs font-medium text-slate-800 hover:bg-slate-100 transition-colors"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <PersonaIcon className="size-3.5 text-blue-600 shrink-0" />
+                  <span className="truncate">{personaMeta.title}</span>
+                </div>
+                <ChevronDown className="size-3 text-slate-400 shrink-0" />
+              </button>
 
-        <TabsContent value="personalized" className="space-y-6">
-          <PersonaAnalysisView persona={persona} dataset={ds} profiles={profiles} />
-        </TabsContent>
-
-        <TabsContent value="descriptive">
-          <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-            <aside className="space-y-4">
-              <section className="glass-card p-4">
-                <h2 className="eyebrow mb-2">Catalogue</h2>
-                <ul className="space-y-1.5">
-                  {CATALOGUE.map((a) => (
-                    <li
-                      key={a.id}
-                      className={`rounded-lg border px-3 py-2 ${
-                        a.ready
-                          ? "border-indigo-500/40 bg-indigo-950/20"
-                          : "border-white/5 opacity-50"
-                      }`}
-                      aria-disabled={!a.ready}
-                    >
-                      <div className="flex items-center justify-between text-[13px] font-medium text-white">
-                        {a.name}
-                        {!a.ready && <span className="eyebrow text-[10px]">Planned</span>}
-                      </div>
-                      <div className="text-[12px] text-slate-400">{a.desc}</div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-
-              <section className="glass-card p-4">
-                <h2 className="eyebrow mb-2">Columns</h2>
-                {eligible.length === 0 ? (
-                  <p className="text-[12.5px] text-slate-400">
-                    No numeric or categorical columns were found.
-                  </p>
-                ) : (
-                  <ul className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                    {eligible.map((p) => (
-                      <li key={p.name}>
-                        <label className="flex cursor-pointer items-center gap-2 text-[13px] text-slate-300 hover:text-white">
-                          <Checkbox
-                            checked={sel.includes(p.name)}
-                            onCheckedChange={(c) =>
-                              setSelected(c ? [...sel, p.name] : sel.filter((x) => x !== p.name))
-                            }
-                          />
-                          <span className="truncate">{p.name}</span>
-                          <span className="num ml-auto text-[11px] text-slate-500">{p.type}</span>
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {profiles.length > eligible.length && (
-                  <p className="mt-2 text-[11.5px] text-slate-400">
-                    Text, date and empty columns are excluded from descriptive statistics.
-                  </p>
-                )}
-                <Button
-                  className="mt-3 w-full bg-indigo-600 text-white hover:bg-indigo-500"
-                  onClick={run}
-                  disabled={eligible.length === 0}
-                >
-                  Run analysis
-                </Button>
-              </section>
-
-              <section className="glass-card p-4">
-                <h2 className="eyebrow mb-2">Method</h2>
-                <MethodNote />
-              </section>
-            </aside>
-
-            <div className="min-w-0 space-y-4">
-              {error && <Notice tone="error">{error}</Notice>}
-              {stale && (
-                <Notice tone="warning">
-                  The dataset changed. Run the analysis again to update results.
-                </Notice>
-              )}
-              {report && !stale ? (
-                <ResultsView report={report} />
-              ) : (
-                <EmptyState title="No results yet">
-                  Choose columns and select “Run analysis”. Results are computed from the loaded
-                  data deterministically.
-                </EmptyState>
+              {personaOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setPersonaOpen(false)} />
+                  <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                    {(Object.keys(PERSONAS) as PersonaId[]).map((pId) => {
+                      const p = PERSONAS[pId];
+                      const Icon = ROLE_ICONS[pId];
+                      const isCurrent = pId === persona;
+                      return (
+                        <button
+                          key={pId}
+                          onClick={() => {
+                            setPersona(pId);
+                            setPersonaOpen(false);
+                          }}
+                          className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
+                            isCurrent
+                              ? "bg-blue-50 text-blue-900 font-semibold"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Icon className="size-3.5 shrink-0 text-slate-500" />
+                            <span className="truncate">{p.shortRole}</span>
+                          </div>
+                          {isCurrent && <Check className="size-3 text-blue-600 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </div>
-        </TabsContent>
-      </Tabs>
-    </>
+
+          {/* Analysis Engine Mode Selector */}
+          <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+              Analysis Engines
+            </div>
+            <div className="space-y-1">
+              {CATALOGUE.map((item) => {
+                const isSelected = activeEngine === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    disabled={!item.ready}
+                    onClick={() => {
+                      if (item.id === "personalized" || item.id === "descriptive") {
+                        setActiveEngine(item.id);
+                      }
+                    }}
+                    className={`w-full rounded px-2.5 py-2 text-left text-xs transition-colors border ${
+                      isSelected
+                        ? "bg-blue-50 text-blue-900 font-semibold border-blue-200"
+                        : item.ready
+                          ? "bg-white text-slate-700 hover:bg-slate-50 border-slate-200"
+                          : "bg-slate-50 text-slate-400 border-slate-100 cursor-not-allowed opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="truncate">{item.name}</span>
+                      {!item.ready && (
+                        <span className="text-[9px] font-mono text-slate-400">Planned</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-normal text-slate-500 mt-0.5 line-clamp-1">
+                      {item.desc}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Variable Selection (When in Descriptive Mode) */}
+          {activeEngine === "descriptive" && (
+            <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+                  Variables ({sel.length}/{eligible.length})
+                </span>
+                <div className="flex gap-2 text-[11px]">
+                  <button
+                    onClick={() => setSelected(eligible.map((p) => p.name))}
+                    className="text-blue-600 hover:underline"
+                  >
+                    All
+                  </button>
+                  <button onClick={() => setSelected([])} className="text-slate-500 hover:underline">
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-52 overflow-y-auto space-y-1 pr-1">
+                {eligible.map((p) => (
+                  <label
+                    key={p.name}
+                    className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                  >
+                    <Checkbox
+                      checked={sel.includes(p.name)}
+                      onCheckedChange={(c) =>
+                        setSelected(c ? [...sel, p.name] : sel.filter((x) => x !== p.name))
+                      }
+                    />
+                    <span className="truncate font-mono">{p.name}</span>
+                    <span className="ml-auto text-[10px] font-mono text-slate-400">{p.type}</span>
+                  </label>
+                ))}
+              </div>
+
+              <Button
+                className="w-full bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium h-8"
+                onClick={run}
+                disabled={sel.length === 0}
+              >
+                Execute Descriptive Analysis
+              </Button>
+            </div>
+          )}
+
+          {/* Methodology & Assumptions */}
+          <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
+            <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+              <Info className="size-3 text-slate-400" />
+              <span>Statistical Methodology</span>
+            </div>
+            <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+              <p>• Sample standard deviations employ Bessel's correction (n − 1).</p>
+              <p>• Missing values are treated as null and excluded from denominators.</p>
+              <p>• All calculations execute client-side; deterministic results guaranteed.</p>
+            </div>
+          </div>
+        </aside>
+
+        {/* MAIN RESULTS AREA (Visual Priority) */}
+        <main className="min-w-0 space-y-4">
+          {error && <Notice tone="error">{error}</Notice>}
+          {stale && (
+            <Notice tone="warning">
+              The dataset changed. Re-run analysis to synchronize computed metrics.
+            </Notice>
+          )}
+
+          {activeEngine === "personalized" ? (
+            <PersonaAnalysisView persona={persona} dataset={ds} profiles={profiles} />
+          ) : report && !stale ? (
+            <div className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-6">
+              <ResultsView report={report} />
+            </div>
+          ) : (
+            <EmptyState title="Descriptive statistics ready to run">
+              Select desired numeric and categorical variables in the left panel and click “Execute
+              Descriptive Analysis”. Results are computed instantly in your browser.
+            </EmptyState>
+          )}
+        </main>
+      </div>
+    </div>
   );
 }
