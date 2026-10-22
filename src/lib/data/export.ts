@@ -19,12 +19,21 @@ export function descriptiveToCsv(r: DescriptiveReport): string {
   ];
   for (const n of r.numeric) {
     const s = n.summary;
-    for (const [k, v] of [["n", s.n], ["missing", s.missing], ["mean", s.mean], ["median", s.median], ["min", s.min], ["max", s.max], ["sd_sample", s.sd]] as const) {
+    for (const [k, v] of [
+      ["n", s.n],
+      ["missing", s.missing],
+      ["mean", s.mean],
+      ["median", s.median],
+      ["min", s.min],
+      ["max", s.max],
+      ["sd_sample", s.sd],
+    ] as const) {
       rows.push(["numeric", n.column, k, v, null]);
     }
   }
   for (const c of r.categorical) {
-    for (const f of c.rows) rows.push(["frequency", c.column, f.value, f.count, Number(f.pct.toFixed(4))]);
+    for (const f of c.rows)
+      rows.push(["frequency", c.column, f.value, f.count, Number(f.pct.toFixed(4))]);
     if (c.missing) rows.push(["frequency", c.column, "(missing)", c.missing, null]);
   }
   return toCsv(rows);

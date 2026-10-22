@@ -18,7 +18,11 @@ export function columnValues(ds: Dataset, index: number): (string | null)[] {
   return ds.rows.map((r) => r[index] ?? null);
 }
 
-export function profileColumn(name: string, index: number, values: (string | null)[]): ColumnProfile {
+export function profileColumn(
+  name: string,
+  index: number,
+  values: (string | null)[],
+): ColumnProfile {
   const present = values.filter((v): v is string => v !== null);
   const total = values.length;
   const missing = total - present.length;
@@ -39,12 +43,20 @@ export function profileColumn(name: string, index: number, values: (string | nul
 
   const numericCount = present.filter(isNumeric).length;
   if (numericCount === present.length) {
-    return { ...base, type: "numeric", reason: `All ${present.length} non-missing values are numbers.` };
+    return {
+      ...base,
+      type: "numeric",
+      reason: `All ${present.length} non-missing values are numbers.`,
+    };
   }
 
   const dateCount = present.filter(isIsoDate).length;
   if (dateCount === present.length) {
-    return { ...base, type: "date", reason: `All ${present.length} non-missing values are valid ISO dates (YYYY-MM-DD).` };
+    return {
+      ...base,
+      type: "date",
+      reason: `All ${present.length} non-missing values are valid ISO dates (YYYY-MM-DD).`,
+    };
   }
 
   const mixedNote =

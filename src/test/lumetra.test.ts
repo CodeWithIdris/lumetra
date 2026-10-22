@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { parseCsvText, isFormulaLike } from "@/lib/data/parse";
 import { profileColumn, profileDataset } from "@/lib/data/infer";
-import { describe as stats, frequencies, histogram, median, toNumbers } from "@/lib/stats/descriptive";
+import {
+  describe as stats,
+  frequencies,
+  histogram,
+  median,
+  toNumbers,
+} from "@/lib/stats/descriptive";
 import { runDescriptive } from "@/lib/stats/analysis";
 import { csvCell } from "@/lib/data/export";
 import { sampleCsv } from "@/lib/data/sample";
@@ -121,9 +127,16 @@ describe("descriptive statistics", () => {
 
 describe("import edge cases", () => {
   it("handles quoted fields, embedded commas, newlines and Unicode", () => {
-    const r = parseCsvText('city,note\n"São Paulo","a, b"\n"Zürich","line1\nline2"\n東京,"say ""hi"""', "u.csv");
+    const r = parseCsvText(
+      'city,note\n"São Paulo","a, b"\n"Zürich","line1\nline2"\n東京,"say ""hi"""',
+      "u.csv",
+    );
     if (!r.ok) throw new Error();
-    expect(r.dataset.rows).toEqual([["São Paulo", "a, b"], ["Zürich", "line1\nline2"], ["東京", 'say "hi"']]);
+    expect(r.dataset.rows).toEqual([
+      ["São Paulo", "a, b"],
+      ["Zürich", "line1\nline2"],
+      ["東京", 'say "hi"'],
+    ]);
   });
   it("strips a UTF-8 BOM from the first header", () => {
     const r = parseCsvText("\uFEFFid,x\n1,2", "b.csv");
@@ -134,7 +147,9 @@ describe("import edge cases", () => {
     const r = parseCsvText("a,b\n1,2\n1,2\n3,4", "d.csv");
     if (!r.ok) throw new Error();
     expect(r.dataset.rows).toHaveLength(3);
-    expect(r.dataset.warnings.some((w) => w.startsWith("1 row(s) are exact duplicates"))).toBe(true);
+    expect(r.dataset.warnings.some((w) => w.startsWith("1 row(s) are exact duplicates"))).toBe(
+      true,
+    );
   });
   it("rejects binary content", () => expect(parseCsvText("a\u0000b", "x.csv").ok).toBe(false));
   it("warns on unreadable characters", () => {
@@ -161,7 +176,13 @@ describe("statistics edge cases", () => {
   });
   it("whole-number scales get one bar per value", () => {
     const bins = histogram([1, 1, 2, 5, 5, 5]);
-    expect(bins.map((b) => [b.label, b.count])).toEqual([["1", 2], ["2", 1], ["3", 0], ["4", 0], ["5", 3]]);
+    expect(bins.map((b) => [b.label, b.count])).toEqual([
+      ["1", 2],
+      ["2", 1],
+      ["3", 0],
+      ["4", 0],
+      ["5", 3],
+    ]);
   });
   it("missing % uses all rows as denominator", () => {
     expect(profileColumn("x", 0, ["1", null, null, "4"]).missingPct).toBe(50);

@@ -26,6 +26,4 @@ export interface ColumnProfile {
   distinct: number;
 }
 
-export type ParseResult =
-  | { ok: true; dataset: Dataset }
-  | { ok: false; errors: string[] };
+export type ParseResult = { ok: true; dataset: Dataset } | { ok: false; errors: string[] };

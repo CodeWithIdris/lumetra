@@ -69,7 +69,11 @@ export interface FrequencyRow {
   pct: number; // of non-missing
 }
 
-export function frequencies(values: (string | null)[]): { rows: FrequencyRow[]; missing: number; n: number } {
+export function frequencies(values: (string | null)[]): {
+  rows: FrequencyRow[];
+  missing: number;
+  n: number;
+} {
   const counts = new Map<string, number>();
   let missing = 0;
   for (const v of values) {
@@ -107,7 +111,11 @@ export function histogram(nums: number[], binCount?: number): HistogramBin[] {
     if (x > max) max = x;
   }
   if (min === max) return [{ lower: min, upper: max, count: nums.length, label: fmt(min) }];
-  if (binCount === undefined && nums.every(Number.isInteger) && max - min + 1 <= MAX_DISCRETE_BINS) {
+  if (
+    binCount === undefined &&
+    nums.every(Number.isInteger) &&
+    max - min + 1 <= MAX_DISCRETE_BINS
+  ) {
     const bins: HistogramBin[] = [];
     for (let v = min; v <= max; v++) bins.push({ lower: v, upper: v, count: 0, label: fmt(v) });
     for (const x of nums) bins[x - min]!.count++;

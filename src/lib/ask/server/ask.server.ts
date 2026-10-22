@@ -1,5 +1,12 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { convertToModelMessages, jsonSchema, streamText, tool, type ToolSet, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  jsonSchema,
+  streamText,
+  tool,
+  type ToolSet,
+  type UIMessage,
+} from "ai";
 import { TOOL_SPECS } from "../tools";
 import {
   createLovableAiGatewayRunIdFetch,
@@ -28,12 +35,20 @@ export interface AskBody {
 
 function isBody(x: unknown): x is AskBody {
   const b = x as AskBody;
-  return !!b && Array.isArray(b.messages) && b.messages.length > 0 && b.messages.length <= 200 && typeof b.dataset === "object" && b.dataset !== null;
+  return (
+    !!b &&
+    Array.isArray(b.messages) &&
+    b.messages.length > 0 &&
+    b.messages.length <= 200 &&
+    typeof b.dataset === "object" &&
+    b.dataset !== null
+  );
 }
 
 export async function handleAsk(request: Request): Promise<Response> {
   const apiKey = process.env["LOVABLE_API_KEY"];
-  if (!apiKey) return Response.json({ error: "AI is not configured for this app." }, { status: 500 });
+  if (!apiKey)
+    return Response.json({ error: "AI is not configured for this app." }, { status: 500 });
 
   let body: unknown;
   try {
@@ -43,13 +58,17 @@ export async function handleAsk(request: Request): Promise<Response> {
   }
   if (!isBody(body)) return Response.json({ error: "Invalid request." }, { status: 400 });
   const ctx = JSON.stringify(body.dataset);
-  if (ctx.length > 60_000) return Response.json({ error: "Dataset context is too large." }, { status: 413 });
+  if (ctx.length > 60_000)
+    return Response.json({ error: "Dataset context is too large." }, { status: 413 });
 
   const tools = Object.fromEntries(
     Object.entries(TOOL_SPECS).map(([name, spec]) => [
       name,
       // No execute: tools run in the browser against the local dataset.
-      tool({ description: spec.description, inputSchema: jsonSchema(spec.schema as Parameters<typeof jsonSchema>[0]) }),
+      tool({
+        description: spec.description,
+        inputSchema: jsonSchema(spec.schema as Parameters<typeof jsonSchema>[0]),
+      }),
     ]),
   ) as unknown as ToolSet;
 
@@ -85,8 +104,10 @@ export async function handleAsk(request: Request): Promise<Response> {
       sendReasoning: true,
       onError: (e) => {
         const status = (e as { statusCode?: number }).statusCode;
-        if (status === 402) return "AI credits are used up. Add credits to your workspace to keep asking questions.";
-        if (status === 429) return "Too many requests right now. Please wait a moment and try again.";
+        if (status === 402)
+          return "AI credits are used up. Add credits to your workspace to keep asking questions.";
+        if (status === 429)
+          return "Too many requests right now. Please wait a moment and try again.";
         if (status === 403) return "AI access is blocked for this workspace.";
         console.error("ask error", e);
         return "The assistant could not answer. Please try again.";

@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  chiSqUpperP, correlation, crosstab, fUpperP, linearRegression, oneWayAnova, outliersIQR, quantile, tTwoSidedP, welchTTest,
+  chiSqUpperP,
+  correlation,
+  crosstab,
+  fUpperP,
+  linearRegression,
+  oneWayAnova,
+  outliersIQR,
+  quantile,
+  tTwoSidedP,
+  welchTTest,
 } from "@/lib/stats/advanced";
 import { runTool } from "@/lib/ask/tools";
 import { parseCsvText } from "@/lib/data/parse";
@@ -19,7 +28,8 @@ describe("distribution functions match published tables", () => {
 });
 
 describe("methods", () => {
-  const x = [1, 2, 3, 4, 5], y = [2, 4, 5, 4, 5];
+  const x = [1, 2, 3, 4, 5],
+    y = [2, 4, 5, 4, 5];
   it("Pearson r = √0.6, p ≈ 0.124", () => {
     const r = correlation(x, y);
     expect(r.r).toBeCloseTo(Math.sqrt(0.6), 10);
@@ -28,7 +38,8 @@ describe("methods", () => {
   it("Spearman handles ties with average ranks", () => {
     expect(correlation([1, 2, 3, 4], [1, 2, 2, 3], "spearman").r).toBeCloseTo(0.9486833, 6);
   });
-  it("correlation undefined for constant input", () => expect(correlation([1, 2, 3], [5, 5, 5]).r).toBeNull());
+  it("correlation undefined for constant input", () =>
+    expect(correlation([1, 2, 3], [5, 5, 5]).r).toBeNull());
   it("OLS slope 0.6, intercept 2.2, R² 0.6", () => {
     const r = linearRegression(x, y);
     expect(r.slope).toBeCloseTo(0.6, 10);
@@ -43,7 +54,10 @@ describe("methods", () => {
     expect(r.pValue).toBeLessThan(0.12);
   });
   it("one-way ANOVA F = 13.5", () => {
-    const r = oneWayAnova([{ name: "a", values: [1, 2, 3] }, { name: "b", values: [4, 5, 6] }]);
+    const r = oneWayAnova([
+      { name: "a", values: [1, 2, 3] },
+      { name: "b", values: [4, 5, 6] },
+    ]);
     expect(r.f).toBeCloseTo(13.5, 10);
     expect(r.etaSquared).toBeCloseTo(13.5 / 17.5, 10);
   });
@@ -66,16 +80,27 @@ describe("assistant tools run on local data", () => {
   if (!r.ok) throw new Error();
   const ds = r.dataset;
   it("group mean excludes missing values", () => {
-    const out = runTool(ds, "group_aggregate", { group_by: "g", value_column: "v", agg: "mean", filter: null }) as { groups: { group: string; n: number; value: number }[] };
+    const out = runTool(ds, "group_aggregate", {
+      group_by: "g",
+      value_column: "v",
+      agg: "mean",
+      filter: null,
+    }) as { groups: { group: string; n: number; value: number }[] };
     expect(out.groups.find((g) => g.group === "b")).toEqual({ group: "b", n: 2, value: 4 });
   });
   it("filters apply numerically", () => {
-    expect(runTool(ds, "count_rows", { filter: [{ column: "v", op: "gte", value: "2" }] })).toMatchObject({ count: 3 });
+    expect(
+      runTool(ds, "count_rows", { filter: [{ column: "v", op: "gte", value: "2" }] }),
+    ).toMatchObject({ count: 3 });
   });
   it("unknown columns return an error instead of throwing", () => {
-    expect(runTool(ds, "frequency", { column: "nope", limit: null, filter: null })).toHaveProperty("error");
+    expect(runTool(ds, "frequency", { column: "nope", limit: null, filter: null })).toHaveProperty(
+      "error",
+    );
   });
   it("non-numeric columns are rejected for numeric methods", () => {
-    expect(runTool(ds, "percentiles", { column: "g", percentiles: null, filter: null })).toHaveProperty("error");
+    expect(
+      runTool(ds, "percentiles", { column: "g", percentiles: null, filter: null }),
+    ).toHaveProperty("error");
   });
 });

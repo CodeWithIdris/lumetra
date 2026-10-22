@@ -74,9 +74,15 @@ export function parseCsvText(
   });
 
   const bodyRows = data.slice(1);
-  if (bodyRows.length === 0) return { ok: false, errors: ["The file has column names but no data rows."] };
+  if (bodyRows.length === 0)
+    return { ok: false, errors: ["The file has column names but no data rows."] };
   if (bodyRows.length > MAX_ROWS) {
-    return { ok: false, errors: [`The file has more than ${MAX_ROWS.toLocaleString()} rows, which is not yet supported.`] };
+    return {
+      ok: false,
+      errors: [
+        `The file has more than ${MAX_ROWS.toLocaleString()} rows, which is not yet supported.`,
+      ],
+    };
   }
 
   let malformed = 0;
@@ -120,7 +126,10 @@ export function parseCsvText(
     );
   }
   for (const e of parsed.errors.slice(0, 3)) {
-    if (e.type === "Quotes") warnings.push(`Unbalanced quotes near data row ${(e.row ?? 0) + 1}. Everything after it may have been merged into one cell — check the file.`);
+    if (e.type === "Quotes")
+      warnings.push(
+        `Unbalanced quotes near data row ${(e.row ?? 0) + 1}. Everything after it may have been merged into one cell — check the file.`,
+      );
   }
 
   if (errors.length) return { ok: false, errors };
@@ -131,14 +140,20 @@ export async function parseCsvFile(file: File): Promise<{ result: ParseResult; t
   const fail = (msg: string) => ({ result: { ok: false as const, errors: [msg] }, text: "" });
   if (file.size === 0) return fail(`"${file.name}" is empty.`);
   if (file.size > MAX_FILE_BYTES) {
-    return fail(`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is 20 MB.`);
+    return fail(
+      `"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is 20 MB.`,
+    );
   }
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-    return fail("Excel files are not supported yet. Save the sheet as CSV (UTF-8) and upload that instead.");
+    return fail(
+      "Excel files are not supported yet. Save the sheet as CSV (UTF-8) and upload that instead.",
+    );
   }
   if (!lower.endsWith(".csv") && !lower.endsWith(".txt") && file.type !== "text/csv") {
-    return fail(`"${file.name}" does not look like a CSV file. Only .csv and .txt files are accepted.`);
+    return fail(
+      `"${file.name}" does not look like a CSV file. Only .csv and .txt files are accepted.`,
+    );
   }
   let text: string;
   try {
@@ -149,7 +164,9 @@ export async function parseCsvFile(file: File): Promise<{ result: ParseResult; t
   try {
     return { result: parseCsvText(text, file.name), text };
   } catch (e) {
-    return fail(`The file could not be parsed: ${e instanceof Error ? e.message : "unknown error"}.`);
+    return fail(
+      `The file could not be parsed: ${e instanceof Error ? e.message : "unknown error"}.`,
+    );
   }
 }
 

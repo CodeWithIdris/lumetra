@@ -8,7 +8,13 @@ export interface ProjectMeta {
   createdAt: string;
   updatedAt: string;
   status: ProjectStatus;
-  dataset: { name: string; rows: number; columns: number; source: "upload" | "sample"; stored: boolean } | null;
+  dataset: {
+    name: string;
+    rows: number;
+    columns: number;
+    source: "upload" | "sample";
+    stored: boolean;
+  } | null;
   objective?: string;
 }
 
@@ -26,7 +32,9 @@ function storage(): Storage | null {
 
 function isProject(x: unknown): x is ProjectMeta {
   const p = x as ProjectMeta;
-  return !!p && typeof p.id === "string" && typeof p.name === "string" && typeof p.createdAt === "string";
+  return (
+    !!p && typeof p.id === "string" && typeof p.name === "string" && typeof p.createdAt === "string"
+  );
 }
 
 export function loadProjects(): ProjectMeta[] {

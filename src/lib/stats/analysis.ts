@@ -1,6 +1,15 @@
 import { columnValues, profileDataset } from "../data/infer";
 import type { ColumnProfile, Dataset } from "../data/types";
-import { describe, fmt, frequencies, histogram, toNumbers, type FrequencyRow, type HistogramBin, type NumericSummary } from "./descriptive";
+import {
+  describe,
+  fmt,
+  frequencies,
+  histogram,
+  toNumbers,
+  type FrequencyRow,
+  type HistogramBin,
+  type NumericSummary,
+} from "./descriptive";
 
 export interface NumericResult {
   column: string;
@@ -54,8 +63,12 @@ export function runDescriptive(ds: Dataset, selected?: string[]): DescriptiveRep
 /** Deterministic, template-based narrative generated only from computed values. */
 export function summarise(r: DescriptiveReport): string[] {
   const out: string[] = [];
-  out.push(`The dataset "${r.datasetName}" contains ${r.rowCount.toLocaleString()} rows and ${r.columnCount} columns.`);
-  const withMissing = r.profiles.filter((p) => p.missing > 0).sort((a, b) => b.missingPct - a.missingPct);
+  out.push(
+    `The dataset "${r.datasetName}" contains ${r.rowCount.toLocaleString()} rows and ${r.columnCount} columns.`,
+  );
+  const withMissing = r.profiles
+    .filter((p) => p.missing > 0)
+    .sort((a, b) => b.missingPct - a.missingPct);
   if (withMissing.length === 0) out.push("No missing values were detected.");
   else {
     const top = withMissing[0]!;
@@ -67,11 +80,16 @@ export function summarise(r: DescriptiveReport): string[] {
     const s = n.summary;
     if (s.n === 0) continue;
     let line = `"${n.column}" (n = ${s.n}) has a mean of ${fmt(s.mean)} and a median of ${fmt(s.median)}, ranging from ${fmt(s.min)} to ${fmt(s.max)}`;
-    line += s.sd === null ? "; standard deviation is undefined for a single value." : ` (SD ${fmt(s.sd)}).`;
+    line +=
+      s.sd === null
+        ? "; standard deviation is undefined for a single value."
+        : ` (SD ${fmt(s.sd)}).`;
     if (s.mean !== null && s.median !== null && s.sd && s.sd > 0) {
       const gap = (s.mean - s.median) / s.sd;
-      if (gap > 0.2) line += " The mean exceeds the median, suggesting a right-skewed distribution.";
-      else if (gap < -0.2) line += " The mean is below the median, suggesting a left-skewed distribution.";
+      if (gap > 0.2)
+        line += " The mean exceeds the median, suggesting a right-skewed distribution.";
+      else if (gap < -0.2)
+        line += " The mean is below the median, suggesting a left-skewed distribution.";
     }
     out.push(line);
   }
