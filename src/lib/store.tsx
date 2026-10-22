@@ -2,6 +2,7 @@ import type React from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { parseCsvFile, parseCsvText } from "./data/parse";
 import { sampleCsv, SAMPLE_NAME } from "./data/sample";
+import { deleteChat } from "./persistence/chats";
 import type { Dataset } from "./data/types";
 import {
   clearAll,
@@ -169,6 +170,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const deleteProject = useCallback(
     (id: string) => {
       deleteCsv(id);
+      deleteChat(id);
       commit(loadProjects().filter((p) => p.id !== id));
       const cur = activeRef.current;
       if (cur?.projectId === id) setActive({ ...cur, projectId: null });
