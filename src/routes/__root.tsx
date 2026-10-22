@@ -15,7 +15,6 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { StoreProvider } from "@/lib/store";
 import { AppShell } from "@/components/AppShell";
 import { Toaster } from "@/components/ui/sonner";
-import { ThreeUiBackground } from "@/components/ThreeUiBackground";
 
 function NotFoundComponent() {
   return (
@@ -110,12 +109,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <HeadContent />
       </head>
-      <body className="relative bg-background text-foreground antialiased selection:bg-indigo-500/30 selection:text-white">
-        <ThreeUiBackground />
+      <body className="relative bg-background text-foreground antialiased selection:bg-blue-500/20 selection:text-blue-900">
         {children}
         <Scripts />
       </body>

@@ -1,28 +1,43 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/AppShell";
+import { EmptyState, PageHeader } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { pageMeta } from "@/lib/meta";
 import { PERSONAS, type PersonaId } from "@/lib/stats/personas";
-import { Scene } from "@/components/Scene";
 import {
-  Sparkles,
-  Database,
+  FolderKanban,
+  Table2,
+  LineChart,
   ArrowRight,
-  TrendingUp,
+  Database,
+  Trash2,
+  Upload,
   Cpu,
+  TrendingUp,
   Boxes,
   Target,
   HeartPulse,
-  Shield,
-  Layers,
+  Check,
+  ChevronDown,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import type { ProjectMeta } from "@/lib/persistence/projects";
 
 export const Route = createFileRoute("/")({
   head: () =>
     pageMeta(
       "Overview",
-      "Personalized data intelligence workspace with ThreeUI aesthetics, client-side statistics, and Supabase cloud records.",
+      "Production-grade analytical workspace with client-side computation and cloud persistence.",
     ),
   component: Overview,
 });
@@ -35,242 +50,337 @@ const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
   clinical: HeartPulse,
 };
 
-const STEPS = [
-  [
-    "01",
-    "Import Data",
-    "Upload any CSV or load your role-tailored benchmark. Processed purely in-browser.",
-  ],
-  [
-    "02",
-    "Inspect & Clean",
-    "Audit column distributions, zero coercion prevention, and missing value boundaries.",
-  ],
-  [
-    "03",
-    "Personalized Analysis",
-    "Run tailored statistical engines (P99 latencies, price elasticity, Gini, or A/B lift).",
-  ],
-  [
-    "04",
-    "Supabase Safe Records",
-    "Safeguard your project datasets and findings permanently with Supabase Cloud DB.",
-  ],
-] as const;
-
 function Overview() {
   const {
     projects,
     ready,
-    loadSample,
     loadPersonaSample,
     openProject,
+    deleteProject,
     startNew,
     persona,
     setPersona,
-    user,
   } = useStore();
   const navigate = useNavigate();
-  const recent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5);
+  const [toDelete, setToDelete] = useState<ProjectMeta | null>(null);
+  const [personaOpen, setPersonaOpen] = useState(false);
+
   const currentPersona = PERSONAS[persona];
+  const PersonaIcon = ROLE_ICONS[persona] || Cpu;
+  const recent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10);
 
   return (
-    <div className="space-y-12">
-      {/* ThreeUI Sylva Living Green Hero Showcase */}
-      <Scene />
-
-      {/* Overview Hero Section */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-indigo-950/30 via-slate-900/60 to-slate-950/80 p-6 md:p-10 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 size-96 rounded-full bg-indigo-500/15 blur-3xl pointer-events-none" />
-
-        <div className="relative z-10">
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-mono text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.25)]">
-              <Sparkles className="size-3.5 text-indigo-400" />
-              <span>ThreeUI Interface · Client-Side Pure Stats</span>
-            </span>
-
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-mono text-emerald-300">
-              <Database className="size-3.5" />
-              <span>Supabase Cloud Safe</span>
-            </span>
-          </div>
-
-          <h1 className="max-w-3xl text-3xl font-extrabold tracking-tight text-white md:text-5xl md:leading-tight gradient-heading">
-            Data intelligence tailored to your exact professional background.
-          </h1>
-
-          <p className="mt-4 max-w-2xl text-[14.5px] leading-relaxed text-slate-300">
-            An economist doesn't look at P99 tail latency, and an SRE engineer doesn't calculate
-            price elasticity. Lumetra personalizes statistical tooling and visual diagnostics
-            strictly based on your role, with zero server computation and safe Supabase database
-            persistence.
-          </p>
-
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-[0_0_25px_rgba(99,102,241,0.45)] px-5 py-2.5 text-sm"
-              onClick={() => {
-                startNew();
-                navigate({ to: "/workspace" });
-              }}
-            >
-              Start New Analysis
-            </Button>
-            <Button
-              variant="outline"
-              className="border-white/15 bg-white/5 hover:bg-white/10 text-white text-sm"
-              onClick={() => {
-                startNew();
-                loadPersonaSample(persona);
-                navigate({ to: "/workspace" });
-              }}
-            >
-              Open {currentPersona.shortRole} Sample Dataset
-            </Button>
-          </div>
-
-          <p className="mt-3 text-xs text-slate-400 font-mono">
-            Active persona:{" "}
-            <span className="text-indigo-300 font-semibold">{currentPersona.title}</span> — Sample
-            dataset contains real-world deterministic benchmarks.
-          </p>
-        </div>
-      </section>
-
-      {/* Choose Your Background / Personalize Toolkit Section */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="eyebrow text-indigo-400">Personalize Your Toolkit</h2>
-            <p className="text-base font-semibold text-white mt-0.5">
-              Select your role to adapt all analyses, metrics & interpretation guides:
-            </p>
-          </div>
-          <span className="text-xs text-slate-400 font-mono hidden sm:inline">1-Click Adapt</span>
+    <div className="space-y-8">
+      {/* Overview Header & Actions */}
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">Overview</h1>
+          <p className="mt-1 text-[13px] text-slate-600">Your data, analyses and recent work.</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {(Object.keys(PERSONAS) as PersonaId[]).map((pId) => {
-            const p = PERSONAS[pId];
-            const Icon = ROLE_ICONS[pId];
-            const isSelected = pId === persona;
-            return (
-              <button
-                key={pId}
-                onClick={() => setPersona(pId)}
-                className={`glass-card p-4 text-left transition-all relative overflow-hidden group ${
-                  isSelected
-                    ? "border-indigo-500/60 bg-indigo-950/30 shadow-[0_0_25px_rgba(99,102,241,0.25)]"
-                    : "border-white/10 hover:border-white/20 hover:bg-slate-900/60"
-                }`}
-              >
-                {isSelected && (
-                  <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-mono text-indigo-300">
-                    <span className="size-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                    <span>ACTIVE</span>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            className="bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium h-8 px-3"
+            onClick={() => {
+              startNew();
+              navigate({ to: "/workspace" });
+            }}
+          >
+            New analysis
+          </Button>
+
+          <Button
+            variant="outline"
+            className="border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium h-8 px-3"
+            onClick={() => {
+              startNew();
+              loadPersonaSample(persona);
+              navigate({ to: "/workspace" });
+            }}
+          >
+            Open dataset
+          </Button>
+        </div>
+      </div>
+
+      {/* Professional Context Bar */}
+      <div className="flex flex-col gap-2 rounded-md border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between shadow-2xs">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-medium text-slate-500">Professional Context:</span>
+          <div className="relative">
+            <button
+              onClick={() => setPersonaOpen(!personaOpen)}
+              className="flex items-center gap-1.5 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
+            >
+              <PersonaIcon className="size-3.5 text-blue-600" />
+              <span>{currentPersona.title}</span>
+              <ChevronDown className="size-3 text-slate-400" />
+            </button>
+
+            {personaOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setPersonaOpen(false)} />
+                <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                  <div className="px-2 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-100">
+                    Select Context
                   </div>
-                )}
-                <div className="flex size-9 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 mb-3 group-hover:scale-105 transition-transform">
-                  <Icon className="size-4" />
+                  {(Object.keys(PERSONAS) as PersonaId[]).map((pId) => {
+                    const p = PERSONAS[pId];
+                    const Icon = ROLE_ICONS[pId];
+                    const isCurrent = pId === persona;
+                    return (
+                      <button
+                        key={pId}
+                        onClick={() => {
+                          setPersona(pId);
+                          setPersonaOpen(false);
+                        }}
+                        className={`flex w-full items-start gap-2.5 rounded px-2.5 py-2 text-left text-xs transition-colors ${
+                          isCurrent
+                            ? "bg-blue-50 text-blue-900 font-semibold"
+                            : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                        }`}
+                      >
+                        <Icon
+                          className={`mt-0.5 size-3.5 shrink-0 ${isCurrent ? "text-blue-600" : "text-slate-400"}`}
+                        />
+                        <div className="min-w-0">
+                          <div>{p.title}</div>
+                          <div className="text-[11px] font-normal text-slate-500 truncate">
+                            {p.tagline}
+                          </div>
+                        </div>
+                        {isCurrent && <Check className="mt-0.5 size-3.5 text-blue-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="font-semibold text-white text-[14px]">{p.title}</div>
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">{p.description}</p>
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {p.keyMetrics.slice(0, 2).map((km) => (
-                    <span
-                      key={km}
-                      className="rounded-md border border-white/5 bg-slate-900/60 px-2 py-0.5 text-[10px] font-mono text-slate-300"
-                    >
-                      {km}
-                    </span>
-                  ))}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* How Lumetra Works */}
-      <section className="space-y-4">
-        <h2 className="eyebrow text-slate-400">Guaranteed Workflow</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map(([step, title, desc]) => (
-            <div
-              key={step}
-              className="glass-card p-4 relative group hover:border-indigo-500/30 transition-all"
-            >
-              <div className="num text-xs text-indigo-400 font-mono font-bold">{step}</div>
-              <div className="mt-2 font-semibold text-white text-sm">{title}</div>
-              <p className="mt-1 text-xs text-slate-400 leading-relaxed">{desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Recent Projects with Supabase Cloud Safe Indicator */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="eyebrow text-slate-400">Recent Projects & Records</h2>
-            <span className="flex items-center gap-1 text-[11px] font-mono text-emerald-400">
-              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Supabase Safe</span>
-            </span>
+              </>
+            )}
           </div>
+        </div>
+        <div className="text-[11px] text-slate-500">
+          Adapts statistical diagnostics, interpretation guides and benchmark samples.
+        </div>
+      </div>
+
+      {/* Recent Projects Table */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700 font-mono">
+            Recent Projects
+          </h2>
           {recent.length > 0 && (
             <Link
               to="/projects"
-              className="text-xs text-indigo-400 hover:text-indigo-300 hover:underline"
+              className="text-xs text-blue-600 hover:text-blue-700 hover:underline font-medium"
             >
-              View all projects →
+              View all ({projects.length}) →
             </Link>
           )}
         </div>
 
-        {!ready ? null : recent.length === 0 ? (
-          <EmptyState title="No saved projects yet">
-            Upload your CSV file in the Data Workspace or click “Open Sample Dataset” above. Every
-            project is safely preserved in Supabase Cloud.
-          </EmptyState>
-        ) : (
-          <div className="glass-card divide-y divide-white/5 overflow-hidden">
-            {recent.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between gap-4 p-4 hover:bg-white/5 transition-colors"
+        {!ready ? (
+          <div className="h-32 rounded-md border border-slate-200 bg-white animate-pulse" />
+        ) : recent.length === 0 ? (
+          /* Getting Started Section - Shown Only When No Projects Exist */
+          <div className="rounded-md border border-slate-200 bg-white p-6 shadow-2xs space-y-6">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">
+                Getting Started with Lumetra
+              </h3>
+              <p className="mt-1 text-xs text-slate-600 max-w-xl leading-relaxed">
+                Lumetra is a deterministic statistical analysis application. Computations execute
+                purely in-browser using client-side mathematical engines. Projects can optionally be
+                synced to Supabase Cloud for persistent record keeping.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 pt-1">
+              {[
+                {
+                  step: "01",
+                  title: "Load Dataset",
+                  desc: "Import any local CSV file (up to 50 MB) or load a role-specific benchmark dataset.",
+                },
+                {
+                  step: "02",
+                  title: "Audit Schema & Nulls",
+                  desc: "Inspect inferred types, distinct counts, and missing values. Null values are never coerced to zero.",
+                },
+                {
+                  step: "03",
+                  title: "Run Analytical Engines",
+                  desc: "Execute tailored statistical routines: latency P99s, elasticity, Gini, or descriptive statistics.",
+                },
+                {
+                  step: "04",
+                  title: "Reports & Persistence",
+                  desc: "Generate structured, printable reports and preserve your findings safely in Supabase Cloud.",
+                },
+              ].map((s) => (
+                <div key={s.step} className="rounded border border-slate-200 bg-slate-50/70 p-3.5">
+                  <span className="font-mono text-xs font-bold text-blue-600">{s.step}</span>
+                  <div className="mt-1.5 text-xs font-semibold text-slate-900">{s.title}</div>
+                  <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">{s.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2.5 pt-2 border-t border-slate-100">
+              <Button
+                size="sm"
+                className="bg-blue-600 text-xs text-white hover:bg-blue-700"
+                onClick={() => {
+                  startNew();
+                  loadPersonaSample(persona);
+                  navigate({ to: "/workspace" });
+                }}
               >
-                <div className="min-w-0">
-                  <div className="font-semibold text-white text-sm truncate">{p.name}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">
-                    {p.dataset
-                      ? `${p.dataset.name} · ${p.dataset.rows.toLocaleString()} rows`
-                      : "No dataset"}{" "}
-                    · Updated {new Date(p.updatedAt).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="hidden sm:inline rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-mono text-emerald-300">
-                    Cloud Synced
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-white/10 text-xs hover:bg-white/10"
-                    onClick={() => {
-                      const r = openProject(p.id);
-                      navigate({ to: "/workspace", search: r.error ? { notice: r.error } : {} });
-                    }}
-                  >
-                    Open
-                  </Button>
-                </div>
-              </div>
-            ))}
+                Load {currentPersona.shortRole} Sample Dataset
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  startNew();
+                  navigate({ to: "/workspace" });
+                }}
+              >
+                Upload CSV File
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-md border border-slate-200 bg-white overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-slate-200 bg-slate-50 text-slate-600 font-medium">
+                  <tr>
+                    <th className="px-4 py-2.5">Project Name</th>
+                    <th className="px-4 py-2.5">Dataset</th>
+                    <th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5">Last Modified</th>
+                    <th className="px-4 py-2.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recent.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => {
+                            openProject(p.id);
+                            navigate({ to: "/workspace" });
+                          }}
+                          className="font-semibold text-slate-900 hover:text-blue-600 text-left"
+                        >
+                          {p.name}
+                        </button>
+                        {p.objective && (
+                          <div className="text-[11px] text-slate-500 truncate max-w-sm">
+                            {p.objective}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[11px] text-slate-600">
+                        {p.dataset ? (
+                          <span>
+                            {p.dataset.name} ({p.dataset.rows.toLocaleString()} rows)
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">No data</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                            p.status === "analysed"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : p.status === "data-loaded"
+                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                : "bg-slate-100 text-slate-600 border border-slate-200"
+                          }`}
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-[11px] text-slate-500 font-mono">
+                        {new Date(p.updatedAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
+                            onClick={() => {
+                              openProject(p.id);
+                              navigate({ to: "/analyses" });
+                            }}
+                          >
+                            Analyses
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-slate-600 hover:text-slate-900 px-2"
+                            onClick={() => {
+                              openProject(p.id);
+                              navigate({ to: "/workspace" });
+                            }}
+                          >
+                            Workspace
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 size-7 p-0 text-slate-400 hover:text-red-600"
+                            onClick={() => setToDelete(p)}
+                            aria-label={`Delete ${p.name}`}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+        <AlertDialogContent className="bg-white text-slate-900 border-slate-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project “{toDelete?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              This action cannot be undone. All stored session states and cached analyses for this
+              project will be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-300 text-xs text-slate-700 hover:bg-slate-50">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-xs text-white hover:bg-red-700"
+              onClick={() => {
+                if (toDelete) {
+                  deleteProject(toDelete.id);
+                  setToDelete(null);
+                }
+              }}
+            >
+              Delete Project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
