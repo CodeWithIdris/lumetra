@@ -13,7 +13,6 @@ import {
   BookOpen,
   Settings,
   Database,
-  Cloud,
   Check,
   ChevronDown,
   Menu,
@@ -23,7 +22,6 @@ import {
   Boxes,
   Target,
   HeartPulse,
-  User,
   HardDrive,
 } from "lucide-react";
 import { Button } from "./ui/button";
@@ -36,6 +34,7 @@ const NAV = [
   { to: "/ask", label: "Ask", icon: MessageSquareCode },
   { to: "/reports", label: "Reports", icon: FileText },
   { to: "/learn", label: "Learn", icon: BookOpen },
+  { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 const PERSONA_ICONS: Record<PersonaId, typeof Cpu> = {
@@ -135,7 +134,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* Primary Navigation Links */}
         <nav aria-label="Main Navigation" className="flex-1 space-y-0.5 overflow-y-auto px-2.5 py-3">
           <div className="px-2 pb-1 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-            Navigation
+            Workspace
           </div>
           {NAV.map((n) => {
             const Icon = n.icon;
@@ -145,9 +144,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={n.to}
                 to={n.to}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
+                className={`flex items-center gap-2.5 rounded px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
                   activeLink
-                    ? "bg-slate-100 text-slate-900 font-semibold text-blue-700"
+                    ? "bg-slate-100 text-blue-700 font-semibold"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
@@ -158,24 +157,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
-
-          <div className="pt-3 pb-1 px-2 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-            System
-          </div>
-          <Link
-            to="/settings"
-            onClick={() => setMobileMenuOpen(false)}
-            className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
-              isActive("/settings")
-                ? "bg-slate-100 text-slate-900 font-semibold text-blue-700"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-            }`}
-          >
-            <Settings
-              className={`size-4 shrink-0 ${isActive("/settings") ? "text-blue-600" : "text-slate-400"}`}
-            />
-            <span>Settings</span>
-          </Link>
         </nav>
 
         {/* Active Dataset & Context Summary */}
@@ -194,7 +175,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
               <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
                 <span className="size-1.5 rounded-full bg-emerald-600" />
-                <span className={activeProject ? "text-slate-700 font-medium" : "text-amber-700"}>
+                <span className={activeProject ? "text-slate-700 font-medium truncate" : "text-amber-700"}>
                   {activeProject ? activeProject.name : "Unsaved session"}
                 </span>
               </div>
@@ -213,7 +194,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <HardDrive className="size-3 text-slate-400" />
               <span>In-browser local engine</span>
             </span>
-            <span className="inline-block size-1.5 rounded-full bg-emerald-500" title="Engine active" />
+            <span className="inline-block size-1.5 rounded-full bg-emerald-500" title="Deterministic client engine active" />
           </div>
 
           <div className="mt-2 flex items-center justify-between pt-1 border-t border-slate-100">

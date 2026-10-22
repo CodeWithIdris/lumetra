@@ -131,26 +131,6 @@
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
 }
 
-@utility glass-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-}
-
-@utility glow-hover {
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  &:hover {
-    border-color: var(--color-primary);
-    box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.12);
-  }
-}
-
-@utility gradient-heading {
-  color: var(--color-foreground);
-  font-weight: 600;
-}
-
 .shader-frame {
   position: relative;
   width: 100%;

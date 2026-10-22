@@ -14,46 +14,46 @@ export const Route = createFileRoute("/learn")({
 const TOPICS = [
   [
     "Understanding datasets",
-    "A dataset is a table: each row is one observation (a person, a sale, a day) and each column is one variable measured for it. Before analysing, check that every row means the same kind of thing and that each column holds one kind of value.",
+    "A dataset is a structured table: each row represents an individual observation (a user, a server node, a transaction) and each column records a distinct measured variable. Before statistical modeling, verify row uniformity and column schema coherence.",
   ],
   [
     "Missing values and data quality",
-    "Blank cells are not zeros. A missing income is unknown, not nothing. Lumetra excludes missing values and reports how many there are, so you can judge whether gaps might bias results — for example, if higher earners skipped the question.",
+    "Blank cells are not zeros. A missing latency, income, or response is unknown, not nothing. Lumetra strictly excludes missing values and audits gaps, allowing you to evaluate potential attrition or reporting bias.",
   ],
   [
-    "Descriptive statistics",
-    "The mean is the average; the median is the middle value. When they differ a lot, a few extreme values are pulling the mean. The standard deviation measures typical spread around the mean. Lumetra uses the sample standard deviation (dividing by n − 1), which is standard when your data is a sample from a larger group.",
+    "Descriptive statistics & moments",
+    "The arithmetic mean measures central tendency; the median marks the 50th percentile. When they diverge significantly, heavy-tailed outliers are pulling the distribution. Lumetra applies Bessel's correction (divisor n − 1) for sample standard deviations.",
   ],
   [
-    "Interpreting charts",
-    "A histogram groups numbers into equal-width ranges and shows how many fall in each. Look at its shape: one peak or several, symmetric or stretched to one side. A bar chart shows counts of categories; check the axis starts at zero and read the actual counts, not just bar heights.",
+    "Interpreting distributions & charts",
+    "A histogram segments numeric values into contiguous bins according to Sturges' rule. Inspect shape, skewness, and multimodal clusters. Bar charts evaluate discrete category frequencies and always start from baseline zero.",
   ],
   [
     "Correlation versus causation",
-    "Two variables moving together does not mean one causes the other. Both may be driven by a third factor, or the link may be chance. Establishing cause usually needs an experiment or a carefully designed study.",
+    "Strong Pearson or Spearman correlation coefficients indicate statistical association, not causal mechanics. Confounders or temporal artifacts often drive apparent relationships without an experimental design.",
   ],
   [
-    "Responsible use of results",
-    "Report the method, the sample size and missing data alongside every figure. Avoid overstating small differences, do not generalise beyond who was actually measured, and keep the original data so others can check your work.",
+    "Responsible analytical reporting",
+    "Always state sample size (n), missing value rates, and degrees of freedom alongside every figure. Avoid inflating marginal effects, acknowledge analytical limitations, and preserve raw data for reproducibility.",
   ],
 ] as const;
 
 function Learn() {
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        title="Learn"
-        description="Concise guidance for reading data and results carefully."
+        title="Learn & Statistical Methods"
+        description="Core principles for rigorous dataset auditing, statistical inference, and responsible interpretation."
       />
       <div className="grid gap-4 md:grid-cols-2">
         {TOPICS.map(([t, body], i) => (
-          <article key={t} className="panel p-5">
-            <div className="num text-[11px] text-primary">0{i + 1}</div>
-            <h2 className="mt-1 font-medium">{t}</h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{body}</p>
+          <article key={t} className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs">
+            <div className="font-mono text-xs font-bold text-blue-600">0{i + 1}</div>
+            <h2 className="mt-1.5 text-sm font-semibold text-slate-900">{t}</h2>
+            <p className="mt-2 text-xs leading-relaxed text-slate-600">{body}</p>
           </article>
         ))}
       </div>
-    </>
+    </div>
   );
 }
