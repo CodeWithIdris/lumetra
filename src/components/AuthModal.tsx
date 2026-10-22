@@ -18,7 +18,7 @@ import {
   saveSupabaseConfig,
 } from "@/lib/persistence/supabase";
 import { toast } from "sonner";
-import { Database, ShieldCheck, UserCheck, Cloud, Sparkles, CheckCircle2 } from "lucide-react";
+import { Database, ShieldCheck, UserCheck, CheckCircle2, HardDrive, RefreshCw } from "lucide-react";
 
 interface AuthModalProps {
   open: boolean;
@@ -27,8 +27,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthModalProps) {
-  const { user, login, register, logout, persona, setPersona, syncWithCloud, cloudSyncStatus } =
-    useStore();
+  const { user, login, register, logout, persona, syncWithCloud, cloudSyncStatus } = useStore();
 
   const [tab, setTab] = useState<string>(defaultTab);
   const [name, setName] = useState("");
@@ -36,6 +35,7 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
   const [password, setPassword] = useState("");
   const [selectedPersona, setSelectedPersona] = useState<PersonaId>(persona);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   // Supabase connection config
   const currentConfig = loadSupabaseConfig();
@@ -79,7 +79,7 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
     setTestResult(result);
     if (result.ok) {
       saveSupabaseConfig({ url: supaUrl, anonKey: supaKey });
-      toast.success("Connected to Supabase!");
+      toast.success("Successfully connected to Supabase Cloud.");
     } else {
       toast.error(result.message);
     }
@@ -90,20 +90,31 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
     toast.success("Supabase database settings updated.");
   };
 
+  const handleSyncProjects = async () => {
+    setSyncing(true);
+    const res = await syncWithCloud();
+    setSyncing(false);
+    if (res.success) {
+      toast.success("All project records synchronized with Supabase Cloud.");
+    } else {
+      toast.error(res.error || "Sync error");
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md border border-white/10 bg-slate-950/90 p-6 text-slate-100 shadow-[0_16px_50px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
+      <DialogContent className="max-w-md border border-slate-200 bg-white p-6 text-slate-900 shadow-lg">
         <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded border border-blue-200 bg-blue-50 text-blue-600">
               <Database className="size-4" />
             </div>
             <div>
-              <DialogTitle className="text-lg font-semibold tracking-tight text-white">
-                {user ? "Cloud Account & Records" : "Account & Cloud Safe"}
+              <DialogTitle className="text-base font-bold tracking-tight text-slate-900">
+                {user ? "Account & Cloud Persistence" : "Account & Cloud Storage"}
               </DialogTitle>
-              <DialogDescription className="text-xs text-slate-400">
-                Keep all your datasets, analysis reports, and projects safe in Supabase.
+              <DialogDescription className="text-xs text-slate-500">
+                Manage your user session and Supabase project database synchronization.
               </DialogDescription>
             </div>
           </div>
@@ -111,35 +122,34 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
 
         {user ? (
           <div className="space-y-4 pt-2">
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+            <div className="rounded border border-slate-200 bg-slate-50/70 p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2 font-medium text-white">
+                  <div className="flex items-center gap-2 font-semibold text-xs text-slate-900">
                     <span>{user.name}</span>
-                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                    <span className="rounded bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.2 text-[10px] font-mono">
                       Active
                     </span>
                   </div>
-                  <div className="text-xs text-slate-400">{user.email}</div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{user.email}</div>
                 </div>
                 <div className="text-right">
-                  <span className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-1 text-[11px] font-medium text-indigo-300">
+                  <span className="rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700">
                     {PERSONAS[user.persona]?.shortRole || user.persona}
                   </span>
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3 text-xs text-slate-400">
+              <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-[11px] text-slate-600">
                 <div className="flex items-center gap-1.5">
-                  <Cloud className="size-3.5 text-cyan-400" />
+                  <Database className="size-3.5 text-blue-600" />
                   <span>
-                    Database: <strong className="text-slate-200">Supabase Cloud Safe</strong>
+                    Storage: <strong>{cloudSyncStatus === "synced" ? "Supabase Cloud" : "Local Browser"}</strong>
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 text-emerald-400">
-                  <CheckCircle2 className="size-3.5" />
-                  <span>Protected</span>
-                </div>
+                <span className="font-mono text-slate-400">
+                  {user.provider === "supabase" ? "Supabase Auth" : "Local Vault"}
+                </span>
               </div>
             </div>
 
@@ -147,25 +157,20 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
               <Button
                 variant="outline"
                 size="sm"
-                className="flex-1 border-white/10 text-xs hover:bg-slate-900"
-                onClick={async () => {
-                  const res = await syncWithCloud();
-                  if (res.success) {
-                    toast.success("All projects safely synced with Cloud database!");
-                  } else {
-                    toast.error(res.error || "Sync error");
-                  }
-                }}
+                className="flex-1 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                disabled={syncing}
+                onClick={handleSyncProjects}
               >
-                Sync Records Now
+                <RefreshCw className={`mr-1.5 size-3 text-slate-400 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "Syncing..." : "Sync Projects to Cloud"}
               </Button>
               <Button
-                variant="destructive"
+                variant="outline"
                 size="sm"
-                className="text-xs"
+                className="border-slate-300 text-xs text-red-600 hover:bg-red-50 hover:border-red-200 font-medium"
                 onClick={() => {
                   logout();
-                  toast.info("Signed out");
+                  toast.info("Signed out of session.");
                   onOpenChange(false);
                 }}
               >
@@ -174,189 +179,177 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
             </div>
           </div>
         ) : (
-          <Tabs value={tab} onValueChange={setTab} className="mt-2">
-            <TabsList className="grid w-full grid-cols-3 border border-white/10 bg-slate-900/80 p-1">
+          <Tabs value={tab} onValueChange={setTab} className="mt-2 space-y-4">
+            <TabsList className="grid w-full grid-cols-3 border border-slate-200 bg-slate-100 p-0.5">
               <TabsTrigger
                 value="signup"
-                className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
+                className="text-xs data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-xs"
               >
                 Sign Up
               </TabsTrigger>
               <TabsTrigger
                 value="login"
-                className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
+                className="text-xs data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-xs"
               >
                 Sign In
               </TabsTrigger>
               <TabsTrigger
                 value="supabase"
-                className="text-xs data-[state=active]:bg-indigo-600 data-[state=active]:text-white"
+                className="text-xs data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-xs"
               >
                 Supabase
               </TabsTrigger>
             </TabsList>
 
             {/* SIGN UP */}
-            <TabsContent value="signup" className="space-y-3 pt-3">
+            <TabsContent value="signup" className="space-y-3">
               <form onSubmit={handleRegister} className="space-y-3">
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Full Name or Team</Label>
+                  <Label className="text-xs font-medium text-slate-700">Full Name</Label>
                   <Input
-                    placeholder="e.g. Elena Rostova"
+                    placeholder="e.g. Dr. Alex Mercer"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="border-white/10 bg-slate-900 text-sm text-white"
+                    className="h-8 border-slate-300 bg-white text-xs text-slate-900"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Email Address</Label>
+                  <Label className="text-xs font-medium text-slate-700">Email Address</Label>
                   <Input
                     type="email"
-                    placeholder="you@domain.com"
+                    placeholder="researcher@institution.org"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="border-white/10 bg-slate-900 text-sm text-white"
+                    className="h-8 border-slate-300 bg-white text-xs text-slate-900"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Password</Label>
+                  <Label className="text-xs font-medium text-slate-700">Password</Label>
                   <Input
                     type="password"
                     placeholder="At least 6 characters"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="border-white/10 bg-slate-900 text-sm text-white"
+                    className="h-8 border-slate-300 bg-white text-xs text-slate-900"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Your Primary Background</Label>
+                  <Label className="text-xs font-medium text-slate-700">Primary Discipline</Label>
                   <select
                     value={selectedPersona}
                     onChange={(e) => setSelectedPersona(e.target.value as PersonaId)}
-                    className="w-full rounded-md border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="h-8 w-full rounded border border-slate-300 bg-white px-2.5 text-xs text-slate-900"
                   >
-                    <option value="engineer">
-                      ⚡ Software Engineer & SRE (Latencies, SLOs, Telemetry)
-                    </option>
-                    <option value="economist">
-                      📈 Economist & Financial Analyst (Elasticity, Gini, Macro)
-                    </option>
-                    <option value="scientist">
-                      🔬 Data Scientist & ML (Correlation, Distributions, Outliers)
-                    </option>
-                    <option value="product">
-                      📊 Product Manager (A/B Test Lift, Funnels, Retention)
-                    </option>
-                    <option value="clinical">
-                      🩺 Clinical Researcher (Odds Ratios, Relative Risk, Trials)
-                    </option>
+                    <option value="engineer">Software Engineer & SRE (Latencies, SLOs)</option>
+                    <option value="economist">Economist & Financial Analyst (Elasticity, Gini)</option>
+                    <option value="scientist">Data Scientist & ML (Distributions, Outliers)</option>
+                    <option value="product">Product Manager (A/B Test Lift, Conversions)</option>
+                    <option value="clinical">Clinical Researcher (Odds Ratios, Relative Risk)</option>
                   </select>
                 </div>
 
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-indigo-600 font-medium text-white hover:bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.4)]"
+                  className="w-full bg-blue-600 h-8 font-medium text-xs text-white hover:bg-blue-700"
                 >
-                  {loading ? "Creating Safe Account..." : "Create Account & Enable Cloud Safe"}
+                  {loading ? "Creating Profile..." : "Register Profile"}
                 </Button>
               </form>
 
-              <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-400">
-                <ShieldCheck className="size-4 text-emerald-400" />
-                <span>
-                  Zero vendor lock-in. Your data is always encrypted and privately accessible.
-                </span>
+              <div className="flex items-center gap-1.5 pt-1 text-[11px] text-slate-500">
+                <ShieldCheck className="size-3.5 text-emerald-600 shrink-0" />
+                <span>Deterministic client execution with optional cloud persistence.</span>
               </div>
             </TabsContent>
 
             {/* SIGN IN */}
-            <TabsContent value="login" className="space-y-3 pt-3">
+            <TabsContent value="login" className="space-y-3">
               <form onSubmit={handleLogin} className="space-y-3">
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Email Address</Label>
+                  <Label className="text-xs font-medium text-slate-700">Email Address</Label>
                   <Input
                     type="email"
-                    placeholder="you@domain.com"
+                    placeholder="researcher@institution.org"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="border-white/10 bg-slate-900 text-sm text-white"
+                    className="h-8 border-slate-300 bg-white text-xs text-slate-900"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Password</Label>
+                  <Label className="text-xs font-medium text-slate-700">Password</Label>
                   <Input
                     type="password"
                     placeholder="Your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="border-white/10 bg-slate-900 text-sm text-white"
+                    className="h-8 border-slate-300 bg-white text-xs text-slate-900"
                   />
                 </div>
 
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-indigo-600 font-medium text-white hover:bg-indigo-500"
+                  className="w-full bg-blue-600 h-8 font-medium text-xs text-white hover:bg-blue-700"
                 >
-                  {loading ? "Signing in..." : "Sign In & Access Records"}
+                  {loading ? "Signing in..." : "Sign In"}
                 </Button>
               </form>
 
-              <div className="text-center pt-2">
+              <div className="text-center pt-1">
                 <button
                   type="button"
                   onClick={() => {
                     setEmail("demo@lumetra.internal");
                     setPassword("researcher123");
                   }}
-                  className="text-xs text-indigo-400 hover:underline"
+                  className="text-xs text-blue-600 hover:underline"
                 >
-                  Fill with sample credentials
+                  Fill with demo credentials
                 </button>
               </div>
             </TabsContent>
 
             {/* SUPABASE SETTINGS */}
-            <TabsContent value="supabase" className="space-y-3 pt-3">
-              <div className="text-xs text-slate-300">
-                Connect your personal <strong>Supabase</strong> project to store datasets and
-                analyses with unlimited storage capacity.
+            <TabsContent value="supabase" className="space-y-3">
+              <div className="text-xs text-slate-600">
+                Connect your <strong>Supabase</strong> project to store datasets and analyses with
+                persistent cloud backup.
               </div>
 
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Supabase Project URL</Label>
+                  <Label className="text-xs font-medium text-slate-700">Supabase Project URL</Label>
                   <Input
                     placeholder="https://your-project.supabase.co"
                     value={supaUrl}
                     onChange={(e) => setSupaUrl(e.target.value)}
-                    className="border-white/10 bg-slate-900 text-xs font-mono text-white"
+                    className="h-8 border-slate-300 bg-white text-xs font-mono text-slate-900"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Supabase Anon Key</Label>
+                  <Label className="text-xs font-medium text-slate-700">Supabase Anon Key</Label>
                   <Input
                     type="password"
                     placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                     value={supaKey}
                     onChange={(e) => setSupaKey(e.target.value)}
-                    className="border-white/10 bg-slate-900 text-xs font-mono text-white"
+                    className="h-8 border-slate-300 bg-white text-xs font-mono text-slate-900"
                   />
                 </div>
               </div>
 
               {testResult && (
                 <div
-                  className={`rounded-md p-2.5 text-xs ${
+                  className={`rounded border p-2.5 text-xs ${
                     testResult.ok
-                      ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
-                      : "bg-red-500/10 text-red-300 border border-red-500/30"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-red-200 bg-red-50 text-red-800"
                   }`}
                 >
                   {testResult.message}
@@ -370,7 +363,7 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
                   size="sm"
                   disabled={testingConnection}
                   onClick={handleTestSupabase}
-                  className="flex-1 border-white/10 text-xs hover:bg-slate-900"
+                  className="flex-1 h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
                 >
                   {testingConnection ? "Testing..." : "Test Connection"}
                 </Button>
@@ -378,16 +371,15 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
                   type="button"
                   size="sm"
                   onClick={handleSaveSupabase}
-                  className="bg-indigo-600 text-xs text-white hover:bg-indigo-500"
+                  className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
                 >
                   Save Settings
                 </Button>
               </div>
 
-              <div className="rounded-lg border border-white/5 bg-slate-900/40 p-2.5 text-[11px] text-slate-400">
-                💡 By default, Lumetra automatically safeguards all dataset files in its safe
-                browser vault, bypassing standard storage constraints. Connecting your Supabase
-                account enables multi-device sync and unlimited cloud backups.
+              <div className="rounded border border-slate-200 bg-slate-50/70 p-2.5 text-[11px] text-slate-500 leading-relaxed">
+                By default, Lumetra stores projects locally on this browser. Connecting your Supabase
+                account provides remote backup and cross-device synchronization.
               </div>
             </TabsContent>
           </Tabs>

@@ -23,19 +23,39 @@ import {
   getSupabaseClient,
 } from "@/lib/persistence/supabase";
 import { toast } from "sonner";
-import { Database, ShieldCheck, Sparkles, Cloud, CheckCircle2, User } from "lucide-react";
+import {
+  Database,
+  ShieldCheck,
+  Check,
+  HardDrive,
+  Cpu,
+  TrendingUp,
+  Boxes,
+  Target,
+  HeartPulse,
+  RefreshCw,
+} from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
   head: () =>
     pageMeta(
       "Settings",
-      "Account, Supabase cloud database, and personalization controls for Lumetra.",
+      "Account, Supabase cloud persistence, and professional analytical settings for Lumetra.",
     ),
   component: Settings,
 });
 
+const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
+  engineer: Cpu,
+  economist: TrendingUp,
+  scientist: Boxes,
+  product: Target,
+  clinical: HeartPulse,
+};
+
 function Settings() {
-  const { resetAll, projects, persona, setPersona, user, logout, syncWithCloud } = useStore();
+  const { resetAll, projects, persona, setPersona, user, syncWithCloud, cloudSyncStatus } =
+    useStore();
   const [confirm, setConfirm] = useState(false);
 
   // Supabase connection state
@@ -54,7 +74,7 @@ function Settings() {
     setTestResult(res);
     if (res.ok) {
       saveSupabaseConfig({ url: supaUrl, anonKey: supaKey });
-      toast.success("Connected to Supabase!");
+      toast.success("Successfully connected to Supabase Cloud.");
     } else {
       toast.error(res.message);
     }
@@ -62,53 +82,61 @@ function Settings() {
 
   const handleSaveConfig = () => {
     saveSupabaseConfig({ url: supaUrl, anonKey: supaKey });
-    toast.success("Supabase database settings updated.");
+    toast.success("Supabase database configuration saved.");
   };
 
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        title="Settings & Cloud Infrastructure"
-        description="Personalization, Supabase database storage, and security controls."
+        title="Settings"
+        description="Configure your active professional persona, storage preferences, and cloud connectivity."
       />
-      <div className="max-w-3xl space-y-6">
-        {/* Personalization Section */}
-        <section className="glass-card p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-indigo-400" />
-            <h2 className="font-semibold text-white">Personalized Professional Background</h2>
-          </div>
-          <p className="text-xs text-slate-400">
-            Lumetra personalizes statistical calculations, interpretation notes, and recommendations
-            based on your primary field.
-          </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+      <div className="max-w-4xl space-y-6">
+        {/* Section 1: Professional Persona */}
+        <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Professional Context</h2>
+            <p className="mt-0.5 text-xs text-slate-600">
+              Adapts available statistical toolkits, default parameter presets, and interpretation
+              guidance to your domain.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
             {(Object.keys(PERSONAS) as PersonaId[]).map((pId) => {
               const p = PERSONAS[pId];
+              const Icon = ROLE_ICONS[pId];
               const isSelected = pId === persona;
               return (
                 <button
                   key={pId}
                   onClick={() => {
                     setPersona(pId);
-                    toast.success(`Personalization updated to ${p.title}`);
+                    toast.success(`Active context updated to ${p.title}.`);
                   }}
-                  className={`rounded-xl border p-3.5 text-left transition-all ${
+                  className={`rounded border p-3.5 text-left transition-colors flex flex-col justify-between ${
                     isSelected
-                      ? "border-indigo-500/50 bg-indigo-950/30 text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]"
-                      : "border-white/10 bg-slate-900/40 text-slate-300 hover:border-white/20"
+                      ? "border-blue-600 bg-blue-50/50 text-slate-900 ring-1 ring-blue-600"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm">{p.shortRole}</span>
-                    {isSelected && (
-                      <span className="size-2 rounded-full bg-indigo-400 animate-pulse" />
-                    )}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Icon
+                          className={`size-4 ${isSelected ? "text-blue-600" : "text-slate-400"}`}
+                        />
+                        <span className="font-semibold text-xs text-slate-900">{p.shortRole}</span>
+                      </div>
+                      {isSelected && <Check className="size-3.5 text-blue-600 shrink-0" />}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500 leading-snug line-clamp-2">
+                      {p.tagline}
+                    </p>
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1">{p.badge}</div>
-                  <div className="text-[11px] text-indigo-300 font-mono mt-1.5 truncate">
-                    {p.keyMetrics.slice(0, 2).join(" · ")}
+                  <div className="mt-3 border-t border-slate-100 pt-2 font-mono text-[10px] text-slate-400 truncate">
+                    {p.keyMetrics.slice(0, 2).join(" • ")}
                   </div>
                 </button>
               );
@@ -116,74 +144,76 @@ function Settings() {
           </div>
         </section>
 
-        {/* Supabase Database Storage */}
-        <section className="glass-card p-6 space-y-4">
+        {/* Section 2: Storage & Supabase Cloud Integration */}
+        <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Database className="size-4 text-emerald-400" />
-              <h2 className="font-semibold text-white">Supabase Cloud Database & Storage</h2>
+            <div>
+              <div className="flex items-center gap-2">
+                <Database className="size-4 text-blue-600" />
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Cloud Persistence & Supabase Integration
+                </h2>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-600">
+                Configure your Supabase project credentials to synchronize projects, datasets, and
+                cached results.
+              </p>
             </div>
-            <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 text-[10px] font-mono text-emerald-300">
-              Unlimited Storage Mode
+            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-mono text-slate-600">
+              {cloudSyncStatus === "synced" ? "Synced" : "Local Vault"}
             </span>
           </div>
 
-          <p className="text-xs text-slate-400 leading-relaxed">
-            By keeping your datasets and analysis projects in <strong>Supabase</strong>, you bypass
-            browser storage quotas (which restrict files to 2 MB) and can safely access all records
-            from any browser or workstation.
-          </p>
-
-          <div className="grid gap-3 pt-1">
+          <div className="grid gap-3 sm:grid-cols-2 pt-1">
             <div className="space-y-1">
-              <Label className="text-xs text-slate-300">Supabase Project URL</Label>
+              <Label className="text-xs font-medium text-slate-700">Supabase Project URL</Label>
               <Input
                 placeholder="https://your-project.supabase.co"
                 value={supaUrl}
                 onChange={(e) => setSupaUrl(e.target.value)}
-                className="border-white/10 bg-slate-900 text-xs font-mono text-white"
+                className="h-8 border-slate-300 bg-white text-xs font-mono text-slate-900"
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-slate-300">Supabase Anon Public API Key</Label>
+              <Label className="text-xs font-medium text-slate-700">Supabase Anon Public API Key</Label>
               <Input
                 type="password"
                 placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 value={supaKey}
                 onChange={(e) => setSupaKey(e.target.value)}
-                className="border-white/10 bg-slate-900 text-xs font-mono text-white"
+                className="h-8 border-slate-300 bg-white text-xs font-mono text-slate-900"
               />
             </div>
           </div>
 
           {testResult && (
             <div
-              className={`rounded-lg p-3 text-xs ${
+              className={`rounded border p-3 text-xs ${
                 testResult.ok
-                  ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
-                  : "bg-red-500/10 text-red-300 border border-red-500/30"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-red-200 bg-red-50 text-red-800"
               }`}
             >
               {testResult.message}
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={testing}
               onClick={handleTestConnection}
-              className="border-white/10 text-xs text-white hover:bg-slate-900"
+              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
             >
-              {testing ? "Testing..." : "Test Supabase Connection"}
+              {testing ? "Testing..." : "Test Connection"}
             </Button>
             <Button
               type="button"
               size="sm"
               onClick={handleSaveConfig}
-              className="bg-indigo-600 text-xs text-white hover:bg-indigo-500"
+              className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
             >
               Save Configuration
             </Button>
@@ -194,93 +224,88 @@ function Settings() {
               onClick={async () => {
                 const res = await syncWithCloud();
                 if (res.success) {
-                  toast.success("Synchronized all projects with Cloud Database!");
+                  toast.success("Synchronized project records with Supabase.");
                 } else {
                   toast.error(res.error || "Sync error");
                 }
               }}
-              className="border-white/10 text-xs text-slate-300 hover:bg-slate-900"
+              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
             >
-              Sync Records Now
+              <RefreshCw className="mr-1.5 size-3.5 text-slate-400" />
+              Sync Projects Now
             </Button>
           </div>
         </section>
 
-        {/* Interface & Appearance */}
-        <section className="glass-card p-6 space-y-2">
-          <h2 className="font-semibold text-white">ThreeUI Aesthetic Interface</h2>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            High-contrast ThreeUI dark palette with interactive 3D particle constellation canvas,
-            glassmorphism blur filters, and electric indigo luminous accents. Built for professional
-            analytical ergonomics.
-          </p>
-        </section>
-
-        {/* Privacy & Determinism Guarantee */}
-        <section className="glass-card p-6 space-y-2">
+        {/* Section 3: Privacy & Computation Architecture */}
+        <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-emerald-400" />
-            <h2 className="font-semibold text-white">Privacy & Determinism Guarantee</h2>
+            <ShieldCheck className="size-4 text-emerald-600" />
+            <h2 className="text-sm font-semibold text-slate-900">
+              Computational Model & Privacy Guarantees
+            </h2>
           </div>
-          <ul className="mt-2 list-disc space-y-1.5 pl-5 text-xs text-slate-400">
-            <li>
-              CSV parsing, statistical computations and regressions execute client-side in your
-              browser.
-            </li>
-            <li>
-              Numbers come exclusively from verifiable deterministic code, never from generative
-              halluncinations.
-            </li>
-            <li>
-              Missing values remain strictly <code className="text-indigo-300 font-mono">null</code>{" "}
-              and are excluded from calculations, never coerced to zero.
-            </li>
-            <li>Your Supabase database keys are stored privately on this machine.</li>
-          </ul>
+          <div className="text-xs text-slate-600 leading-relaxed space-y-2">
+            <p>
+              • <strong>Deterministic Client-Side Execution:</strong> All CSV parsing, statistical
+              metrics, and regressions execute locally in your web browser. Mathematical outputs are
+              computed by verifiable algorithms, never hallucinated by an AI language model.
+            </p>
+            <p>
+              • <strong>Missing Value Correctness:</strong> Blank cells and missing records are
+              retained strictly as <code className="font-mono text-slate-800">null</code> and are
+              excluded from calculations. They are never coerced to zero.
+            </p>
+            <p>
+              • <strong>Storage Boundaries:</strong> Local analysis remains on this device by
+              default. When you configure and connect Supabase Cloud, project metadata and dataset
+              records are transmitted securely to your designated database endpoint.
+            </p>
+          </div>
         </section>
 
-        {/* Local Data Management */}
-        <section className="glass-card p-6 space-y-3">
-          <h2 className="font-semibold text-white">Data Management</h2>
-          <p className="text-xs text-slate-400">
-            {projects.length} project(s) currently recorded on this device.
+        {/* Section 4: Local Cache Management */}
+        <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
+          <h2 className="text-sm font-semibold text-slate-900">Local Data Storage</h2>
+          <p className="text-xs text-slate-600">
+            {projects.length} project record(s) currently stored in this browser session.
           </p>
           <Button
             variant="outline"
             size="sm"
-            className="border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
             onClick={() => setConfirm(true)}
           >
-            Clear all local cached data
+            Clear Browser Cache & Local Data
           </Button>
         </section>
       </div>
 
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
-        <AlertDialogContent className="border border-white/10 bg-slate-950 text-white">
+        <AlertDialogContent className="bg-white text-slate-900 border-slate-200">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete all cached data?</AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-400 text-xs">
-              All projects and locally cached datasets will be removed from this browser. Cloud
-              records stored in Supabase remain safe.
+            <AlertDialogTitle>Clear local cached data?</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600">
+              All projects and locally cached datasets will be removed from this browser. Records
+              synced to Supabase Cloud remain intact.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-white/10 bg-transparent text-white hover:bg-white/5">
+            <AlertDialogCancel className="border-slate-300 text-xs text-slate-700 hover:bg-slate-50">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-600 text-white hover:bg-red-500"
+              className="bg-red-600 text-xs text-white hover:bg-red-700"
               onClick={() => {
                 resetAll();
-                toast.success("Local cache cleared.");
+                toast.success("Local browser cache cleared.");
               }}
             >
-              Delete Local Cache
+              Clear Cache
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

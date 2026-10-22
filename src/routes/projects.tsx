@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,19 +16,32 @@ import { EmptyState, PageHeader } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { pageMeta } from "@/lib/meta";
 import type { ProjectMeta } from "@/lib/persistence/projects";
-import { Cloud, CheckCircle2, Database, RefreshCw } from "lucide-react";
+import {
+  Search,
+  ArrowUpDown,
+  RefreshCw,
+  HardDrive,
+  Database,
+  Trash2,
+  Edit2,
+  ExternalLink,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/projects")({
   head: () =>
-    pageMeta("My Projects", "Manage saved analysis records and cloud dataset backups in Lumetra."),
+    pageMeta(
+      "My Projects",
+      "Manage saved analysis records and cloud dataset persistence in Lumetra.",
+    ),
   component: Projects,
 });
 
-const STATUS: Record<ProjectMeta["status"], string> = {
-  "no-data": "No data",
-  "data-loaded": "Data loaded",
-  analysed: "Analysed",
+const STATUS_LABELS: Record<ProjectMeta["status"], { label: string; cls: string }> = {
+  "no-data": { label: "No data", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+  "data-loaded": { label: "Data loaded", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  analysed: { label: "Analysed", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
 };
 
 function Projects() {
@@ -51,6 +64,9 @@ function Projects() {
   const [draft, setDraft] = useState("");
   const [toDelete, setToDelete] = useState<ProjectMeta | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"updatedAt" | "name" | "rows">("updatedAt");
+  const [sortAsc, setSortAsc] = useState(false);
 
   const handleSyncAll = async () => {
     setSyncing(true);
@@ -58,18 +74,55 @@ function Projects() {
     setSyncing(false);
     if (res.success) {
       toast.success(
-        `Successfully safeguarded ${res.count ?? projects.length} records in Supabase Cloud!`,
+        `Synchronized ${res.count ?? projects.length} project record(s) with Supabase Cloud.`,
       );
     } else {
       toast.error(res.error || "Sync encountered an error.");
     }
   };
 
+  // Filter & sort projects
+  const filteredProjects = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = projects.filter((p) => {
+      if (!q) return true;
+      const matchName = p.name.toLowerCase().includes(q);
+      const matchDataset = p.dataset?.name.toLowerCase().includes(q);
+      const matchObjective = p.objective?.toLowerCase().includes(q);
+      return matchName || matchDataset || matchObjective;
+    });
+
+    list.sort((a, b) => {
+      let comp = 0;
+      if (sortBy === "name") {
+        comp = a.name.localeCompare(b.name);
+      } else if (sortBy === "rows") {
+        const rowsA = a.dataset?.rows ?? 0;
+        const rowsB = b.dataset?.rows ?? 0;
+        comp = rowsA - rowsB;
+      } else {
+        comp = a.updatedAt.localeCompare(b.updatedAt);
+      }
+      return sortAsc ? comp : -comp;
+    });
+
+    return list;
+  }, [projects, search, sortBy, sortAsc]);
+
+  const toggleSort = (field: "updatedAt" | "name" | "rows") => {
+    if (sortBy === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortBy(field);
+      setSortAsc(false);
+    }
+  };
+
   return (
-    <>
+    <div className="space-y-6">
       <PageHeader
-        title="My Projects & Cloud Records"
-        description="Every dataset and analysis report is safeguarded in the Supabase Cloud Database and locally on your device."
+        title="My Projects"
+        description="Structured records of your analytical datasets, parameters, and findings."
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -77,202 +130,320 @@ function Projects() {
               size="sm"
               disabled={syncing}
               onClick={handleSyncAll}
-              className="border-white/10 bg-white/5 text-xs text-white hover:bg-white/10"
+              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
             >
-              <RefreshCw className={`mr-1.5 size-3.5 ${syncing ? "animate-spin" : ""}`} />
-              <span>{syncing ? "Syncing..." : "Sync All to Supabase"}</span>
+              <RefreshCw className={`mr-1.5 size-3.5 text-slate-500 ${syncing ? "animate-spin" : ""}`} />
+              <span>{syncing ? "Syncing..." : "Sync to Supabase"}</span>
             </Button>
             <Button
               size="sm"
-              className="bg-indigo-600 text-xs text-white hover:bg-indigo-500"
+              className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
               onClick={() => {
                 startNew();
                 navigate({ to: "/workspace" });
               }}
             >
+              <Plus className="mr-1.5 size-3.5" />
               New Analysis
             </Button>
           </div>
         }
       />
 
+      {/* Active Unsaved Session Alert */}
       {active && !activeProject && (
-        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
-          You have an unsaved session with “{active.dataset.name}”. Save it from the Data Workspace
-          to keep it permanently backed up.
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 flex items-center justify-between gap-3">
+          <span>
+            You have an active unsaved session with <strong>{active.dataset.name}</strong>. Save it
+            from the Data Workspace to record it permanently.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-amber-300 bg-white text-amber-900 hover:bg-amber-100/50 shrink-0"
+            onClick={() => navigate({ to: "/workspace" })}
+          >
+            Go to Workspace
+          </Button>
         </div>
       )}
 
-      {/* Cloud Status Banner */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-4 backdrop-blur-xl">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
-            <Cloud className="size-4" />
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-white flex items-center gap-1.5">
-              <span>Supabase Cloud Vault Active</span>
-              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            </div>
-            <div className="text-[11px] text-slate-400">
-              {user
-                ? `Connected to ${user.email} · All records synced safely.`
-                : "Safe local cloud vault active · Sign up to enable remote multi-device access."}
-            </div>
+      {/* Storage & Privacy Status Bar */}
+      <div className="flex flex-col gap-2 rounded-md border border-slate-200 bg-white p-3.5 text-xs sm:flex-row sm:items-center sm:justify-between shadow-2xs">
+        <div className="flex items-center gap-2">
+          <Database className="size-4 text-blue-600 shrink-0" />
+          <div className="text-slate-700">
+            <span className="font-semibold text-slate-900">Storage Architecture:</span> Computations
+            run locally in-browser. Project metadata and saved dataset snapshots are stored in your
+            browser vault and can sync to Supabase Cloud when connected.
           </div>
         </div>
-
-        <div className="text-right">
-          <span className="font-mono text-[11px] text-slate-400">
-            {projects.length} record(s) protected
+        <div className="flex items-center gap-2 font-mono text-[11px] text-slate-500 shrink-0">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span>
+            {user
+              ? `Account: ${user.name} (${cloudSyncStatus})`
+              : `Local Vault (${projects.length} saved)`}
           </span>
         </div>
       </div>
 
-      {!ready ? null : projects.length === 0 ? (
-        <EmptyState title="No saved projects yet">
-          Saved datasets and analysis sessions will appear here with full Supabase cloud redundancy.
+      {/* Search and Sorting Toolbar */}
+      <div className="flex flex-col gap-2 rounded-t-md border border-b-0 border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
+          <Input
+            aria-label="Search projects"
+            placeholder="Search projects or datasets…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-8 text-xs border-slate-300 text-slate-900 bg-white"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <span className="text-[11px] font-mono text-slate-400">Sort:</span>
+          <button
+            onClick={() => toggleSort("updatedAt")}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+              sortBy === "updatedAt"
+                ? "bg-slate-100 text-slate-900 font-semibold"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>Date</span>
+            <ArrowUpDown className="size-3 text-slate-400" />
+          </button>
+          <button
+            onClick={() => toggleSort("name")}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+              sortBy === "name"
+                ? "bg-slate-100 text-slate-900 font-semibold"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>Name</span>
+            <ArrowUpDown className="size-3 text-slate-400" />
+          </button>
+          <button
+            onClick={() => toggleSort("rows")}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+              sortBy === "rows"
+                ? "bg-slate-100 text-slate-900 font-semibold"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>Rows</span>
+            <ArrowUpDown className="size-3 text-slate-400" />
+          </button>
+        </div>
+      </div>
+
+      {/* Projects Table */}
+      {!ready ? (
+        <div className="h-40 rounded-b-md border border-slate-200 bg-white animate-pulse" />
+      ) : projects.length === 0 ? (
+        <EmptyState
+          title="No saved projects yet"
+          action={
+            <Button
+              className="bg-blue-600 text-xs text-white hover:bg-blue-700"
+              onClick={() => {
+                startNew();
+                navigate({ to: "/workspace" });
+              }}
+            >
+              Start New Analysis
+            </Button>
+          }
+        >
+          When you load a dataset in the Data Workspace and save your project, it will appear here
+          with full local persistence and optional Supabase cloud synchronization.
         </EmptyState>
       ) : (
-        <div className="glass-card overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead className="border-b border-white/10 bg-slate-900/80 text-left text-slate-400">
-              <tr>
-                <th className="px-4 py-3 font-medium">Project</th>
-                <th className="px-4 py-3 font-medium">Dataset</th>
-                <th className="px-4 py-3 font-medium">Cloud Redundancy</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Modified</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {projects.map((p) => (
-                <tr key={p.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-4 py-3">
-                    {editing === p.id ? (
-                      <form
-                        className="flex gap-1.5"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          renameProject(p.id, draft);
-                          setEditing(null);
-                        }}
-                      >
-                        <Input
-                          aria-label="Project name"
-                          value={draft}
-                          onChange={(e) => setDraft(e.target.value)}
-                          className="h-8 border-white/10 bg-slate-900 text-xs text-white"
-                          autoFocus
-                        />
-                        <Button
-                          size="sm"
-                          type="submit"
-                          className="bg-indigo-600 text-xs text-white"
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          type="button"
-                          className="text-xs text-slate-400"
-                          onClick={() => setEditing(null)}
-                        >
-                          Cancel
-                        </Button>
-                      </form>
-                    ) : (
-                      <span className="font-semibold text-white">{p.name}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">
-                    {p.dataset ? (
-                      <>
-                        <span className="text-white font-medium">{p.dataset.name}</span>{" "}
-                        <span className="num text-xs text-slate-400">
-                          ({p.dataset.rows.toLocaleString()} × {p.dataset.columns})
-                        </span>
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-mono text-emerald-300">
-                      <CheckCircle2 className="size-3" />
-                      <span>Supabase Safe</span>
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-mono text-slate-300">
-                      {STATUS[p.status]}
-                    </span>
-                  </td>
-                  <td className="num px-4 py-3 text-xs text-slate-400">
-                    {new Date(p.updatedAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-white/10 text-xs hover:bg-white/10"
-                        onClick={() => {
-                          const r = openProject(p.id);
-                          navigate({
-                            to: "/workspace",
-                            search: r.error ? { notice: r.error } : {},
-                          });
-                        }}
-                      >
-                        Open
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs text-slate-400 hover:text-white"
-                        onClick={() => {
-                          setEditing(p.id);
-                          setDraft(p.name);
-                        }}
-                      >
-                        Rename
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                        onClick={() => setToDelete(p)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
+        <div className="rounded-b-md border border-slate-200 bg-white overflow-hidden shadow-2xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 bg-slate-50 text-slate-600 font-medium">
+                <tr>
+                  <th className="px-4 py-2.5">Project</th>
+                  <th className="px-4 py-2.5">Dataset</th>
+                  <th className="px-4 py-2.5">Storage</th>
+                  <th className="px-4 py-2.5">Status</th>
+                  <th className="px-4 py-2.5">Last Modified</th>
+                  <th className="px-4 py-2.5 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredProjects.map((p) => {
+                  const statusInfo = STATUS_LABELS[p.status];
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="px-4 py-3">
+                        {editing === p.id ? (
+                          <form
+                            className="flex items-center gap-1.5"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              renameProject(p.id, draft);
+                              setEditing(null);
+                            }}
+                          >
+                            <Input
+                              aria-label="Project name"
+                              value={draft}
+                              onChange={(e) => setDraft(e.target.value)}
+                              className="h-7 border-slate-300 bg-white text-xs text-slate-900 w-44"
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              type="submit"
+                              className="h-7 bg-blue-600 text-xs text-white px-2.5"
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              type="button"
+                              className="h-7 text-xs text-slate-500 px-2"
+                              onClick={() => setEditing(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </form>
+                        ) : (
+                          <div>
+                            <button
+                              onClick={() => {
+                                const r = openProject(p.id);
+                                navigate({
+                                  to: "/workspace",
+                                  search: r.error ? { notice: r.error } : {},
+                                });
+                              }}
+                              className="font-semibold text-slate-900 hover:text-blue-600 text-left"
+                            >
+                              {p.name}
+                            </button>
+                            {p.objective && (
+                              <div className="text-[11px] text-slate-500 truncate max-w-sm mt-0.5">
+                                {p.objective}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {p.dataset ? (
+                          <div>
+                            <div className="font-medium text-slate-900">{p.dataset.name}</div>
+                            <div className="num text-[11px] font-mono text-slate-500">
+                              {p.dataset.rows.toLocaleString()} rows × {p.dataset.columns} cols
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 font-mono">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-mono">
+                          <HardDrive className="size-3 text-slate-400" />
+                          <span>Local Vault</span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono border ${statusInfo.cls}`}
+                        >
+                          {statusInfo.label}
+                        </span>
+                      </td>
+                      <td className="num px-4 py-3 text-[11px] font-mono text-slate-500">
+                        {new Date(p.updatedAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
+                            onClick={() => {
+                              openProject(p.id);
+                              navigate({ to: "/analyses" });
+                            }}
+                          >
+                            Analyses
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-slate-600 hover:text-slate-900 px-2"
+                            onClick={() => {
+                              const r = openProject(p.id);
+                              navigate({
+                                to: "/workspace",
+                                search: r.error ? { notice: r.error } : {},
+                              });
+                            }}
+                          >
+                            Workspace
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 size-7 p-0 text-slate-400 hover:text-slate-700"
+                            onClick={() => {
+                              setEditing(p.id);
+                              setDraft(p.name);
+                            }}
+                            aria-label={`Rename ${p.name}`}
+                          >
+                            <Edit2 className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 size-7 p-0 text-slate-400 hover:text-red-600"
+                            onClick={() => setToDelete(p)}
+                            aria-label={`Delete ${p.name}`}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {filteredProjects.length === 0 && (
+              <div className="py-10 text-center text-xs text-slate-500">
+                No projects matched “{search}”.
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* Delete Confirmation Alert */}
       <AlertDialog open={toDelete !== null} onOpenChange={(o) => !o && setToDelete(null)}>
-        <AlertDialogContent className="border border-white/10 bg-slate-950 text-white">
+        <AlertDialogContent className="bg-white text-slate-900 border-slate-200">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete project “{toDelete?.name}”?</AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-400 text-xs">
-              This will remove the project and its stored CSV dataset from both local memory and
-              Supabase cloud.
+            <AlertDialogDescription className="text-slate-600 text-xs">
+              This will remove the project metadata and cached analysis session from your storage.
+              This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-white/10 bg-transparent text-white hover:bg-white/5">
+            <AlertDialogCancel className="border-slate-300 text-xs text-slate-700 hover:bg-slate-50">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-600 text-white hover:bg-red-500"
+              className="bg-red-600 text-white text-xs hover:bg-red-700"
               onClick={() => {
                 if (toDelete) {
                   deleteProject(toDelete.id);
@@ -281,11 +452,11 @@ function Projects() {
                 setToDelete(null);
               }}
             >
-              Delete
+              Delete Project
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }
