@@ -11,5 +11,5 @@
 
 ## Architecture rules
 - Parsing, statistics and persistence live in pure modules under `src/lib/{data,stats,persistence}`; UI never computes statistics inline — keeps results testable and traceable.
-- All analysis runs client-side with no backend or AI dependency — privacy and offline-friendliness are product principles.
+- All computation runs client-side. The optional Ask assistant (`/api/ask`) only selects tools and explains results; its tools execute in the browser via `src/lib/ask/tools.ts` — numbers must come from deterministic code, never the model.
 - Missing values are `null` and are excluded, never coerced to zero — correctness requirement.

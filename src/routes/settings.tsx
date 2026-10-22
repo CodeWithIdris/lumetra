@@ -26,8 +26,9 @@ function Settings() {
           <h2 className="font-medium">Privacy</h2>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] text-muted-foreground">
             <li>CSV files are read and analysed entirely in your browser.</li>
-            <li>No account, no server database, no AI service and no analytics on your data.</li>
-            <li>Project details, and datasets up to 2 MB, are stored in this browser's local storage. Anyone with access to this browser profile can read them.</li>
+            <li>No account, no server database and no analytics on your data.</li>
+            <li>Only when you use Ask: column names and types, up to 20 sample rows, your questions and the computed results are sent to Lovable AI to write the answer. All calculations still run on this device.</li>
+            <li>Project details, Ask conversations, and datasets up to 2 MB, are stored in this browser's local storage. Anyone with access to this browser profile can read them.</li>
             <li>Clearing your browser data also removes saved projects.</li>
             <li>The only outside requests are for the typeface (Google Fonts). They contain no data from your files.</li>
           </ul>

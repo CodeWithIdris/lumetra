@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { convertToModelMessages, jsonSchema, streamText, tool, type UIMessage } from "ai";
+import { convertToModelMessages, jsonSchema, streamText, tool, type ToolSet, type UIMessage } from "ai";
 import { TOOL_SPECS } from "../tools";
 import {
   createLovableAiGatewayRunIdFetch,
@@ -51,7 +51,7 @@ export async function handleAsk(request: Request): Promise<Response> {
       // No execute: tools run in the browser against the local dataset.
       tool({ description: spec.description, inputSchema: jsonSchema(spec.schema as Parameters<typeof jsonSchema>[0]) }),
     ]),
-  );
+  ) as unknown as ToolSet;
 
   const runIdFetch = createLovableAiGatewayRunIdFetch(getLovableAiGatewayRunId(request));
   const provider = createOpenAI({

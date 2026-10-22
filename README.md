@@ -9,6 +9,8 @@ An open-source data intelligence workspace: turn raw data into reliable, underst
 - Report preview (print to PDF via browser). Local projects in localStorage (datasets ≤2 MB stored).
 - Synthetic, seeded sample dataset.
 
+- **Ask**: an AI assistant (Lovable AI) answers questions by calling local analysis tools — descriptives, percentiles, group aggregates, Pearson/Spearman correlation, OLS regression, Welch t-test, one-way ANOVA, chi-square crosstabs, IQR outliers. Tools run in the browser; only schema, ≤20 sample rows, questions and results are sent.
+
 Planned (labelled in-app, not implemented): Excel import, cross-tabs, correlation, group comparisons, PDF/Word export, dark theme.
 
 ## Setup
