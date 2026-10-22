@@ -120,7 +120,7 @@ function ChatWindow({ dataset, projectId }: { dataset: Dataset; projectId: strin
                     const t = part as Parameters<typeof ToolHeader>[0] & { input?: unknown; output?: unknown; errorText?: string; state: string };
                     return (
                       <Tool key={i} defaultOpen={false}>
-                        <ToolHeader type={t.type} state={t.state as never} title={`Computed: ${t.type.slice(5).replace(/_/g, " ")}`} />
+                        <ToolHeader type={t.type as `tool-${string}`} state={t.state as never} title={`Computed: ${t.type.slice(5).replace(/_/g, " ")}`} />
                         <ToolContent>
                           <ToolInput input={t.input} />
                           <ToolOutput output={t.output !== undefined ? <pre className="num overflow-x-auto p-3 text-[11.5px]">{JSON.stringify(t.output, null, 2)}</pre> : undefined} errorText={t.errorText} />

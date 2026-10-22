@@ -1,3 +1,4 @@
+import type { MotionStyle } from "motion/react";
 "use client";
 
 import { cn } from "@/lib/utils";
@@ -61,7 +62,7 @@ const ShimmerComponent = ({
           "--spread": `${dynamicSpread}px`,
           backgroundImage:
             "var(--bg), linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground))",
-        } as CSSProperties
+        } as unknown as MotionStyle)
       }
       transition={{
         duration,
