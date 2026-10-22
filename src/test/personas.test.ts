@@ -89,3 +89,4 @@ describe("Clinical Persona - Odds Ratio", () => {
     expect(res.ci95Lower).toBeGreaterThan(1.0);
   });
 });
+
