@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalysesRouteImport } from './routes/analyses'
+import { Route as AskRouteImport } from './routes/ask'
 import { Route as LearnRouteImport } from './routes/learn'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ReportsRouteImport } from './routes/reports'
@@ -26,6 +27,11 @@ const IndexRoute = IndexRouteImport.update({
 const AnalysesRoute = AnalysesRouteImport.update({
   id: '/analyses',
   path: '/analyses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AskRoute = AskRouteImport.update({
+  id: '/ask',
+  path: '/ask',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LearnRoute = LearnRouteImport.update({
@@ -62,6 +68,7 @@ const ApiAskRoute = ApiAskRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analyses': typeof AnalysesRoute
+  '/ask': typeof AskRoute
   '/learn': typeof LearnRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analyses': typeof AnalysesRoute
+  '/ask': typeof AskRoute
   '/learn': typeof LearnRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/analyses': typeof AnalysesRoute
+  '/ask': typeof AskRoute
   '/learn': typeof LearnRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/analyses'
+    | '/ask'
     | '/learn'
     | '/projects'
     | '/reports'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/analyses'
+    | '/ask'
     | '/learn'
     | '/projects'
     | '/reports'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/analyses'
+    | '/ask'
     | '/learn'
     | '/projects'
     | '/reports'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalysesRoute: typeof AnalysesRoute
+  AskRoute: typeof AskRoute
   LearnRoute: typeof LearnRoute
   ProjectsRoute: typeof ProjectsRoute
   ReportsRoute: typeof ReportsRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/analyses'
       fullPath: '/analyses'
       preLoaderRoute: typeof AnalysesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ask': {
+      id: '/ask'
+      path: '/ask'
+      fullPath: '/ask'
+      preLoaderRoute: typeof AskRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/learn': {
@@ -198,6 +218,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalysesRoute: AnalysesRoute,
+  AskRoute: AskRoute,
   LearnRoute: LearnRoute,
   ProjectsRoute: ProjectsRoute,
   ReportsRoute: ReportsRoute,

@@ -140,7 +140,7 @@ function ChatWindow({ dataset, projectId }: { dataset: Dataset; projectId: strin
       <PromptInput className="mt-3" onSubmit={(msg) => submit(msg.text ?? "")}>
         <PromptInputTextarea autoFocus placeholder="Ask about your data, e.g. “Is income related to age?”" />
         <PromptInputFooter className="justify-end">
-          <PromptInputSubmit status={status} onStop={stop} disabled={!busy && false} />
+          <PromptInputSubmit status={status} onStop={stop} />
         </PromptInputFooter>
       </PromptInput>
     </div>
