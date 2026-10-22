@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { pageMeta } from "@/lib/meta";
 import { PERSONAS, type PersonaId } from "@/lib/stats/personas";
+import { Scene } from "@/components/Scene";
 import {
   Sparkles,
   Database,
@@ -75,7 +76,10 @@ function Overview() {
 
   return (
     <div className="space-y-12">
-      {/* ThreeUI Hero Section */}
+      {/* ThreeUI Sylva Living Green Hero Showcase */}
+      <Scene />
+
+      {/* Overview Hero Section */}
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-indigo-950/30 via-slate-900/60 to-slate-950/80 p-6 md:p-10 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="absolute -top-24 left-1/2 -translate-x-1/2 size-96 rounded-full bg-indigo-500/15 blur-3xl pointer-events-none" />
 
