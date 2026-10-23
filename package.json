@@ -19,7 +19,6 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.96",
     "@ai-sdk/react": "^4.0.147",
-    "@designcodeio/threeui": "file:../../tmp/threeui-1.2.0.tgz",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
