@@ -144,7 +144,7 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
                 <div className="flex items-center gap-1.5">
                   <Database className="size-3.5 text-blue-600" />
                   <span>
-                    Storage: <strong>{cloudSyncStatus === "synced" ? "Supabase Cloud" : "Local Browser"}</strong>
+                    Storage: <strong>{cloudSyncStatus.isConfigured ? "Supabase Cloud" : "Local Browser"}</strong>
                   </span>
                 </div>
                 <span className="font-mono text-slate-400">

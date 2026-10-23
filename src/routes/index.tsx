@@ -3,20 +3,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/store";
 import { pageMeta } from "@/lib/meta";
-import { PERSONAS, type PersonaId } from "@/lib/stats/personas";
-import {
-  Trash2,
-  Cpu,
-  TrendingUp,
-  Boxes,
-  Target,
-  HeartPulse,
-  Check,
-  ChevronDown,
-  FolderKanban,
-  FileSpreadsheet,
-  ArrowRight,
-} from "lucide-react";
+import { Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,33 +26,13 @@ export const Route = createFileRoute("/")({
   component: Overview,
 });
 
-const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
-  engineer: Cpu,
-  economist: TrendingUp,
-  scientist: Boxes,
-  product: Target,
-  clinical: HeartPulse,
-};
-
 function Overview() {
-  const {
-    projects,
-    ready,
-    loadPersonaSample,
-    openProject,
-    deleteProject,
-    startNew,
-    loadFile,
-    persona,
-    setPersona,
-  } = useStore();
+  const { projects, ready, loadPersonaSample, openProject, deleteProject, startNew, loadFile, persona } =
+    useStore();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toDelete, setToDelete] = useState<ProjectMeta | null>(null);
-  const [personaOpen, setPersonaOpen] = useState(false);
 
-  const currentPersona = PERSONAS[persona];
-  const PersonaIcon = ROLE_ICONS[persona] || Cpu;
   const recent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 8);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -90,7 +57,6 @@ function Overview() {
         onChange={handleFileSelect}
       />
 
-      {/* Overview Top Header */}
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900">Overview</h1>
@@ -124,69 +90,6 @@ function Overview() {
         </div>
       </div>
 
-      {/* Compact Professional Context Selector */}
-      <div className="flex flex-col gap-2 rounded border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between shadow-2xs">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-medium text-slate-500">Professional Context:</span>
-          <div className="relative">
-            <button
-              onClick={() => setPersonaOpen(!personaOpen)}
-              className="flex items-center gap-1.5 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
-            >
-              <PersonaIcon className="size-3.5 text-blue-600" />
-              <span>{currentPersona.title}</span>
-              <ChevronDown className="size-3 text-slate-400" />
-            </button>
-
-            {personaOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setPersonaOpen(false)} />
-                <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
-                  <div className="px-2 py-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-100">
-                    Select Context
-                  </div>
-                  {(Object.keys(PERSONAS) as PersonaId[]).map((pId) => {
-                    const p = PERSONAS[pId];
-                    const Icon = ROLE_ICONS[pId];
-                    const isCurrent = pId === persona;
-                    return (
-                      <button
-                        key={pId}
-                        onClick={() => {
-                          setPersona(pId);
-                          setPersonaOpen(false);
-                          toast.success(`Active context updated to ${p.title}.`);
-                        }}
-                        className={`flex w-full items-start gap-2.5 rounded px-2.5 py-2 text-left text-xs transition-colors ${
-                          isCurrent
-                            ? "bg-blue-50 text-blue-900 font-semibold"
-                            : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-                        }`}
-                      >
-                        <Icon
-                          className={`mt-0.5 size-3.5 shrink-0 ${isCurrent ? "text-blue-600" : "text-slate-400"}`}
-                        />
-                        <div className="min-w-0">
-                          <div>{p.title}</div>
-                          <div className="text-[11px] font-normal text-slate-500 truncate">
-                            {p.tagline}
-                          </div>
-                        </div>
-                        {isCurrent && <Check className="mt-0.5 size-3.5 text-blue-600 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="text-[11px] text-slate-500">
-          Adapts statistical diagnostics, interpretation guides and benchmark samples.
-        </div>
-      </div>
-
-      {/* Recent Projects Table */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-700 font-mono">
@@ -205,51 +108,17 @@ function Overview() {
         {!ready ? (
           <div className="h-32 rounded border border-slate-200 bg-white animate-pulse" />
         ) : recent.length === 0 ? (
-          /* Getting Started Section - Shown Only When No Projects Exist */
-          <div className="rounded border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">
-                Getting Started with Lumetra
-              </h3>
-              <p className="mt-1 text-xs text-slate-600 max-w-xl leading-relaxed">
-                Lumetra is a deterministic statistical analysis application. Computations execute
-                in-browser using pure mathematical algorithms. Upload a local CSV or load a benchmark
-                dataset to begin.
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 pt-1">
-              {[
-                {
-                  step: "01",
-                  title: "Load Dataset",
-                  desc: "Import any local CSV file or load a role-specific benchmark sample.",
-                },
-                {
-                  step: "02",
-                  title: "Audit Schema & Nulls",
-                  desc: "Inspect inferred types and missing values. Nulls are never coerced to zero.",
-                },
-                {
-                  step: "03",
-                  title: "Run Analytical Engines",
-                  desc: "Execute tailored statistical routines: latency P99s, elasticity, Gini, or descriptives.",
-                },
-                {
-                  step: "04",
-                  title: "Reports & Persistence",
-                  desc: "Generate structured, printable reports and preserve your findings in Supabase Cloud.",
-                },
-              ].map((s) => (
-                <div key={s.step} className="rounded border border-slate-200 bg-slate-50/70 p-3">
-                  <span className="font-mono text-xs font-bold text-blue-600">{s.step}</span>
-                  <div className="mt-1 text-xs font-semibold text-slate-900">{s.title}</div>
-                  <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">{s.desc}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap gap-2.5 pt-2 border-t border-slate-100">
+          <div className="rounded border border-slate-200 bg-white p-5 shadow-2xs">
+            <h3 className="text-sm font-semibold text-slate-900">No projects yet</h3>
+            <p className="mt-1 max-w-xl text-xs text-slate-600 leading-relaxed">
+              Lumetra runs statistical analysis deterministically in your browser. To begin:
+            </p>
+            <ol className="mt-3 max-w-xl list-decimal space-y-1 pl-5 text-xs text-slate-600 leading-relaxed">
+              <li>Open a CSV dataset, or load the built-in sample for your professional context.</li>
+              <li>Audit the schema and missing values — blanks are never treated as zero.</li>
+              <li>Run analyses, then save the project to keep your results.</li>
+            </ol>
+            <div className="mt-4 flex flex-wrap gap-2">
               <Button
                 size="sm"
                 className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
@@ -259,18 +128,15 @@ function Overview() {
                   navigate({ to: "/workspace" });
                 }}
               >
-                Load {currentPersona.shortRole} Sample Dataset
+                Load sample dataset
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium px-3"
-                onClick={() => {
-                  startNew();
-                  navigate({ to: "/workspace" });
-                }}
+                onClick={() => fileInputRef.current?.click()}
               >
-                Upload CSV File
+                Upload CSV file
               </Button>
             </div>
           </div>
@@ -282,7 +148,7 @@ function Overview() {
                   <tr>
                     <th className="px-4 py-2.5">Project Name</th>
                     <th className="px-4 py-2.5">Dataset</th>
-                    <th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5 text-right">Rows</th>
                     <th className="px-4 py-2.5">Last Modified</th>
                     <th className="px-4 py-2.5 text-right">Actions</th>
                   </tr>
@@ -308,25 +174,13 @@ function Overview() {
                       </td>
                       <td className="px-4 py-3 font-mono text-[11px] text-slate-600">
                         {p.dataset ? (
-                          <span>
-                            {p.dataset.name} ({p.dataset.rows.toLocaleString()} rows)
-                          </span>
+                          p.dataset.name
                         ) : (
                           <span className="text-slate-400">No data</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono border ${
-                            p.status === "analysed"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : p.status === "data-loaded"
-                                ? "bg-blue-50 text-blue-700 border-blue-200"
-                                : "bg-slate-100 text-slate-600 border-slate-200"
-                          }`}
-                        >
-                          {p.status}
-                        </span>
+                      <td className="px-4 py-3 text-right font-mono text-[11px] text-slate-600">
+                        {p.dataset ? p.dataset.rows.toLocaleString() : "—"}
                       </td>
                       <td className="px-4 py-3 text-[11px] text-slate-500 font-mono">
                         {new Date(p.updatedAt).toLocaleDateString()}
@@ -375,7 +229,6 @@ function Overview() {
         )}
       </section>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent className="bg-white text-slate-900 border-slate-200">
           <AlertDialogHeader>

@@ -144,14 +144,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={n.to}
                 to={n.to}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-2.5 rounded px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
+                className={`relative flex items-center gap-2.5 rounded px-3 py-1.5 text-[13px] font-medium transition-colors ${
                   activeLink
-                    ? "bg-slate-100 text-blue-700 font-semibold"
+                    ? "bg-slate-100 text-slate-900 font-semibold"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               >
+                {activeLink && (
+                  <span className="absolute left-0.5 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-blue-600" />
+                )}
                 <Icon
-                  className={`size-4 shrink-0 ${activeLink ? "text-blue-600" : "text-slate-400"}`}
+                  className={`size-4 shrink-0 ${activeLink ? "text-slate-600" : "text-slate-400"}`}
                 />
                 <span>{n.label}</span>
               </Link>
@@ -209,7 +212,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span>{user ? `Cloud: ${user.name}` : "Supabase Cloud"}</span>
             </button>
             <span className="text-[10px] font-mono text-slate-400">
-              {cloudSyncStatus === "synced" ? "Synced" : "Local"}
+              {cloudSyncStatus.lastSyncedAt ? "Synced" : "Local"}
             </span>
           </div>
         </div>

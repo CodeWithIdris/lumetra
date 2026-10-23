@@ -14,11 +14,13 @@ export interface NumericSummary {
   sd: number | null;
 }
 
-export function toNumbers(values: (string | null)[]): { nums: number[]; missing: number } {
+export function toNumbers(
+  values: (number | string | null | undefined)[],
+): { nums: number[]; missing: number } {
   const nums: number[] = [];
   let missing = 0;
   for (const v of values) {
-    if (v === null) {
+    if (v == null) {
       missing++;
       continue;
     }
