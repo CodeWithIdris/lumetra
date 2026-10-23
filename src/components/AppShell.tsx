@@ -212,7 +212,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span>{user ? `Cloud: ${user.name}` : "Supabase Cloud"}</span>
             </button>
             <span className="text-[10px] font-mono text-slate-400">
-              {cloudSyncStatus === "synced" ? "Synced" : "Local"}
+              {cloudSyncStatus.lastSyncedAt ? "Synced" : "Local"}
             </span>
           </div>
         </div>

@@ -116,7 +116,7 @@ function Workspace() {
         if (!q) return true;
         if (colIdx >= 0) {
           const val = row[colIdx];
-          return val !== null && val.toLowerCase().includes(q);
+          return val != null && val.toLowerCase().includes(q);
         }
         return row.some((c) => c !== null && c.toLowerCase().includes(q));
       });

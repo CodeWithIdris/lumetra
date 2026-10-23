@@ -16,15 +16,15 @@ export interface SupabaseConfig {
 
 export interface CloudRecord {
   id: string;
-  user_id?: string;
+  user_id?: string | undefined;
   name: string;
   status: string;
-  objective?: string;
-  dataset_name?: string;
-  dataset_rows?: number;
-  dataset_columns?: number;
-  dataset_source?: string;
-  csv_content?: string;
+  objective?: string | undefined;
+  dataset_name?: string | undefined;
+  dataset_rows?: number | undefined;
+  dataset_columns?: number | undefined;
+  dataset_source?: string | undefined;
+  csv_content?: string | undefined;
   created_at: string;
   updated_at: string;
 }
