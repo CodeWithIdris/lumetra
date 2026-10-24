@@ -165,12 +165,12 @@ function Analyses() {
       />
 
       {/* Split-Panel Analytical Layout */}
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-        {/* SECONDARY PANEL: Context, Variables, Controls */}
-        <aside className="space-y-4">
-          {/* Active Context Card */}
-          <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+      <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+        {/* SECONDARY PANEL: Context, Variables, Controls (Single Cohesive Panel) */}
+        <aside className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs space-y-3.5 divide-y divide-slate-100">
+          {/* Active Context Section */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-medium text-slate-500">
               Professional Context
             </div>
             <div className="relative">
@@ -221,8 +221,8 @@ function Analyses() {
           </div>
 
           {/* Analysis Engine Mode Selector */}
-          <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+          <div className="pt-3 space-y-2">
+            <div className="text-[11px] font-medium text-slate-500">
               Analysis Engines
             </div>
             <div className="space-y-1">
@@ -237,7 +237,7 @@ function Analyses() {
                         setActiveEngine(item.id);
                       }
                     }}
-                    className={`w-full rounded px-2.5 py-2 text-left text-xs transition-colors border ${
+                    className={`w-full rounded px-2.5 py-1.5 text-left text-xs transition-colors border ${
                       isSelected
                         ? "bg-blue-50 text-blue-900 font-semibold border-blue-200"
                         : item.ready
@@ -262,9 +262,9 @@ function Analyses() {
 
           {/* Variable Selection (When in Descriptive Mode) */}
           {activeEngine === "descriptive" && (
-            <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+            <div className="pt-3 space-y-2.5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                <span className="text-[11px] font-medium text-slate-500">
                   Variables ({sel.length}/{eligible.length})
                 </span>
                 <div className="flex gap-2 text-[11px]">
@@ -299,7 +299,7 @@ function Analyses() {
               </div>
 
               <Button
-                className="w-full bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium h-8"
+                className="w-full bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium h-7.5"
                 onClick={run}
                 disabled={sel.length === 0}
               >
@@ -309,8 +309,8 @@ function Analyses() {
           )}
 
           {/* Methodology & Assumptions */}
-          <div className="rounded-md border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
-            <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+          <div className="pt-3 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
               <Info className="size-3 text-slate-400" />
               <span>Statistical Methodology</span>
             </div>

@@ -116,10 +116,7 @@
 }
 
 @utility eyebrow {
-  font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--color-muted-foreground);
   font-weight: 500;
 }

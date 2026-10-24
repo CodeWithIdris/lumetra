@@ -168,81 +168,63 @@ function Projects() {
         </div>
       )}
 
-      {/* Storage & Privacy Status Bar */}
-      <div className="flex flex-col gap-2 rounded-md border border-slate-200 bg-white p-3.5 text-xs sm:flex-row sm:items-center sm:justify-between shadow-2xs">
-        <div className="flex items-center gap-2">
-          <Database className="size-4 text-blue-600 shrink-0" />
-          <div className="text-slate-700">
-            <span className="font-semibold text-slate-900">Storage Architecture:</span> Computations
-            run locally in-browser. Project metadata and saved dataset snapshots are stored in your
-            browser vault and can sync to Supabase Cloud when connected.
+      {/* Unified Projects Container */}
+      <div className="rounded border border-slate-200 bg-white overflow-hidden shadow-2xs">
+        {/* Search and Sorting Toolbar */}
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/50 p-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
+            <Input
+              aria-label="Search projects"
+              placeholder="Search projects or datasets…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-7.5 pl-8 text-xs border-slate-300 text-slate-900 bg-white"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="text-[11px] text-slate-400">Sort:</span>
+            <button
+              onClick={() => toggleSort("updatedAt")}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                sortBy === "updatedAt"
+                  ? "bg-slate-200/70 text-slate-900 font-semibold"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <span>Date</span>
+              <ArrowUpDown className="size-3 text-slate-400" />
+            </button>
+            <button
+              onClick={() => toggleSort("name")}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                sortBy === "name"
+                  ? "bg-slate-200/70 text-slate-900 font-semibold"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <span>Name</span>
+              <ArrowUpDown className="size-3 text-slate-400" />
+            </button>
+            <button
+              onClick={() => toggleSort("rows")}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                sortBy === "rows"
+                  ? "bg-slate-200/70 text-slate-900 font-semibold"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <span>Rows</span>
+              <ArrowUpDown className="size-3 text-slate-400" />
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2 font-mono text-[11px] text-slate-500 shrink-0">
-          <span className="size-1.5 rounded-full bg-emerald-500" />
-          <span>
-            {user
-              ? `Account: ${user.name} (${cloudSyncStatus})`
-              : `Local Vault (${projects.length} saved)`}
-          </span>
-        </div>
-      </div>
 
-      {/* Search and Sorting Toolbar */}
-      <div className="flex flex-col gap-2 rounded-t-md border border-b-0 border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 sm:max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
-          <Input
-            aria-label="Search projects"
-            placeholder="Search projects or datasets…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-xs border-slate-300 text-slate-900 bg-white"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 text-xs text-slate-600">
-          <span className="text-[11px] font-mono text-slate-400">Sort:</span>
-          <button
-            onClick={() => toggleSort("updatedAt")}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-              sortBy === "updatedAt"
-                ? "bg-slate-100 text-slate-900 font-semibold"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Date</span>
-            <ArrowUpDown className="size-3 text-slate-400" />
-          </button>
-          <button
-            onClick={() => toggleSort("name")}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-              sortBy === "name"
-                ? "bg-slate-100 text-slate-900 font-semibold"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Name</span>
-            <ArrowUpDown className="size-3 text-slate-400" />
-          </button>
-          <button
-            onClick={() => toggleSort("rows")}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
-              sortBy === "rows"
-                ? "bg-slate-100 text-slate-900 font-semibold"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <span>Rows</span>
-            <ArrowUpDown className="size-3 text-slate-400" />
-          </button>
-        </div>
-      </div>
-
-      {/* Projects Table */}
-      {!ready ? (
-        <div className="h-40 rounded-b-md border border-slate-200 bg-white animate-pulse" />
-      ) : projects.length === 0 ? (
+        {/* Projects Table */}
+        {!ready ? (
+          <div className="h-40 animate-pulse bg-white" />
+        ) : projects.length === 0 ? (
         <EmptyState
           title="No saved projects yet"
           action={
@@ -261,9 +243,8 @@ function Projects() {
           with full local persistence and optional Supabase cloud synchronization.
         </EmptyState>
       ) : (
-        <div className="rounded-b-md border border-slate-200 bg-white overflow-hidden shadow-2xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 text-slate-600 font-medium">
                 <tr>
                   <th className="px-4 py-2.5">Project</th>
@@ -419,14 +400,25 @@ function Projects() {
               </tbody>
             </table>
 
-            {filteredProjects.length === 0 && (
-              <div className="py-10 text-center text-xs text-slate-500">
-                No projects matched “{search}”.
-              </div>
-            )}
-          </div>
+          {filteredProjects.length === 0 && (
+            <div className="py-10 text-center text-xs text-slate-500">
+              No projects matched “{search}”.
+            </div>
+          )}
         </div>
       )}
+
+      {/* Storage Architecture Footnote */}
+      <div className="flex flex-wrap items-center justify-between border-t border-slate-200/80 bg-slate-50/50 px-3.5 py-2 text-[11px] text-slate-500">
+        <div className="flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span>Computations execute in-browser locally.</span>
+        </div>
+        <span>
+          {user ? `Account: ${user.name} (${cloudSyncStatus.lastSyncedAt ? "Synced" : "Local"})` : `Local Storage (${projects.length} saved)`}
+        </span>
+      </div>
+    </div>
 
       {/* Delete Confirmation Alert */}
       <AlertDialog open={toDelete !== null} onOpenChange={(o) => !o && setToDelete(null)}>

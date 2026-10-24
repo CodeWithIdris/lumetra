@@ -254,97 +254,87 @@ function Workspace() {
           </div>
         ) : (
           <>
-            {/* Compact Dataset Summary Strip */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <div className="rounded border border-slate-200 bg-white p-3 shadow-2xs">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-                  Dataset Name
+            {/* Unified Dataset Summary & Persistence Strip */}
+            <div className="rounded border border-slate-200 bg-white p-3 shadow-2xs space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-400">Dataset: </span>
+                    <span className="font-semibold text-slate-900">{ds.name}</span>
+                  </div>
+                  <div className="h-3 w-px bg-slate-200 hidden sm:block" />
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-400">Rows: </span>
+                    <span className="num font-mono font-semibold text-slate-900">
+                      {ds.rows.length.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="h-3 w-px bg-slate-200 hidden sm:block" />
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-400">Columns: </span>
+                    <span className="num font-mono font-semibold text-slate-900">{ds.columns.length}</span>
+                  </div>
+                  <div className="h-3 w-px bg-slate-200 hidden sm:block" />
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-400">Missing: </span>
+                    <span
+                      className={`num font-mono font-semibold ${
+                        totalMissing > 0 ? "text-amber-700" : "text-emerald-700"
+                      }`}
+                    >
+                      {totalMissing.toLocaleString()}{" "}
+                      <span className="text-[11px] font-normal text-slate-400">
+                        ({fmt(100 - completenessPct, 1)}%)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="h-3 w-px bg-slate-200 hidden sm:block" />
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-400">Size: </span>
+                    <span className="num font-mono text-slate-600">{fmt(ds.sizeBytes / 1024, 1)} KB</span>
+                  </div>
                 </div>
-                <div className="mt-1 truncate font-semibold text-slate-900 text-xs" title={ds.name}>
-                  {ds.name}
-                </div>
-              </div>
-              <div className="rounded border border-slate-200 bg-white p-3 shadow-2xs">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-                  Total Rows
-                </div>
-                <div className="mt-1 num font-mono font-semibold text-slate-900 text-xs">
-                  {ds.rows.length.toLocaleString()}
-                </div>
-              </div>
-              <div className="rounded border border-slate-200 bg-white p-3 shadow-2xs">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-                  Columns
-                </div>
-                <div className="mt-1 num font-mono font-semibold text-slate-900 text-xs">
-                  {ds.columns.length}
-                </div>
-              </div>
-              <div className="rounded border border-slate-200 bg-white p-3 shadow-2xs">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-                  Missing Cells
-                </div>
-                <div
-                  className={`mt-1 num font-mono font-semibold text-xs ${
-                    totalMissing > 0 ? "text-amber-700" : "text-emerald-700"
-                  }`}
-                >
-                  {totalMissing.toLocaleString()}{" "}
-                  <span className="text-[11px] font-normal text-slate-400">
-                    ({fmt(100 - completenessPct, 1)}%)
-                  </span>
-                </div>
-              </div>
-              <div className="rounded border border-slate-200 bg-white p-3 shadow-2xs col-span-2 sm:col-span-1">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
-                  Memory Size
-                </div>
-                <div className="mt-1 num font-mono font-semibold text-slate-900 text-xs">
-                  {fmt(ds.sizeBytes / 1024, 1)} KB
-                </div>
-              </div>
-            </div>
 
-            {/* Project Persistence Strip */}
-            <div className="flex flex-col gap-2 rounded border border-slate-200 bg-white px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between text-xs shadow-2xs">
-              {activeProject ? (
+                {/* Project Persistence Control */}
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
-                  <span className="text-slate-700">
-                    Project record: <strong className="text-slate-900">{activeProject.name}</strong>{" "}
-                    · Synced with Supabase
-                  </span>
+                  {activeProject ? (
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                      <CheckCircle2 className="size-3.5 text-emerald-600 shrink-0" />
+                      <span>
+                        Project: <strong className="text-slate-800">{activeProject.name}</strong>
+                      </span>
+                    </div>
+                  ) : (
+                    <form
+                      className="flex items-center gap-1.5"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const p = saveAsProject(projectName);
+                        if (p) toast.success(`Project “${p.name}” saved and synced.`);
+                      }}
+                    >
+                      <Input
+                        aria-label="Project name"
+                        placeholder={`Name (default: ${ds.name})`}
+                        value={projectName}
+                        onChange={(e) => setProjectName(e.target.value)}
+                        className="h-7 text-xs border-slate-300 w-44 bg-white text-slate-900"
+                      />
+                      <Button
+                        size="sm"
+                        type="submit"
+                        className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-2.5 font-medium"
+                      >
+                        Save Project
+                      </Button>
+                    </form>
+                  )}
                 </div>
-              ) : (
-                <form
-                  className="flex w-full flex-col gap-2 sm:flex-row sm:items-center"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const p = saveAsProject(projectName);
-                    if (p) toast.success(`Project “${p.name}” saved and synced.`);
-                  }}
-                >
-                  <span className="text-slate-500 font-medium shrink-0">Unsaved Session:</span>
-                  <Input
-                    aria-label="Project name"
-                    placeholder={`Name (default: ${ds.name})`}
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    className="h-7 text-xs border-slate-300 sm:max-w-xs bg-white text-slate-900"
-                  />
-                  <Button
-                    size="sm"
-                    type="submit"
-                    className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-3 font-medium"
-                  >
-                    Save Project
-                  </Button>
-                </form>
-              )}
+              </div>
             </div>
 
             {/* Workspace Secondary Tabs: Data Preview, Schema, Quality */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-3">
               <TabsList className="border border-slate-200 bg-slate-100 p-0.5">
                 <TabsTrigger
                   value="data"
@@ -568,49 +558,49 @@ function Workspace() {
 
               {/* TAB 3: DATA QUALITY & NULL AUDIT */}
               <TabsContent value="quality" className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="rounded border border-slate-200 bg-white p-4 shadow-2xs">
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs">
+                    <div className="text-[11px] font-medium text-slate-500">
                       Data Completeness
                     </div>
-                    <div className="mt-1 num font-mono text-2xl font-bold text-slate-900">
+                    <div className="mt-1 num font-mono text-xl font-bold text-slate-900">
                       {fmt(completenessPct, 1)}%
                     </div>
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-slate-500 leading-snug">
                       {totalMissing === 0
                         ? "Zero missing cells detected. Clean complete matrix."
                         : `${totalMissing.toLocaleString()} null entries across ${totalCells.toLocaleString()} data cells.`}
                     </p>
                   </div>
 
-                  <div className="rounded border border-slate-200 bg-white p-4 shadow-2xs">
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+                  <div className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs">
+                    <div className="text-[11px] font-medium text-slate-500">
                       Null Coercion Policy
                     </div>
-                    <div className="mt-1 text-xs font-semibold text-emerald-700">
+                    <div className="mt-1 text-sm font-semibold text-emerald-700">
                       Excluded (Never Coerced to Zero)
                     </div>
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-slate-500 leading-snug">
                       Guaranteed correctness: missing income or response is treated as unknown, not zero.
                     </p>
                   </div>
 
-                  <div className="rounded border border-slate-200 bg-white p-4 shadow-2xs">
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+                  <div className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs">
+                    <div className="text-[11px] font-medium text-slate-500">
                       Incomplete Columns
                     </div>
-                    <div className="mt-1 num font-mono text-2xl font-bold text-slate-900">
+                    <div className="mt-1 num font-mono text-xl font-bold text-slate-900">
                       {profiles.filter((p) => p.missing > 0).length} / {profiles.length}
                     </div>
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-slate-500 leading-snug">
                       Columns with one or more missing or unparsable values.
                     </p>
                   </div>
                 </div>
 
                 {/* Quality Findings Table */}
-                <div className="rounded-md border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-700 font-mono">
+                <div className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5">
+                  <h3 className="text-xs font-semibold text-slate-800">
                     Column-by-Column Null Audit
                   </h3>
 

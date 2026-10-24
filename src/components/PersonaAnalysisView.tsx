@@ -44,10 +44,10 @@ export function PersonaAnalysisView({ persona, dataset, profiles }: PersonaAnaly
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+              <span className="text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
                 {personaMeta.badge}
               </span>
-              <span className="text-xs text-slate-400 font-mono">Tailored Analytical Engine</span>
+              <span className="text-xs text-slate-400">Tailored Analytical Engine</span>
             </div>
             <h2 className="mt-1 text-base font-bold text-slate-900">{personaMeta.title} Toolkit</h2>
             <p className="mt-0.5 text-xs text-slate-600 max-w-xl">{personaMeta.tagline}</p>
@@ -184,7 +184,7 @@ function EngineerToolkit({
                 : "border-slate-200 bg-white"
             }`}
           >
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-medium">
+            <div className="text-[11px] font-medium text-slate-500">
               {p.label}
             </div>
             <div className="num mt-1 text-base font-bold font-mono text-slate-900">
@@ -221,14 +221,14 @@ function EngineerToolkit({
 
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">P99 / P50 Ratio</div>
+              <div className="text-[11px] font-medium text-slate-500">P99 / P50 Ratio</div>
               <div className="num mt-1 text-lg font-bold font-mono text-slate-900">
                 {latencyStats.tailRatio ? `${latencyStats.tailRatio.toFixed(2)}×` : "—"}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">Degradation factor under peak</div>
             </div>
             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">Average Jitter</div>
+              <div className="text-[11px] font-medium text-slate-500">Average Jitter</div>
               <div className="num mt-1 text-lg font-bold font-mono text-slate-900">
                 {latencyStats.jitter ? `${latencyStats.jitter.toFixed(1)} ms` : "—"}
               </div>
@@ -263,7 +263,7 @@ function EngineerToolkit({
 
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">Availability</div>
+              <div className="text-[11px] font-medium text-slate-500">Availability</div>
               <div className="num mt-1 text-lg font-bold font-mono text-emerald-700">
                 {sloStats.actualAvailabilityPercent.toFixed(2)}%
               </div>
@@ -272,7 +272,7 @@ function EngineerToolkit({
               </div>
             </div>
             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-mono text-slate-500 uppercase">Budget Consumed</div>
+              <div className="text-[11px] font-medium text-slate-500">Budget Consumed</div>
               <div
                 className={`num mt-1 text-lg font-bold font-mono ${
                   sloStats.budgetConsumedPercent > 100
@@ -404,7 +404,7 @@ function EconomistToolkit({
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Elasticity (Ep)</div>
+            <div className="text-[11px] font-medium text-slate-500">Elasticity (Ep)</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
               {elasticity.pointElasticity !== null ? elasticity.pointElasticity.toFixed(2) : "—"}
             </div>
@@ -413,21 +413,21 @@ function EconomistToolkit({
             </div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Marginal Effect (dQ/dP)</div>
+            <div className="text-[11px] font-medium text-slate-500">Marginal Effect (dQ/dP)</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
               {elasticity.slope !== null ? elasticity.slope.toFixed(3) : "—"}
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">OLS regression slope</div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Goodness of Fit (R²)</div>
+            <div className="text-[11px] font-medium text-slate-500">Goodness of Fit (R²)</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
               {elasticity.rSquared !== null ? (elasticity.rSquared * 100).toFixed(1) + "%" : "—"}
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">Explained variance</div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Sample Pairs (n)</div>
+            <div className="text-[11px] font-medium text-slate-500">Sample Pairs (n)</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">{elasticity.n}</div>
             <div className="text-[10px] text-slate-500 mt-0.5">Pairwise complete observations</div>
           </div>
@@ -465,14 +465,14 @@ function EconomistToolkit({
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Gini Index (0 to 1)</div>
+            <div className="text-[11px] font-medium text-slate-500">Gini Index (0 to 1)</div>
             <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
               {gini.gini !== null ? gini.gini.toFixed(3) : "—"}
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">{gini.rating}</div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Top 10% Share</div>
+            <div className="text-[11px] font-medium text-slate-500">Top 10% Share</div>
             <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
               {gini.top10SharePct !== null ? `${gini.top10SharePct.toFixed(1)}%` : "—"}
             </div>
@@ -481,7 +481,7 @@ function EconomistToolkit({
             </div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Palma Ratio</div>
+            <div className="text-[11px] font-medium text-slate-500">Palma Ratio</div>
             <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
               {gini.palmaRatio !== null ? gini.palmaRatio.toFixed(2) : "—"}
             </div>
@@ -598,7 +598,7 @@ function ScientistToolkit({
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Skewness (g1)</div>
+            <div className="text-[11px] font-medium text-slate-500">Skewness (g1)</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
               {diag.skewness !== null ? diag.skewness.toFixed(2) : "—"}
             </div>
@@ -607,7 +607,7 @@ function ScientistToolkit({
             </div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Excess Kurtosis (g2)</div>
+            <div className="text-[11px] font-medium text-slate-500">Excess Kurtosis (g2)</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
               {diag.kurtosis !== null ? diag.kurtosis.toFixed(2) : "—"}
             </div>
@@ -616,12 +616,12 @@ function ScientistToolkit({
             </div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">IQR Outliers</div>
+            <div className="text-[11px] font-medium text-slate-500">IQR Outliers</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">{diag.iqrOutliersCount}</div>
             <div className="text-[10px] text-slate-500 mt-0.5">Beyond 1.5× IQR fences</div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[10px] font-mono text-slate-500 uppercase">Parametric Ready</div>
+            <div className="text-[11px] font-medium text-slate-500">Parametric Ready</div>
             <div className="num mt-1 text-xl font-bold font-mono text-emerald-700">
               {diag.isNormalCandidate ? "YES" : "NO"}
             </div>
@@ -756,7 +756,7 @@ function ProductToolkit({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 pt-1">
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] font-mono text-slate-500 uppercase">Relative Lift</div>
+          <div className="text-[11px] font-medium text-slate-500">Relative Lift</div>
           <div
             className={`num mt-1 text-xl font-bold font-mono ${
               abResult.relativeLiftPct > 0 ? "text-emerald-700" : "text-red-700"
@@ -770,7 +770,7 @@ function ProductToolkit({
           </div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] font-mono text-slate-500 uppercase">P-Value</div>
+          <div className="text-[11px] font-medium text-slate-500">P-Value</div>
           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
             {abResult.pValue !== null ? abResult.pValue.toFixed(4) : "—"}
           </div>
@@ -779,14 +779,14 @@ function ProductToolkit({
           </div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] font-mono text-slate-500 uppercase">Z-Score</div>
+          <div className="text-[11px] font-medium text-slate-500">Z-Score</div>
           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
             {abResult.zScore !== null ? abResult.zScore.toFixed(2) : "—"}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">Critical cutoff: ±1.96</div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] font-mono text-slate-500 uppercase">Decision</div>
+          <div className="text-[11px] font-medium text-slate-500">Decision</div>
           <div
             className={`num mt-1 text-base font-bold font-mono ${
               abResult.isSignificant ? "text-emerald-700" : "text-amber-700"
@@ -875,7 +875,7 @@ function ClinicalToolkit({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 pt-1">
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] font-mono text-slate-500 uppercase">Odds Ratio (OR)</div>
+          <div className="text-[11px] font-medium text-slate-500">Odds Ratio (OR)</div>
           <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
             {orResult.oddsRatio !== null ? orResult.oddsRatio.toFixed(2) : "—"}
           </div>
@@ -884,14 +884,14 @@ function ClinicalToolkit({
           </div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] font-mono text-slate-500 uppercase">Relative Risk (RR)</div>
+          <div className="text-[11px] font-medium text-slate-500">Relative Risk (RR)</div>
           <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
             {orResult.relativeRisk !== null ? orResult.relativeRisk.toFixed(2) : "—"}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">Risk in exposed vs unexposed</div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] font-mono text-slate-500 uppercase">Chi-Square p-value</div>
+          <div className="text-[11px] font-medium text-slate-500">Chi-Square p-value</div>
           <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
             {orResult.chiSquareP !== null ? orResult.chiSquareP.toFixed(4) : "—"}
           </div>
