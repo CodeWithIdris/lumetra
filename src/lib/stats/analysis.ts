@@ -38,8 +38,8 @@ export function runDescriptive(ds: Dataset, selected?: string[]): DescriptiveRep
   const numeric = profiles
     .filter((p) => p.type === "numeric" && use(p))
     .map((p) => {
-      const { nums, missing } = toNumbers(columnValues(ds, p.index));
-      return { column: p.name, summary: describe(nums, missing), bins: histogram(nums) };
+      const { nums, missing, invalid } = toNumbers(columnValues(ds, p.index));
+      return { column: p.name, summary: describe(nums, missing, invalid), bins: histogram(nums) };
     });
   const categorical = profiles
     .filter((p) => p.type === "categorical" && use(p))
@@ -80,6 +80,8 @@ export function summarise(r: DescriptiveReport): string[] {
     const s = n.summary;
     if (s.n === 0) continue;
     let line = `"${n.column}" (n = ${s.n}) has a mean of ${fmt(s.mean)} and a median of ${fmt(s.median)}, ranging from ${fmt(s.min)} to ${fmt(s.max)}`;
+    if (s.invalid > 0)
+      line += `; ${s.invalid} invalid numeric value(s) were excluded`;
     line +=
       s.sd === null
         ? "; standard deviation is undefined for a single value."

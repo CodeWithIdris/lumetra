@@ -284,6 +284,8 @@ function execute(ds: Dataset, name: string, a: Record<string, unknown>): unknown
       const ps = Array.isArray(a["percentiles"])
         ? (a["percentiles"] as number[])
         : [0, 0.05, 0.25, 0.5, 0.75, 0.95, 1];
+      if (ps.some((p) => !Number.isFinite(p) || p < 0 || p > 1))
+        throw new ToolError("Percentiles must be finite numbers between 0 and 1.");
       const v = present(nums(rows, i));
       return {
         ...base,

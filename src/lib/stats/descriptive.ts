@@ -7,6 +7,7 @@
 export interface NumericSummary {
   n: number;
   missing: number;
+  invalid: number;
   mean: number | null;
   median: number | null;
   min: number | null;
@@ -16,19 +17,29 @@ export interface NumericSummary {
 
 export function toNumbers(
   values: (number | string | null | undefined)[],
-): { nums: number[]; missing: number } {
+): { nums: number[]; missing: number; invalid: number } {
   const nums: number[] = [];
   let missing = 0;
+  let invalid = 0;
   for (const v of values) {
     if (v == null) {
       missing++;
       continue;
     }
-    const n = Number(v);
+    if (typeof v === "string" && v.trim() === "") {
+      missing++;
+      continue;
+    }
+    const text = String(v).trim();
+    if (!/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(text)) {
+      invalid++;
+      continue;
+    }
+    const n = Number(text);
     if (Number.isFinite(n)) nums.push(n);
-    else missing++;
+    else invalid++;
   }
-  return { nums, missing };
+  return { nums, missing, invalid };
 }
 
 export function median(sorted: number[]): number | null {
@@ -38,9 +49,10 @@ export function median(sorted: number[]): number | null {
   return n % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
-export function describe(nums: number[], missing = 0): NumericSummary {
+export function describe(nums: number[], missing = 0, invalid = 0): NumericSummary {
   const n = nums.length;
-  if (n === 0) return { n: 0, missing, mean: null, median: null, min: null, max: null, sd: null };
+  if (n === 0)
+    return { n: 0, missing, invalid, mean: null, median: null, min: null, max: null, sd: null };
   let mean = 0;
   let m2 = 0;
   let min = Infinity;
@@ -57,6 +69,7 @@ export function describe(nums: number[], missing = 0): NumericSummary {
   return {
     n,
     missing,
+    invalid,
     mean,
     median: median(sorted),
     min,

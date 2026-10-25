@@ -4,7 +4,7 @@
  * - All computations are deterministic and run client-side.
  * - Missing values (null, undefined, NaN) are strictly excluded, never coerced to zero.
  */
-import { describe, median, toNumbers } from "./descriptive";
+import { describe, mean, median, toNumbers } from "./descriptive";
 import { quantile, tTwoSidedP, chiSqUpperP } from "./advanced";
 
 export type PersonaId = "engineer" | "economist" | "scientist" | "product" | "clinical";
@@ -106,6 +106,7 @@ export const PERSONAS: Record<PersonaId, PersonaMeta> = {
 export interface TailLatencyResult {
   n: number;
   missing: number;
+  invalid: number;
   min: number | null;
   max: number | null;
   mean: number | null;
@@ -116,7 +117,7 @@ export interface TailLatencyResult {
   p99: number | null;
   p999: number | null;
   tailRatio: number | null; // P99 / P50
-  jitter: number | null; // std dev of successive latency variations
+  jitter: number | null; // mean absolute difference between successive valid readings
   outlierCount: number;
   assessment: string;
 }
@@ -124,13 +125,17 @@ export interface TailLatencyResult {
 export function calculateTailLatency(
   raw: (number | string | null | undefined)[],
 ): TailLatencyResult {
-  const { nums, missing } = toNumbers(raw);
+  const converted = toNumbers(raw);
+  const nums = converted.nums.filter((value) => value >= 0);
+  const missing = converted.missing;
+  const invalid = converted.invalid + converted.nums.length - nums.length;
   const n = nums.length;
 
   if (n === 0) {
     return {
       n: 0,
       missing,
+      invalid,
       min: null,
       max: null,
       mean: null,
@@ -161,11 +166,11 @@ export function calculateTailLatency(
   const p99 = quantile(sorted, 0.99);
   const p999 = quantile(sorted, 0.999);
 
-  const tailRatio = p50 && p99 && p50 > 0 ? p99 / p50 : null;
+  const tailRatio = p50 !== null && p99 !== null && p50 > 0 ? p99 / p50 : null;
 
-  // Jitter: standard deviation of adjacent latency differences
+  // Jitter is the mean absolute change between successive valid readings.
   let jitter: number | null = null;
-  if (nums.length > 2) {
+  if (nums.length > 1) {
     const diffs: number[] = [];
     for (let i = 1; i < nums.length; i++) {
       diffs.push(Math.abs(nums[i]! - nums[i - 1]!));
@@ -190,6 +195,7 @@ export function calculateTailLatency(
   return {
     n,
     missing,
+    invalid,
     min,
     max,
     mean: meanVal,
@@ -208,14 +214,16 @@ export function calculateTailLatency(
 
 export interface SloBreachResult {
   n: number;
+  missing: number;
+  invalid: number;
   threshold: number;
   targetPercent: number; // e.g. 99.0% or 99.9%
   compliantCount: number;
   breachCount: number;
-  actualAvailabilityPercent: number;
+  actualAvailabilityPercent: number | null;
   budgetTotalAllowedBreaches: number;
-  budgetConsumedPercent: number;
-  status: "healthy" | "warning" | "breached";
+  budgetConsumedPercent: number | null;
+  status: "healthy" | "warning" | "breached" | "unavailable";
   summary: string;
 }
 
@@ -224,21 +232,35 @@ export function calculateSloBreach(
   threshold: number,
   targetPercent = 99.0,
 ): SloBreachResult {
-  const { nums } = toNumbers(raw);
+  const converted = toNumbers(raw);
+  const nums = converted.nums.filter((value) => value >= 0);
+  const missing = converted.missing;
+  const invalid = converted.invalid + converted.nums.length - nums.length;
   const n = nums.length;
 
-  if (n === 0) {
+  if (
+    n === 0 ||
+    !Number.isFinite(threshold) ||
+    !Number.isFinite(targetPercent) ||
+    targetPercent < 0 ||
+    targetPercent > 100
+  ) {
     return {
-      n: 0,
+      n,
+      missing,
+      invalid,
       threshold,
       targetPercent,
       compliantCount: 0,
       breachCount: 0,
-      actualAvailabilityPercent: 100,
+      actualAvailabilityPercent: null,
       budgetTotalAllowedBreaches: 0,
-      budgetConsumedPercent: 0,
-      status: "healthy",
-      summary: "No data available.",
+      budgetConsumedPercent: null,
+      status: "unavailable",
+      summary:
+        n === 0
+          ? "No numeric observations; availability and error-budget consumption are undefined."
+          : "Invalid SLO threshold or target. Threshold must be finite and target must be between 0 and 100%.",
     };
   }
 
@@ -247,25 +269,34 @@ export function calculateSloBreach(
   const actualAvailabilityPercent = (compliantCount / n) * 100;
 
   const allowedErrorRate = (100 - targetPercent) / 100;
-  const budgetTotalAllowedBreaches = Math.max(1, Math.floor(n * allowedErrorRate));
-  const budgetConsumedPercent = (breachCount / budgetTotalAllowedBreaches) * 100;
+  const budgetTotalAllowedBreaches = n * allowedErrorRate;
+  const budgetConsumedPercent =
+    budgetTotalAllowedBreaches === 0
+      ? breachCount === 0
+        ? 0
+        : null
+      : (breachCount / budgetTotalAllowedBreaches) * 100;
 
   let status: SloBreachResult["status"] = "healthy";
-  if (budgetConsumedPercent > 100) {
+  if (budgetTotalAllowedBreaches === 0 && breachCount > 0) {
     status = "breached";
-  } else if (budgetConsumedPercent >= 80) {
+  } else if (budgetConsumedPercent !== null && budgetConsumedPercent > 100) {
+    status = "breached";
+  } else if (budgetConsumedPercent !== null && budgetConsumedPercent >= 80) {
     status = "warning";
   }
 
   const summary =
     status === "breached"
-      ? `SLO BREACHED: ${breachCount} requests exceeded ${threshold}ms threshold (${actualAvailabilityPercent.toFixed(2)}% availability vs ${targetPercent}% target). Error budget exhausted (${budgetConsumedPercent.toFixed(1)}%).`
+      ? `SLO BREACHED: ${breachCount} requests exceeded ${threshold}ms threshold (${actualAvailabilityPercent.toFixed(2)}% availability vs ${targetPercent}% target). Error budget exceeded${budgetConsumedPercent === null ? "." : ` (${budgetConsumedPercent.toFixed(1)}%).`}`
       : status === "warning"
-        ? `SLO AT RISK: ${breachCount} breaches consumed ${budgetConsumedPercent.toFixed(1)}% of error budget. Availability is ${actualAvailabilityPercent.toFixed(2)}%.`
+        ? `SLO AT RISK: ${breachCount} breaches consumed ${budgetConsumedPercent!.toFixed(1)}% of error budget. Availability is ${actualAvailabilityPercent.toFixed(2)}%.`
         : `SLO MET: ${actualAvailabilityPercent.toFixed(2)}% availability comfortably meets the ${targetPercent}% target (${breachCount} breaches out of ${budgetTotalAllowedBreaches} allowed).`;
 
   return {
     n,
+    missing,
+    invalid,
     threshold,
     targetPercent,
     compliantCount,
@@ -284,6 +315,8 @@ export function calculateSloBreach(
 
 export interface ElasticityResult {
   n: number;
+  missing: number;
+  invalid: number;
   meanPrice: number | null;
   meanQuantity: number | null;
   slope: number | null;
@@ -291,7 +324,7 @@ export interface ElasticityResult {
   rSquared: number | null;
   pointElasticity: number | null; // (dQ/dP) * (P_mean / Q_mean)
   arcElasticity: number | null;
-  classification: "Elastic" | "Inelastic" | "Unitary" | "Veblen/Giffen" | "Undefined";
+  classification: "Elastic" | "Inelastic" | "Unitary" | "Positive slope" | "Undefined";
   interpretation: string;
 }
 
@@ -299,16 +332,24 @@ export function calculateElasticity(
   priceRaw: (number | string | null | undefined)[],
   quantityRaw: (number | string | null | undefined)[],
 ): ElasticityResult {
-  const pNums = toNumbers(priceRaw).nums;
-  const qNums = toNumbers(quantityRaw).nums;
   const len = Math.min(priceRaw.length, quantityRaw.length);
 
   const validPairs: [number, number][] = [];
+  let missing = Math.max(priceRaw.length, quantityRaw.length) - len;
+  let invalid = 0;
   for (let i = 0; i < len; i++) {
-    const p = priceRaw[i] != null && priceRaw[i] !== "" ? Number(priceRaw[i]) : NaN;
-    const q = quantityRaw[i] != null && quantityRaw[i] !== "" ? Number(quantityRaw[i]) : NaN;
+    const rawPrice = priceRaw[i];
+    const rawQuantity = quantityRaw[i];
+    if (rawPrice == null || rawQuantity == null || rawPrice === "" || rawQuantity === "") {
+      missing++;
+      continue;
+    }
+    const p = Number(rawPrice);
+    const q = Number(rawQuantity);
     if (Number.isFinite(p) && Number.isFinite(q)) {
       validPairs.push([p, q]);
+    } else {
+      invalid++;
     }
   }
 
@@ -316,6 +357,8 @@ export function calculateElasticity(
   if (n < 3) {
     return {
       n,
+      missing,
+      invalid,
       meanPrice: null,
       meanQuantity: null,
       slope: null,
@@ -329,14 +372,24 @@ export function calculateElasticity(
     };
   }
 
-  let sumP = 0,
-    sumQ = 0;
-  for (const [p, q] of validPairs) {
-    sumP += p;
-    sumQ += q;
+  if (validPairs.some(([p, q]) => p <= 0 || q <= 0)) {
+    return {
+      n,
+      missing,
+      invalid,
+      meanPrice: null,
+      meanQuantity: null,
+      slope: null,
+      intercept: null,
+      rSquared: null,
+      pointElasticity: null,
+      arcElasticity: null,
+      classification: "Undefined",
+      interpretation: "Point elasticity requires strictly positive price and quantity observations.",
+    };
   }
-  const meanPrice = sumP / n;
-  const meanQuantity = sumQ / n;
+  const meanPrice = mean(validPairs.map(([p]) => p));
+  const meanQuantity = mean(validPairs.map(([, q]) => q));
 
   let sxx = 0,
     sxy = 0,
@@ -352,6 +405,8 @@ export function calculateElasticity(
   if (sxx === 0 || meanQuantity === 0) {
     return {
       n,
+      missing,
+      invalid,
       meanPrice,
       meanQuantity,
       slope: null,
@@ -366,7 +421,7 @@ export function calculateElasticity(
 
   const slope = sxy / sxx;
   const intercept = meanQuantity - slope * meanPrice;
-  const rSquared = syy > 0 ? (sxy * sxy) / (sxx * syy) : 0;
+  const rSquared = syy > 0 ? (sxy * sxy) / (sxx * syy) : null;
 
   // Point elasticity: E = slope * (meanPrice / meanQuantity)
   const pointElasticity = slope * (meanPrice / meanQuantity);
@@ -374,8 +429,8 @@ export function calculateElasticity(
   let classification: ElasticityResult["classification"] = "Inelastic";
   const absE = Math.abs(pointElasticity);
 
-  if (pointElasticity > 0.05) {
-    classification = "Veblen/Giffen";
+  if (pointElasticity > 0) {
+    classification = "Positive slope";
   } else if (absE > 1.05) {
     classification = "Elastic";
   } else if (absE < 0.95) {
@@ -392,18 +447,20 @@ export function calculateElasticity(
   } else if (classification === "Unitary") {
     interpretation = `Unitary elastic (|E| ≈ 1.00). Percentage change in quantity exactly offsets price change; revenue is near maximum.`;
   } else {
-    interpretation = `Positive slope detected (E = +${pointElasticity.toFixed(2)}). Demand rises with price (potential luxury/Veblen good or upward trend confounding).`;
+    interpretation = `Positive price-quantity association (E = +${pointElasticity.toFixed(2)}). This descriptive regression does not establish a Veblen/Giffen effect or causation.`;
   }
 
   return {
     n,
+    missing,
+    invalid,
     meanPrice,
     meanQuantity,
     slope,
     intercept,
     rSquared,
     pointElasticity,
-    arcElasticity: pointElasticity,
+    arcElasticity: null,
     classification,
     interpretation,
   };
@@ -411,6 +468,8 @@ export function calculateElasticity(
 
 export interface GiniResult {
   n: number;
+  missing: number;
+  invalid: number;
   gini: number | null; // 0 (perfect equality) to 1 (maximum inequality)
   quintiles: { quintile: number; sharePct: number; cumSharePct: number }[];
   top10SharePct: number | null;
@@ -419,32 +478,53 @@ export interface GiniResult {
 }
 
 export function calculateGini(raw: (number | string | null | undefined)[]): GiniResult {
-  const { nums } = toNumbers(raw);
-  const positiveNums = nums.filter((x) => x >= 0);
-  const n = positiveNums.length;
+  const { nums, missing, invalid } = toNumbers(raw);
+  const n = nums.length;
 
-  if (n < 5) {
+  if (nums.some((x) => x < 0)) {
     return {
       n,
+      missing,
+      invalid,
       gini: null,
       quintiles: [],
       top10SharePct: null,
       palmaRatio: null,
-      rating: "Need at least 5 positive data points to compute Gini and Lorenz distributions.",
+      rating:
+        "Negative values are present. This implementation supports non-negative incomes only; no normalization or exclusion was applied.",
     };
   }
 
-  const sorted = [...positiveNums].sort((a, b) => a - b);
+  if (n < 5) {
+    return {
+      n,
+      missing,
+      invalid,
+      gini: null,
+      quintiles: [],
+      top10SharePct: null,
+      palmaRatio: null,
+      rating: "At least 5 complete non-negative observations are required for these grouped inequality summaries.",
+    };
+  }
+
+  const sorted = [...nums].sort((a, b) => a - b);
   let totalSum = 0;
   for (const v of sorted) totalSum += v;
 
   if (totalSum === 0) {
     return {
       n,
+      missing,
+      invalid,
       gini: 0,
-      quintiles: [],
+      quintiles: Array.from({ length: 5 }, (_, i) => ({
+        quintile: i + 1,
+        sharePct: 0,
+        cumSharePct: 0,
+      })),
       top10SharePct: 0,
-      palmaRatio: 0,
+      palmaRatio: null,
       rating: "All values are zero.",
     };
   }
@@ -457,15 +537,11 @@ export function calculateGini(raw: (number | string | null | undefined)[]): Gini
   const gini = (2 * weightedSum - (n + 1) * totalSum) / (n * totalSum);
 
   // Quintiles
-  const quintileSize = Math.floor(n / 5);
   const quintiles: GiniResult["quintiles"] = [];
   let cumSum = 0;
 
   for (let q = 1; q <= 5; q++) {
-    const startIdx = (q - 1) * quintileSize;
-    const endIdx = q === 5 ? n : q * quintileSize;
-    let qSum = 0;
-    for (let i = startIdx; i < endIdx; i++) qSum += sorted[i]!;
+    const qSum = populationSliceSum(sorted, ((q - 1) * n) / 5, (q * n) / 5);
     cumSum += qSum;
     const sharePct = (qSum / totalSum) * 100;
     const cumSharePct = (cumSum / totalSum) * 100;
@@ -473,9 +549,7 @@ export function calculateGini(raw: (number | string | null | undefined)[]): Gini
   }
 
   // Top 10% share
-  const top10Start = Math.floor(n * 0.9);
-  let top10Sum = 0;
-  for (let i = top10Start; i < n; i++) top10Sum += sorted[i]!;
+  const top10Sum = populationSliceSum(sorted, n * 0.9, n);
   const top10SharePct = (top10Sum / totalSum) * 100;
 
   // Bottom 40% share (quintiles 1 and 2)
@@ -490,6 +564,8 @@ export function calculateGini(raw: (number | string | null | undefined)[]): Gini
 
   return {
     n,
+    missing,
+    invalid,
     gini: Math.max(0, Math.min(1, gini)),
     quintiles,
     top10SharePct,
@@ -498,18 +574,29 @@ export function calculateGini(raw: (number | string | null | undefined)[]): Gini
   };
 }
 
+function populationSliceSum(sorted: number[], start: number, end: number): number {
+  let sum = 0;
+  for (let i = Math.floor(start); i < Math.ceil(end); i++) {
+    const overlap = Math.max(0, Math.min(i + 1, end) - Math.max(i, start));
+    sum += sorted[i]! * overlap;
+  }
+  return sum;
+}
+
 // ==========================================
 // 3. DATA SCIENTIST & ML METRICS
 // ==========================================
 
 export interface NormalityDiagnosticsResult {
   n: number;
+  missing: number;
+  invalid: number;
   mean: number | null;
   median: number | null;
   sd: number | null;
   skewness: number | null;
   kurtosis: number | null;
-  isNormalCandidate: boolean;
+  momentsNearNormal: boolean;
   iqrOutliersCount: number;
   recommendation: string;
 }
@@ -517,18 +604,20 @@ export interface NormalityDiagnosticsResult {
 export function calculateNormalityDiagnostics(
   raw: (number | string | null | undefined)[],
 ): NormalityDiagnosticsResult {
-  const { nums } = toNumbers(raw);
+  const { nums, missing, invalid } = toNumbers(raw);
   const n = nums.length;
 
   if (n < 4) {
     return {
       n,
+      missing,
+      invalid,
       mean: null,
       median: null,
       sd: null,
       skewness: null,
       kurtosis: null,
-      isNormalCandidate: false,
+      momentsNearNormal: false,
       iqrOutliersCount: 0,
       recommendation: "Sample size too small (n < 4) for distribution moments.",
     };
@@ -541,18 +630,20 @@ export function calculateNormalityDiagnostics(
   if (s === 0) {
     return {
       n,
+      missing,
+      invalid,
       mean: m,
       median: d.median,
       sd: 0,
       skewness: 0,
       kurtosis: 0,
-      isNormalCandidate: false,
+      momentsNearNormal: false,
       iqrOutliersCount: 0,
       recommendation: "Zero variance. Variable is constant.",
     };
   }
 
-  // Moments for skewness & excess kurtosis
+  // Biased Fisher-Pearson moment coefficients, using population central moments.
   let m3 = 0,
     m4 = 0;
   for (const x of nums) {
@@ -562,9 +653,11 @@ export function calculateNormalityDiagnostics(
   }
   m3 /= n;
   m4 /= n;
-
-  const skewness = m3 / s ** 3;
-  const kurtosis = m4 / s ** 4 - 3; // Excess kurtosis
+  let m2 = 0;
+  for (const x of nums) m2 += (x - m) ** 2;
+  m2 /= n;
+  const skewness = m3 / m2 ** 1.5;
+  const kurtosis = m4 / m2 ** 2 - 3;
 
   // IQR outliers
   const sorted = [...nums].sort((a, b) => a - b);
@@ -575,28 +668,30 @@ export function calculateNormalityDiagnostics(
   const upperFence = q75 + 1.5 * iqr;
   const iqrOutliersCount = nums.filter((x) => x < lowerFence || x > upperFence).length;
 
-  const isNormalCandidate = Math.abs(skewness) < 0.5 && Math.abs(kurtosis) < 1.0;
+  const momentsNearNormal = Math.abs(skewness) < 0.5 && Math.abs(kurtosis) < 1.0;
 
   let recommendation = "";
-  if (isNormalCandidate) {
+  if (momentsNearNormal) {
     recommendation =
-      "Distribution is approximately symmetric and bell-shaped. Suitable for standard parametric tests (ANOVA, Pearson r, OLS).";
+      "Skewness and excess kurtosis are near zero. These are descriptive moment checks, not a normality test and not evidence that parametric-test assumptions hold.";
   } else if (skewness > 1.0) {
-    recommendation = `Substantial positive right-skew (skewness = ${skewness.toFixed(2)}). Consider logarithmic transformation (log(x)) or non-parametric tests (Spearman, Mann-Whitney).`;
+    recommendation = `Substantial positive right-skew (skewness = ${skewness.toFixed(2)}). Consider transformations only when appropriate to the data domain, or robust/non-parametric methods. This is not a formal normality test.`;
   } else if (skewness < -1.0) {
-    recommendation = `Substantial left-skew (skewness = ${skewness.toFixed(2)}). Mean is pulled down by lower tail; median represents central tendency more reliably.`;
+    recommendation = `Substantial left-skew (skewness = ${skewness.toFixed(2)}). The mean is pulled toward the lower tail; the median may better represent the center. This is not a formal normality test.`;
   } else {
-    recommendation = `Moderate skew or heavy tails (kurtosis = ${kurtosis.toFixed(2)}). Check for influential outliers.`;
+    recommendation = `Skewness or excess kurtosis departs from zero (excess kurtosis = ${kurtosis.toFixed(2)}). Check influential observations. These descriptive moments are not a formal normality test.`;
   }
 
   return {
     n,
+    missing,
+    invalid,
     mean: m,
     median: d.median,
     sd: s,
     skewness,
     kurtosis,
-    isNormalCandidate,
+    momentsNearNormal,
     iqrOutliersCount,
     recommendation,
   };
@@ -609,17 +704,18 @@ export function calculateNormalityDiagnostics(
 export interface ABTestResult {
   controlCount: number;
   controlSuccess: number;
-  controlRate: number;
+  controlRate: number | null;
   testCount: number;
   testSuccess: number;
-  testRate: number;
-  absoluteLift: number;
-  relativeLiftPct: number;
+  testRate: number | null;
+  absoluteLift: number | null;
+  relativeLiftPct: number | null;
   zScore: number | null;
   pValue: number | null;
   confidenceInterval95: [number, number] | null;
   isSignificant: boolean;
   recommendation: string;
+  note: string | null;
 }
 
 export function calculateABTest(
@@ -628,28 +724,40 @@ export function calculateABTest(
   testSuccess: number,
   testTotal: number,
 ): ABTestResult {
-  if (controlTotal <= 0 || testTotal <= 0) {
+  if (
+    ![controlSuccess, controlTotal, testSuccess, testTotal].every(
+      (value) => Number.isFinite(value) && Number.isInteger(value),
+    ) ||
+    controlTotal <= 0 ||
+    testTotal <= 0 ||
+    controlSuccess < 0 ||
+    testSuccess < 0 ||
+    controlSuccess > controlTotal ||
+    testSuccess > testTotal
+  ) {
     return {
       controlCount: controlTotal,
       controlSuccess,
-      controlRate: 0,
+      controlRate: null,
       testCount: testTotal,
       testSuccess,
-      testRate: 0,
-      absoluteLift: 0,
-      relativeLiftPct: 0,
+      testRate: null,
+      absoluteLift: null,
+      relativeLiftPct: null,
       zScore: null,
       pValue: null,
       confidenceInterval95: null,
       isSignificant: false,
-      recommendation: "Sample sizes must be greater than zero.",
+      recommendation:
+        "Counts must be non-negative integers, each denominator must be positive, and conversions cannot exceed visitors.",
+      note: "No test was calculated for invalid counts.",
     };
   }
 
   const p1 = controlSuccess / controlTotal;
   const p2 = testSuccess / testTotal;
   const absoluteLift = p2 - p1;
-  const relativeLiftPct = p1 > 0 ? (absoluteLift / p1) * 100 : 0;
+  const relativeLiftPct = p1 > 0 ? (absoluteLift / p1) * 100 : null;
 
   // Pooled standard error for two-proportion z-test
   const pooledP = (controlSuccess + testSuccess) / (controlTotal + testTotal);
@@ -668,28 +776,36 @@ export function calculateABTest(
       testRate: p2,
       absoluteLift,
       relativeLiftPct,
-      zScore: 0,
-      pValue: 1,
-      confidenceInterval95: [absoluteLift, absoluteLift],
+      zScore: null,
+      pValue: null,
+      confidenceInterval95: null,
       isSignificant: false,
-      recommendation: "No variation observed across groups.",
+      recommendation:
+        "The pooled standard error is zero (both groups have identical all-zero or all-one outcomes); the z-test and Wald interval are undefined.",
+      note: "A different method, such as an exact test and score-based interval, is needed for this boundary case.",
     };
   }
 
   const z = absoluteLift / sePooled;
-  // Approximation for standard normal two-tailed p-value
-  const pValue = tTwoSidedP(z, 10000); // z is t with high df
+  const pValue = chiSqUpperP(z * z, 1);
   const margin = 1.96 * seDiff;
   const confidenceInterval95: [number, number] = [absoluteLift - margin, absoluteLift + margin];
   const isSignificant = (pValue ?? 1) < 0.05;
+  const sparse =
+    controlTotal * p1 < 5 ||
+    controlTotal * (1 - p1) < 5 ||
+    testTotal * p2 < 5 ||
+    testTotal * (1 - p2) < 5;
 
+  const caveat =
+    " Statistical significance does not establish practical importance or causality; randomization, independence, and the analysis plan must be appropriate.";
   let recommendation = "";
   if (isSignificant && absoluteLift > 0) {
-    recommendation = `Statistically significant positive lift (+${relativeLiftPct.toFixed(1)}%, p = ${(pValue ?? 0).toFixed(4)} < 0.05). Variant out-performed control. Safe to roll out.`;
+    recommendation = `Statistically significant positive absolute lift (${(absoluteLift * 100).toFixed(2)} percentage points, p = ${pValue.toFixed(4)}).${caveat}`;
   } else if (isSignificant && absoluteLift < 0) {
-    recommendation = `Statistically significant negative impact (${relativeLiftPct.toFixed(1)}%, p = ${(pValue ?? 0).toFixed(4)} < 0.05). Variant degraded conversion; recommend rollback.`;
+    recommendation = `Statistically significant negative absolute lift (${(absoluteLift * 100).toFixed(2)} percentage points, p = ${pValue.toFixed(4)}).${caveat}`;
   } else {
-    recommendation = `Inconclusive (p = ${(pValue ?? 0).toFixed(3)} ≥ 0.05). Difference could easily be chance. Continue gathering sample size.`;
+    recommendation = `No evidence of a difference at the 0.05 level (p = ${pValue.toFixed(3)}). This is not proof of equivalence.${caveat}`;
   }
 
   return {
@@ -706,6 +822,9 @@ export function calculateABTest(
     confidenceInterval95,
     isSignificant,
     recommendation,
+    note: sparse
+      ? "At least one expected success/failure count is below 5; the normal approximation may be unreliable."
+      : "Two-sided pooled score z-test; confidence interval is the unpooled Wald interval for the absolute difference. Assumes independent Bernoulli observations.",
   };
 }
 
@@ -714,6 +833,7 @@ export function calculateABTest(
 // ==========================================
 
 export interface OddsRatioResult {
+  n: number;
   a: number; // Exposed Cases
   b: number; // Exposed Non-Cases
   c: number; // Unexposed Cases
@@ -724,11 +844,17 @@ export interface OddsRatioResult {
   ci95Upper: number | null;
   chiSquareP: number | null;
   interpretation: string;
+  note: string;
 }
 
 export function calculateOddsRatio(a: number, b: number, c: number, d: number): OddsRatioResult {
-  if (a < 0 || b < 0 || c < 0 || d < 0 || a + b + c + d === 0) {
+  const n = a + b + c + d;
+  const validCounts = [a, b, c, d].every(
+    (value) => Number.isFinite(value) && Number.isInteger(value) && value >= 0,
+  );
+  if (!validCounts || n === 0) {
     return {
+      n: Number.isFinite(n) ? n : 0,
       a,
       b,
       c,
@@ -739,6 +865,24 @@ export function calculateOddsRatio(a: number, b: number, c: number, d: number): 
       ci95Upper: null,
       chiSquareP: null,
       interpretation: "Invalid cell counts for 2x2 table.",
+      note: "Cell counts must be non-negative integers and their total must be positive.",
+    };
+  }
+
+  if (a + b === 0 || c + d === 0 || a + c === 0 || b + d === 0) {
+    return {
+      n,
+      a,
+      b,
+      c,
+      d,
+      oddsRatio: null,
+      relativeRisk: null,
+      ci95Lower: null,
+      ci95Upper: null,
+      chiSquareP: null,
+      interpretation: "Association estimates are undefined because a row or column margin is zero.",
+      note: "The table needs observations in both exposure groups and both outcome categories.",
     };
   }
 
@@ -757,8 +901,8 @@ export function calculateOddsRatio(a: number, b: number, c: number, d: number): 
   const ci95Upper = Math.exp(logOR + 1.96 * seLogOR);
 
   // Relative Risk
-  const riskExposed = ac / (ac + bc);
-  const riskUnexposed = cc / (cc + dc);
+  const riskExposed = a / (a + b);
+  const riskUnexposed = c / (c + d);
   const relativeRisk = riskUnexposed > 0 ? riskExposed / riskUnexposed : null;
 
   // Pearson chi-square with Yates continuity correction
@@ -767,17 +911,10 @@ export function calculateOddsRatio(a: number, b: number, c: number, d: number): 
   const denominator = (a + b) * (c + d) * (a + c) * (b + d);
   const chiSq = denominator > 0 ? numerator / denominator : 0;
   const chiSquareP = chiSqUpperP(chiSq, 1);
-
-  let interpretation = "";
-  if (oddsRatio > 1.2 && ci95Lower > 1.0) {
-    interpretation = `Significant association: Exposed group has ${oddsRatio.toFixed(2)}x higher odds (95% CI [${ci95Lower.toFixed(2)}, ${ci95Upper.toFixed(2)}], p < 0.05).`;
-  } else if (oddsRatio < 0.8 && ci95Upper < 1.0) {
-    interpretation = `Significant protective effect: Exposed group has ${oddsRatio.toFixed(2)}x odds (95% CI [${ci95Lower.toFixed(2)}, ${ci95Upper.toFixed(2)}], p < 0.05).`;
-  } else {
-    interpretation = `No statistically significant association (95% CI includes 1.0: [${ci95Lower.toFixed(2)}, ${ci95Upper.toFixed(2)}]).`;
-  }
+  const interpretation = `Exposed-group odds ratio ${oddsRatio.toFixed(2)} (95% corrected-Wald CI [${ci95Lower.toFixed(2)}, ${ci95Upper.toFixed(2)}]); Yates-corrected chi-square p = ${chiSquareP.toFixed(4)}. This is an association, not evidence of causation.`;
 
   return {
+    n,
     a,
     b,
     c,
@@ -788,5 +925,8 @@ export function calculateOddsRatio(a: number, b: number, c: number, d: number): 
     ci95Upper,
     chiSquareP,
     interpretation,
+    note: zeroCell
+      ? "Haldane–Anscombe 0.5 correction applied to all four cells for the OR and its Wald CI. Relative risk uses uncorrected counts; the p-value is from the Yates-corrected chi-square test."
+      : "OR and CI use the uncorrected table with a log-Wald interval; relative risk is uncorrected. The p-value is from the Yates-corrected chi-square test.",
   };
 }

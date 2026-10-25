@@ -71,6 +71,19 @@ describe("methods", () => {
   it("type-7 quantiles", () => {
     expect(quantile([1, 2, 3, 4], 0.25)).toBe(1.75);
     expect(quantile([1, 2, 3, 4], 0.5)).toBe(2.5);
+    expect(quantile([1, 2, 3, 4], 0)).toBe(1);
+    expect(quantile([], 0.5)).toBeNull();
+    expect(quantile([1, 2], -0.01)).toBeNull();
+    expect(quantile([1, 2], 1.01)).toBeNull();
+  });
+  it("correlation uses paired finite observations and reports the effective n", () => {
+    expect(correlation([1, 2, 3, Number.NaN], [2, 4, 6, 8])).toMatchObject({
+      n: 3,
+      r: 1,
+      pValue: 0,
+    });
+    expect(correlation([1, 2], [2, 4, 6])).toMatchObject({ n: 2, r: null, pValue: null });
+    expect(correlation([1, 2, 3], [6, 4, 2]).r).toBe(-1);
   });
   it("IQR outliers", () => expect(outliersIQR([1, 2, 3, 4, 5, 100]).count).toBe(1));
 });

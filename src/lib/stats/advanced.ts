@@ -13,11 +13,13 @@ export function mean(xs: number[]): number {
 
 /** Linear-interpolated quantile (Hyndman & Fan type 7, the R/Excel default). */
 export function quantile(sorted: number[], p: number): number | null {
-  if (sorted.length === 0) return null;
+  if (sorted.length === 0 || !Number.isFinite(p) || p < 0 || p > 1) return null;
   const h = (sorted.length - 1) * p;
   const lo = Math.floor(h);
   const hi = Math.ceil(h);
-  return sorted[lo]! + (h - lo) * (sorted[hi]! - sorted[lo]!);
+  if (lo === hi) return sorted[lo]!;
+  const fraction = h - lo;
+  return sorted[lo]! * (1 - fraction) + sorted[hi]! * fraction;
 }
 
 // ---------- special functions (Numerical Recipes style) ----------
@@ -177,10 +179,14 @@ export function correlation(
   y: number[],
   method: "pearson" | "spearman" = "pearson",
 ): CorrelationResult {
-  const n = x.length;
+  const [pairedX, pairedY] = pairs(x, y);
+  const n = pairedX.length;
   if (n < 3)
     return { method, n, r: null, pValue: null, note: "At least 3 complete pairs are needed." };
-  const r = method === "pearson" ? pearsonRaw(x, y) : pearsonRaw(ranks(x), ranks(y));
+  const r =
+    method === "pearson"
+      ? pearsonRaw(pairedX, pairedY)
+      : pearsonRaw(ranks(pairedX), ranks(pairedY));
   if (r === null)
     return {
       method,
@@ -212,17 +218,18 @@ export interface RegressionResult {
 
 /** Simple ordinary least squares y = a + b·x. */
 export function linearRegression(x: number[], y: number[]): RegressionResult {
-  const n = x.length;
+  const [pairedX, pairedY] = pairs(x, y);
+  const n = pairedX.length;
   const empty = { n, slope: null, intercept: null, rSquared: null, slopeSE: null, slopeP: null };
   if (n < 3) return { ...empty, note: "At least 3 complete pairs are needed." };
-  const mx = mean(x),
-    my = mean(y);
+  const mx = mean(pairedX),
+    my = mean(pairedY);
   let sxx = 0,
     sxy = 0,
     syy = 0;
   for (let i = 0; i < n; i++) {
-    const dx = x[i]! - mx,
-      dy = y[i]! - my;
+    const dx = pairedX[i]! - mx,
+      dy = pairedY[i]! - my;
     sxx += dx * dx;
     sxy += dx * dy;
     syy += dy * dy;
@@ -430,13 +437,16 @@ export function aggregate(values: number[], agg: Agg): number | null {
 }
 
 export function percentiles(values: number[], ps: number[]): { p: number; value: number | null }[] {
-  const sorted = [...values].sort((a, b) => a - b);
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
   return ps.map((p) => ({ p, value: quantile(sorted, p) }));
 }
 
 /** Tukey fences: values beyond Q1 − k·IQR or Q3 + k·IQR. */
 export function outliersIQR(values: number[], k = 1.5) {
-  const sorted = [...values].sort((a, b) => a - b);
+  const valid = values.filter(Number.isFinite);
+  if (!Number.isFinite(k) || k < 0)
+    return { q1: null, q3: null, lower: null, upper: null, count: 0, examples: [] as number[] };
+  const sorted = [...valid].sort((a, b) => a - b);
   const q1 = quantile(sorted, 0.25),
     q3 = quantile(sorted, 0.75);
   if (q1 === null || q3 === null)
@@ -444,6 +454,6 @@ export function outliersIQR(values: number[], k = 1.5) {
   const iqr = q3 - q1;
   const lower = q1 - k * iqr,
     upper = q3 + k * iqr;
-  const out = values.filter((v) => v < lower || v > upper);
+  const out = valid.filter((v) => v < lower || v > upper);
   return { q1, q3, lower, upper, count: out.length, examples: out.slice(0, 10) };
 }

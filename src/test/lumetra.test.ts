@@ -96,7 +96,15 @@ describe("descriptive statistics", () => {
     expect(s.sd).toBeCloseTo(Math.sqrt(30), 6);
   });
   it("excludes missing from numeric conversion", () => {
-    expect(toNumbers(["1", null, "3"])).toEqual({ nums: [1, 3], missing: 1 });
+    expect(toNumbers(["1", null, "3"])).toEqual({ nums: [1, 3], missing: 1, invalid: 0 });
+  });
+  it("keeps blanks missing and separately counts invalid or non-finite numeric values", () => {
+    expect(toNumbers(["1", null, " ", "abc", "1e999"])).toEqual({
+      nums: [1],
+      missing: 2,
+      invalid: 2,
+    });
+    expect(profileColumn("overflow", 0, ["1e999"]).type).not.toBe("numeric");
   });
   it("frequencies use non-missing denominator", () => {
     const f = frequencies(["a", "b", "a", null]);

@@ -12,7 +12,7 @@ import {
   calculateABTest,
   calculateOddsRatio,
 } from "@/lib/stats/personas";
-import { correlation } from "@/lib/stats/advanced";
+import { correlation, pairs } from "@/lib/stats/advanced";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -223,14 +223,14 @@ function EngineerToolkit({
             <div className="rounded border border-slate-200 bg-slate-50 p-3">
               <div className="text-[11px] font-medium text-slate-500">P99 / P50 Ratio</div>
               <div className="num mt-1 text-lg font-bold font-mono text-slate-900">
-                {latencyStats.tailRatio ? `${latencyStats.tailRatio.toFixed(2)}×` : "—"}
+                {latencyStats.tailRatio !== null ? `${latencyStats.tailRatio.toFixed(2)}×` : "—"}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">Degradation factor under peak</div>
             </div>
             <div className="rounded border border-slate-200 bg-slate-50 p-3">
               <div className="text-[11px] font-medium text-slate-500">Average Jitter</div>
               <div className="num mt-1 text-lg font-bold font-mono text-slate-900">
-                {latencyStats.jitter ? `${latencyStats.jitter.toFixed(1)} ms` : "—"}
+                {latencyStats.jitter !== null ? `${latencyStats.jitter.toFixed(1)} ms` : "—"}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">Consecutive request variance</div>
             </div>
@@ -250,7 +250,9 @@ function EngineerToolkit({
             </div>
             <span
               className={`rounded px-2 py-0.5 text-[10px] font-mono font-bold border ${
-                sloStats.status === "breached"
+                sloStats.status === "unavailable"
+                  ? "bg-slate-50 text-slate-600 border-slate-200"
+                  : sloStats.status === "breached"
                   ? "bg-red-50 text-red-800 border-red-200"
                   : sloStats.status === "warning"
                     ? "bg-amber-50 text-amber-800 border-amber-200"
@@ -265,7 +267,9 @@ function EngineerToolkit({
             <div className="rounded border border-slate-200 bg-slate-50 p-3">
               <div className="text-[11px] font-medium text-slate-500">Availability</div>
               <div className="num mt-1 text-lg font-bold font-mono text-emerald-700">
-                {sloStats.actualAvailabilityPercent.toFixed(2)}%
+                {sloStats.actualAvailabilityPercent !== null
+                  ? `${sloStats.actualAvailabilityPercent.toFixed(2)}%`
+                  : "—"}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">
                 Target: {sloStats.targetPercent}% (&lt;{sloThreshold}ms)
@@ -282,10 +286,12 @@ function EngineerToolkit({
                       : "text-slate-900"
                 }`}
               >
-                {sloStats.budgetConsumedPercent.toFixed(1)}%
+                {sloStats.budgetConsumedPercent !== null
+                  ? `${sloStats.budgetConsumedPercent.toFixed(1)}%`
+                  : "—"}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">
-                {sloStats.breachCount} breaches / {sloStats.budgetTotalAllowedBreaches} allowed
+                {sloStats.breachCount} breaches / {sloStats.budgetTotalAllowedBreaches.toFixed(2)} allowed
               </div>
             </div>
           </div>
@@ -372,7 +378,7 @@ function EconomistToolkit({
               <span>Price Elasticity & Econometric Response</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Point elasticity of demand E = (dQ/dP) · (P̄ / Q̄) estimated via OLS regression.
+            Point elasticity at sample means: OLS level slope × mean price / mean quantity; descriptive, not causal.
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs">
@@ -429,7 +435,9 @@ function EconomistToolkit({
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
             <div className="text-[11px] font-medium text-slate-500">Sample Pairs (n)</div>
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">{elasticity.n}</div>
-            <div className="text-[10px] text-slate-500 mt-0.5">Pairwise complete observations</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+            Complete pairs; {elasticity.missing} missing, {elasticity.invalid} invalid
+            </div>
           </div>
         </div>
 
@@ -447,7 +455,7 @@ function EconomistToolkit({
               <span>Gini Coefficient & Inequality Index</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Measures dispersion and metric concentration (0 = perfect equality, 1 = maximum concentration).
+              Non-negative values only; Type-7 empirical population shares with fractional boundary observations.
             </p>
           </div>
           <select
@@ -469,7 +477,9 @@ function EconomistToolkit({
             <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
               {gini.gini !== null ? gini.gini.toFixed(3) : "—"}
             </div>
-            <div className="text-[10px] text-slate-500 mt-0.5">{gini.rating}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              n = {gini.n}; {gini.missing} missing, {gini.invalid} invalid. {gini.rating}
+            </div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
             <div className="text-[11px] font-medium text-slate-500">Top 10% Share</div>
@@ -556,15 +566,12 @@ function ScientistToolkit({
         x !== null && x !== "" ? Number(x) : null,
       );
       return matrixCols.map((c2) => {
-        if (c1.name === c2.name) return { r: 1, p: 0 };
         const v2 = columnValues(dataset, c2.index).map((x) =>
           x !== null && x !== "" ? Number(x) : null,
         );
-        const res = correlation(
-          v1.filter((_, idx) => v1[idx] !== null && v2[idx] !== null) as number[],
-          v2.filter((_, idx) => v1[idx] !== null && v2[idx] !== null) as number[],
-        );
-        return { r: res.r, p: res.pValue };
+        const [pairedX, pairedY] = pairs(v1, v2);
+        const res = correlation(pairedX, pairedY);
+        return { r: res.r, p: res.pValue, n: res.n };
       });
     });
   }, [dataset, matrixCols]);
@@ -577,10 +584,10 @@ function ScientistToolkit({
           <div>
             <h3 className="font-semibold text-slate-900 text-xs flex items-center gap-2">
               <Boxes className="size-4 text-blue-600" />
-              <span>Feature Moments & Normality Diagnostics</span>
+              <span>Feature Moment Diagnostics</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Evaluates skewness and kurtosis moments to test distribution modeling viability.
+              Biased population-moment skewness and excess kurtosis; descriptive checks, not a formal normality test.
             </p>
           </div>
           <select
@@ -603,7 +610,9 @@ function ScientistToolkit({
               {diag.skewness !== null ? diag.skewness.toFixed(2) : "—"}
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">
-              {diag.skewness && Math.abs(diag.skewness) < 0.5 ? "Symmetric" : "Asymmetric"}
+              {diag.skewness !== null && Math.abs(diag.skewness) < 0.5
+                ? "Near-zero moment"
+                : "Moment departs"}
             </div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
@@ -611,9 +620,7 @@ function ScientistToolkit({
             <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
               {diag.kurtosis !== null ? diag.kurtosis.toFixed(2) : "—"}
             </div>
-            <div className="text-[10px] text-slate-500 mt-0.5">
-              Tail weight relative to normal
-            </div>
+            <div className="text-[10px] text-slate-500 mt-0.5">Biased excess-moment estimate</div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
             <div className="text-[11px] font-medium text-slate-500">IQR Outliers</div>
@@ -621,11 +628,13 @@ function ScientistToolkit({
             <div className="text-[10px] text-slate-500 mt-0.5">Beyond 1.5× IQR fences</div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-            <div className="text-[11px] font-medium text-slate-500">Parametric Ready</div>
-            <div className="num mt-1 text-xl font-bold font-mono text-emerald-700">
-              {diag.isNormalCandidate ? "YES" : "NO"}
+            <div className="text-[11px] font-medium text-slate-500">Moments Near Zero</div>
+            <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+              {diag.momentsNearNormal ? "YES" : "NO"}
             </div>
-            <div className="text-[10px] text-slate-500 mt-0.5">Gaussian compliance</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              n = {diag.n}; {diag.missing} missing, {diag.invalid} invalid
+            </div>
           </div>
         </div>
 
@@ -664,6 +673,7 @@ function ScientistToolkit({
                       return (
                         <td
                           key={j}
+                          title={`Pairwise complete n = ${cell?.n ?? 0}`}
                           className={`px-3 py-2 text-center ${
                             isHigh ? "bg-blue-50 text-blue-800 font-bold" : "text-slate-700"
                           }`}
@@ -759,14 +769,21 @@ function ProductToolkit({
           <div className="text-[11px] font-medium text-slate-500">Relative Lift</div>
           <div
             className={`num mt-1 text-xl font-bold font-mono ${
-              abResult.relativeLiftPct > 0 ? "text-emerald-700" : "text-red-700"
+              abResult.relativeLiftPct === null
+                ? "text-slate-700"
+                : abResult.relativeLiftPct > 0
+                  ? "text-emerald-700"
+                  : "text-red-700"
             }`}
           >
-            {abResult.relativeLiftPct > 0 ? "+" : ""}
-            {abResult.relativeLiftPct.toFixed(1)}%
+            {abResult.relativeLiftPct !== null
+              ? `${abResult.relativeLiftPct > 0 ? "+" : ""}${abResult.relativeLiftPct.toFixed(1)}%`
+              : "—"}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
-            {(abResult.controlRate * 100).toFixed(1)}% → {(abResult.testRate * 100).toFixed(1)}%
+            {abResult.controlRate !== null && abResult.testRate !== null
+              ? `${(abResult.controlRate * 100).toFixed(1)}% → ${(abResult.testRate * 100).toFixed(1)}%`
+              : "Relative lift undefined at zero control conversion"}
           </div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
@@ -775,7 +792,11 @@ function ProductToolkit({
             {abResult.pValue !== null ? abResult.pValue.toFixed(4) : "—"}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
-            {abResult.isSignificant ? "p < 0.05 (Significant)" : "p ≥ 0.05"}
+            {abResult.pValue === null
+              ? "Undefined"
+              : abResult.isSignificant
+                ? "p < 0.05"
+                : "p ≥ 0.05"}
           </div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
@@ -789,18 +810,31 @@ function ProductToolkit({
           <div className="text-[11px] font-medium text-slate-500">Decision</div>
           <div
             className={`num mt-1 text-base font-bold font-mono ${
-              abResult.isSignificant ? "text-emerald-700" : "text-amber-700"
+              abResult.isSignificant
+                ? abResult.absoluteLift !== null && abResult.absoluteLift > 0
+                  ? "text-emerald-700"
+                  : "text-red-700"
+                : "text-amber-700"
             }`}
           >
-            {abResult.isSignificant ? "WINNER" : "INCONCLUSIVE"}
+            {abResult.isSignificant
+              ? abResult.absoluteLift !== null && abResult.absoluteLift > 0
+                ? "POSITIVE DIFFERENCE"
+                : "NEGATIVE DIFFERENCE"
+              : "INCONCLUSIVE"}
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">95% confidence interval</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            {abResult.confidenceInterval95
+              ? `Wald 95% CI: [${(abResult.confidenceInterval95[0] * 100).toFixed(2)}, ${(abResult.confidenceInterval95[1] * 100).toFixed(2)}] pp`
+              : "95% CI undefined"}
+          </div>
         </div>
       </div>
 
       <div className="rounded border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-950">
         <strong>Recommendation:</strong> {abResult.recommendation}
       </div>
+      {abResult.note && <p className="text-xs text-amber-800">{abResult.note}</p>}
     </div>
   );
 }
@@ -880,7 +914,9 @@ function ClinicalToolkit({
             {orResult.oddsRatio !== null ? orResult.oddsRatio.toFixed(2) : "—"}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
-            95% CI: [{orResult.ci95Lower?.toFixed(2)}, {orResult.ci95Upper?.toFixed(2)}]
+            {orResult.ci95Lower !== null && orResult.ci95Upper !== null
+              ? `95% CI: [${orResult.ci95Lower.toFixed(2)}, ${orResult.ci95Upper.toFixed(2)}]`
+              : "95% CI undefined"}
           </div>
         </div>
         <div className="rounded border border-slate-200 bg-slate-50 p-3">
@@ -902,6 +938,10 @@ function ClinicalToolkit({
       <div className="rounded border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-950">
         <strong>Interpretation:</strong> {orResult.interpretation}
       </div>
+      <p className="text-xs text-slate-500">
+        n = {orResult.n}; table is oriented as exposed cases/non-cases vs unexposed cases/non-cases.
+        {orResult.note}
+      </p>
     </div>
   );
 }
