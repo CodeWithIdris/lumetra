@@ -11,6 +11,8 @@ export interface Dataset {
   rows: Cell[][];
   sizeBytes: number;
   warnings: string[];
+  delimiter?: string;
+  typeOverrides?: Record<string, ColumnType>;
 }
 
 export interface ColumnProfile {

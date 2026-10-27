@@ -25,11 +25,17 @@ function makeId() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
+export interface ParseCsvOptions {
+  delimiter?: string;
+  hasHeader?: boolean;
+}
+
 /** Parse CSV text into a Dataset. Pure: no I/O, never executes content. */
 export function parseCsvText(
   text: string,
   name: string,
   source: "upload" | "sample" = "upload",
+  options?: ParseCsvOptions,
 ): ParseResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -49,33 +55,52 @@ export function parseCsvText(
     );
   }
 
-  const parsed = Papa.parse<string[]>(body, { skipEmptyLines: "greedy", header: false });
+  const papaOptions: Papa.ParseConfig = {
+    skipEmptyLines: "greedy",
+    header: false,
+  };
+  if (options?.delimiter) {
+    papaOptions.delimiter = options.delimiter;
+  }
+
+  const parsed = Papa.parse<string[]>(body, papaOptions);
   const data = parsed.data;
   if (data.length === 0) return { ok: false, errors: ["No rows were found in the file."] };
 
-  const header = data[0]!.map((h) => String(h ?? "").trim());
-  if (header.length < 1 || header.every((h) => h === "")) {
-    return { ok: false, errors: ["The first row must contain column names."] };
-  }
+  const detectedDelimiter = parsed.meta.delimiter || options?.delimiter || ",";
 
-  // Fill blank and duplicate column names deterministically.
-  const seen = new Map<string, number>();
-  const columns = header.map((h, i) => {
-    let base = h === "" ? `Column ${i + 1}` : h;
-    if (h === "") warnings.push(`Column ${i + 1} had no name and was called "${base}".`);
-    const count = seen.get(base) ?? 0;
-    seen.set(base, count + 1);
-    if (count > 0) {
-      const renamed = `${base} (${count + 1})`;
-      warnings.push(`Duplicate column name "${base}" was renamed to "${renamed}".`);
-      base = renamed;
+  let columns: string[];
+  let bodyRows: string[][];
+
+  if (options?.hasHeader === false) {
+    const colCount = Math.max(...data.map((r) => r.length), 1);
+    columns = Array.from({ length: colCount }, (_, i) => `Column ${i + 1}`);
+    bodyRows = data;
+  } else {
+    const header = data[0]!.map((h) => String(h ?? "").trim());
+    if (header.length < 1 || header.every((h) => h === "")) {
+      return { ok: false, errors: ["The first row must contain column names."] };
     }
-    return base;
-  });
 
-  const bodyRows = data.slice(1);
-  if (bodyRows.length === 0)
-    return { ok: false, errors: ["The file has column names but no data rows."] };
+    // Fill blank and duplicate column names deterministically.
+    const seen = new Map<string, number>();
+    columns = header.map((h, i) => {
+      let base = h === "" ? `Column ${i + 1}` : h;
+      if (h === "") warnings.push(`Column ${i + 1} had no name and was called "${base}".`);
+      const count = seen.get(base) ?? 0;
+      seen.set(base, count + 1);
+      if (count > 0) {
+        const renamed = `${base} (${count + 1})`;
+        warnings.push(`Duplicate column name "${base}" was renamed to "${renamed}".`);
+        base = renamed;
+      }
+      return base;
+    });
+
+    bodyRows = data.slice(1);
+    if (bodyRows.length === 0)
+      return { ok: false, errors: ["The file has column names but no data rows."] };
+  }
   if (bodyRows.length > MAX_ROWS) {
     return {
       ok: false,

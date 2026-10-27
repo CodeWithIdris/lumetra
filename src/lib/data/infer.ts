@@ -80,5 +80,16 @@ export function profileColumn(
 }
 
 export function profileDataset(ds: Dataset): ColumnProfile[] {
-  return ds.columns.map((c, i) => profileColumn(c, i, columnValues(ds, i)));
+  return ds.columns.map((c, i) => {
+    const p = profileColumn(c, i, columnValues(ds, i));
+    if (ds.typeOverrides && ds.typeOverrides[c]) {
+      const explicitType = ds.typeOverrides[c]!;
+      return {
+        ...p,
+        type: explicitType,
+        reason: `Explicitly set to ${explicitType} via data cleaning transformation.`,
+      };
+    }
+    return p;
+  });
 }
