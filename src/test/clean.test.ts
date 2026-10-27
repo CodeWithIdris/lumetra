@@ -8,6 +8,7 @@ import {
   filterRows,
   handleMissingValues,
   recodeCategorical,
+  changeColumnType,
   applyCleaningStep,
   replayCleaningSteps,
 } from "@/lib/data/clean";
@@ -98,6 +99,19 @@ describe("Data Cleaning Operations", () => {
     const recoded = recodeCategorical(parse.dataset, "status", "Pending", "In Review");
     const charlieRow = recoded.rows.find((r) => r[0] === "Charlie");
     expect(charlieRow?.[3]).toBe("In Review");
+  });
+
+  it("changes column type explicitly and treats unparseable values as null", () => {
+    const csv = `id,amount\n1,$120.50\n2,invalid\n3,300`;
+    const parse = parseCsvText(csv, "data.csv");
+    if (!parse.ok) throw new Error("parse failed");
+
+    const changed = changeColumnType(parse.dataset, "amount", "numeric");
+    expect(changed.rows[0]![1]).toBe("120.50");
+    // Invalid becomes null, NEVER 0!
+    expect(changed.rows[1]![1]).toBeNull();
+    expect(changed.rows[2]![1]).toBe("300");
+    expect(changed.typeOverrides?.["amount"]).toBe("numeric");
   });
 
   it("applies cleaning step, records effect, and replays history deterministically", () => {

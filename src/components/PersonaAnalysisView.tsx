@@ -13,6 +13,17 @@ import {
   calculateOddsRatio,
 } from "@/lib/stats/personas";
 import { correlation, pairs } from "@/lib/stats/advanced";
+import { useStore } from "@/lib/store";
+import { createPersonaSavedAnalysis } from "@/lib/stats/analysis";
+import {
+  interpretTailLatency,
+  interpretElasticity,
+  interpretGini,
+  interpretNormality,
+  interpretABTest,
+  interpretOddsRatio,
+} from "@/lib/stats/interpretation";
+import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -25,6 +36,7 @@ import {
   Activity,
   Layers,
   Sparkles,
+  BookmarkCheck,
 } from "lucide-react";
 
 interface PersonaAnalysisViewProps {
@@ -100,6 +112,7 @@ function EngineerToolkit({
   const [selectedCol, setSelectedCol] = useState(defaultCol);
   const [sloThreshold, setSloThreshold] = useState<number>(200);
   const [sloTarget, setSloTarget] = useState<number>(99.0);
+  const { saveAnalysis, setStatus } = useStore();
 
   const colProfile = numericCols.find((p) => p.name === selectedCol);
   const rawValues = useMemo(() => {
@@ -112,6 +125,51 @@ function EngineerToolkit({
     () => calculateSloBreach(rawValues, sloThreshold, sloTarget),
     [rawValues, sloThreshold, sloTarget],
   );
+
+  const handleSaveEngineerAnalysis = () => {
+    if (!colProfile || latencyStats.n === 0) {
+      toast.error("Cannot save analysis: no valid observations.");
+      return;
+    }
+    const interp = interpretTailLatency(selectedCol, latencyStats, sloStats);
+    const saved = createPersonaSavedAnalysis(
+      dataset,
+      "engineer",
+      `Tail Latency & SLO: ${selectedCol}`,
+      [selectedCol],
+      { column: selectedCol, sloThreshold, sloTarget },
+      {
+        n: latencyStats.n,
+        missing: latencyStats.missing,
+        p50: latencyStats.p50,
+        p75: latencyStats.p75,
+        p90: latencyStats.p90,
+        p95: latencyStats.p95,
+        p99: latencyStats.p99,
+        p999: latencyStats.p999,
+        tailRatio: latencyStats.tailRatio,
+        jitter: latencyStats.jitter,
+        outlierCount: latencyStats.outlierCount,
+        assessment: latencyStats.assessment,
+        sloThreshold,
+        sloTarget,
+        actualAvailabilityPercent: sloStats.actualAvailabilityPercent,
+        breachCount: sloStats.breachCount,
+        budgetConsumedPercent: sloStats.budgetConsumedPercent,
+        sloStatus: sloStats.status,
+        sloSummary: sloStats.summary,
+      },
+      interp,
+      [
+        "Percentiles calculated using continuous quantile interpolation.",
+        "Jitter measures mean absolute change between successive valid readings.",
+        "SLO availability represents percentage of observed requests meeting the latency threshold.",
+      ],
+    );
+    saveAnalysis(saved);
+    setStatus("analysed");
+    toast.success(`Saved "${saved.name}" to project history and report.`);
+  };
 
   if (numericCols.length === 0) {
     return <div className="text-xs text-slate-500">No numeric telemetry columns found.</div>;
@@ -170,6 +228,15 @@ function EngineerToolkit({
               <option value={90.0}>90.0%</option>
             </select>
           </div>
+
+          <Button
+            size="sm"
+            onClick={handleSaveEngineerAnalysis}
+            className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-2.5 shrink-0"
+          >
+            <BookmarkCheck className="size-3.5 mr-1" />
+            <span>Save Analysis</span>
+          </Button>
         </div>
       </div>
 
@@ -367,6 +434,73 @@ function EconomistToolkit({
   );
   const gini = useMemo(() => calculateGini(incomeVals), [incomeVals]);
 
+  const { saveAnalysis, setStatus } = useStore();
+
+  const handleSaveElasticity = () => {
+    if (elasticity.n < 3 || elasticity.pointElasticity === null) {
+      toast.error("Cannot save elasticity analysis: insufficient or invalid data.");
+      return;
+    }
+    const interp = interpretElasticity(price, quant, elasticity);
+    const saved = createPersonaSavedAnalysis(
+      dataset,
+      "economist",
+      `Price Elasticity: ${price} vs ${quant}`,
+      [price, quant],
+      { priceColumn: price, quantityColumn: quant },
+      {
+        n: elasticity.n,
+        missing: elasticity.missing,
+        meanPrice: elasticity.meanPrice,
+        meanQuantity: elasticity.meanQuantity,
+        slope: elasticity.slope,
+        rSquared: elasticity.rSquared,
+        pointElasticity: elasticity.pointElasticity,
+        classification: elasticity.classification,
+      },
+      interp,
+      [
+        "Point elasticity Ep = (dQ/dP) * (P_mean / Q_mean) evaluated at observed sample means.",
+        "OLS linear regression slope estimates marginal volume sensitivity.",
+      ],
+    );
+    saveAnalysis(saved);
+    setStatus("analysed");
+    toast.success(`Saved "${saved.name}" to project history and report.`);
+  };
+
+  const handleSaveGini = () => {
+    if (gini.n < 5 || gini.gini === null) {
+      toast.error("Cannot save inequality analysis: insufficient or negative data.");
+      return;
+    }
+    const interp = interpretGini(income, gini);
+    const saved = createPersonaSavedAnalysis(
+      dataset,
+      "economist",
+      `Inequality & Gini Index: ${income}`,
+      [income],
+      { column: income },
+      {
+        n: gini.n,
+        missing: gini.missing,
+        gini: gini.gini,
+        top10SharePct: gini.top10SharePct,
+        palmaRatio: gini.palmaRatio,
+        rating: gini.rating,
+        quintiles: gini.quintiles,
+      },
+      interp,
+      [
+        "Gini coefficient G calculated over ordered non-negative sample values.",
+        "Palma ratio compares cumulative share of top 10% to bottom 40%.",
+      ],
+    );
+    saveAnalysis(saved);
+    setStatus("analysed");
+    toast.success(`Saved "${saved.name}" to project history and report.`);
+  };
+
   return (
     <div className="space-y-4">
       {/* Section 1: Price Elasticity of Demand */}
@@ -405,6 +539,14 @@ function EconomistToolkit({
                 </option>
               ))}
             </select>
+            <Button
+              size="sm"
+              onClick={handleSaveElasticity}
+              className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-2.5 shrink-0 ml-1"
+            >
+              <BookmarkCheck className="size-3.5 mr-1" />
+              <span>Save Elasticity</span>
+            </Button>
           </div>
         </div>
 
@@ -458,17 +600,27 @@ function EconomistToolkit({
               Non-negative values only; Type-7 empirical population shares with fractional boundary observations.
             </p>
           </div>
-          <select
-            value={income}
-            onChange={(e) => setIncome(e.target.value)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-          >
-            {numericCols.map((c) => (
-              <option key={c.name} value={c.name}>
-                Distribution: {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={income}
+              onChange={(e) => setIncome(e.target.value)}
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            >
+              {numericCols.map((c) => (
+                <option key={c.name} value={c.name}>
+                  Distribution: {c.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              onClick={handleSaveGini}
+              className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-2.5 shrink-0"
+            >
+              <BookmarkCheck className="size-3.5 mr-1" />
+              <span>Save Gini</span>
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -558,6 +710,42 @@ function ScientistToolkit({
   );
 
   const diag = useMemo(() => calculateNormalityDiagnostics(rawVals), [rawVals]);
+  const { saveAnalysis, setStatus } = useStore();
+
+  const handleSaveNormality = () => {
+    if (diag.n < 4 || diag.mean === null) {
+      toast.error("Cannot save normality diagnostics: sample size too small (n < 4).");
+      return;
+    }
+    const interp = interpretNormality(targetCol, diag);
+    const saved = createPersonaSavedAnalysis(
+      dataset,
+      "scientist",
+      `Normality & Moments Diagnostics: ${targetCol}`,
+      [targetCol],
+      { column: targetCol },
+      {
+        n: diag.n,
+        missing: diag.missing,
+        mean: diag.mean,
+        median: diag.median,
+        sd: diag.sd,
+        skewness: diag.skewness,
+        kurtosis: diag.kurtosis,
+        momentsNearNormal: diag.momentsNearNormal,
+        iqrOutliersCount: diag.iqrOutliersCount,
+        recommendation: diag.recommendation,
+      },
+      interp,
+      [
+        "Fisher-Pearson standardized moment coefficients for sample skewness and excess kurtosis.",
+        "Tukey's IQR outlier fences computed at Q1 - 1.5×IQR and Q3 + 1.5×IQR.",
+      ],
+    );
+    saveAnalysis(saved);
+    setStatus("analysed");
+    toast.success(`Saved "${saved.name}" to project history and report.`);
+  };
 
   const matrixCols = numericCols.slice(0, 5);
   const corrMatrix = useMemo(() => {
@@ -590,17 +778,27 @@ function ScientistToolkit({
               Biased population-moment skewness and excess kurtosis; descriptive checks, not a formal normality test.
             </p>
           </div>
-          <select
-            value={targetCol}
-            onChange={(e) => setTargetCol(e.target.value)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
-          >
-            {numericCols.map((c) => (
-              <option key={c.name} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              value={targetCol}
+              onChange={(e) => setTargetCol(e.target.value)}
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+            >
+              {numericCols.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              onClick={handleSaveNormality}
+              className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-2.5 shrink-0"
+            >
+              <BookmarkCheck className="size-3.5 mr-1" />
+              <span>Save Diagnostics</span>
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -707,22 +905,71 @@ function ProductToolkit({
   const [controlConv, setControlConv] = useState(120);
   const [testUsers, setTestUsers] = useState(1000);
   const [testConv, setTestConv] = useState(165);
+  const { saveAnalysis, setStatus } = useStore();
 
   const abResult = useMemo(
     () => calculateABTest(controlConv, controlUsers, testConv, testUsers),
     [controlConv, controlUsers, testConv, testUsers],
   );
 
+  const handleSaveABTest = () => {
+    if (abResult.controlRate === null || abResult.testRate === null) {
+      toast.error("Cannot save A/B analysis: invalid conversion counts.");
+      return;
+    }
+    const interp = interpretABTest("Variant", "Conversions", abResult);
+    const saved = createPersonaSavedAnalysis(
+      dataset,
+      "product",
+      `A/B Experiment Conversion Lift`,
+      ["Control", "Variant"],
+      { controlUsers, controlConv, testUsers, testConv },
+      {
+        n: controlUsers + testUsers,
+        controlCount: controlUsers,
+        controlSuccess: controlConv,
+        controlRate: abResult.controlRate,
+        testCount: testUsers,
+        testSuccess: testConv,
+        testRate: abResult.testRate,
+        absoluteLift: abResult.absoluteLift,
+        relativeLiftPct: abResult.relativeLiftPct,
+        zScore: abResult.zScore,
+        pValue: abResult.pValue,
+        confidenceInterval95: abResult.confidenceInterval95,
+        isSignificant: abResult.isSignificant,
+      },
+      interp,
+      [
+        "Two-sided pooled score z-test for difference in independent binomial proportions.",
+        "Unpooled Wald 95% confidence interval for absolute conversion lift.",
+      ],
+    );
+    saveAnalysis(saved);
+    setStatus("analysed");
+    toast.success(`Saved "${saved.name}" to project history and report.`);
+  };
+
   return (
     <div className="rounded-md border border-slate-200 bg-white p-4 space-y-3 shadow-2xs">
-      <div className="border-b border-slate-100 pb-2">
-        <h3 className="font-semibold text-slate-900 text-xs flex items-center gap-2">
-          <Target className="size-4 text-blue-600" />
-          <span>A/B Experiment Conversion & Lift Significance</span>
-        </h3>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Two-proportion z-test with 95% confidence bounds and decision recommendation.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-2 gap-2">
+        <div>
+          <h3 className="font-semibold text-slate-900 text-xs flex items-center gap-2">
+            <Target className="size-4 text-blue-600" />
+            <span>A/B Experiment Conversion & Lift Significance</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Two-proportion z-test with 95% confidence bounds and decision recommendation.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={handleSaveABTest}
+          className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-2.5 shrink-0 self-start sm:self-auto"
+        >
+          <BookmarkCheck className="size-3.5 mr-1" />
+          <span>Save Experiment</span>
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -853,19 +1100,65 @@ function ClinicalToolkit({
   const [b, setB] = useState(55); // Exposed non-cases
   const [c, setC] = useState(20); // Unexposed cases
   const [d, setD] = useState(80); // Unexposed non-cases
+  const { saveAnalysis, setStatus } = useStore();
 
   const orResult = useMemo(() => calculateOddsRatio(a, b, c, d), [a, b, c, d]);
 
+  const handleSaveOddsRatio = () => {
+    if (orResult.oddsRatio === null) {
+      toast.error("Cannot save clinical risk analysis: invalid 2x2 counts.");
+      return;
+    }
+    const interp = interpretOddsRatio("Exposed", "Outcome", orResult);
+    const saved = createPersonaSavedAnalysis(
+      dataset,
+      "clinical",
+      `Epidemiology Odds Ratio & Risk Association`,
+      ["Exposed", "Outcome"],
+      { a, b, c, d },
+      {
+        n: orResult.n,
+        a,
+        b,
+        c,
+        d,
+        oddsRatio: orResult.oddsRatio,
+        relativeRisk: orResult.relativeRisk,
+        ci95Lower: orResult.ci95Lower,
+        ci95Upper: orResult.ci95Upper,
+        chiSquareP: orResult.chiSquareP,
+      },
+      interp,
+      [
+        "Odds ratio (ad / bc) with log-transformed Wald 95% confidence bounds.",
+        "Pearson chi-square test with Yates' continuity correction for 2×2 contingency table.",
+      ],
+    );
+    saveAnalysis(saved);
+    setStatus("analysed");
+    toast.success(`Saved "${saved.name}" to project history and report.`);
+  };
+
   return (
     <div className="rounded-md border border-slate-200 bg-white p-4 space-y-3 shadow-2xs">
-      <div className="border-b border-slate-100 pb-2">
-        <h3 className="font-semibold text-slate-900 text-xs flex items-center gap-2">
-          <HeartPulse className="size-4 text-blue-600" />
-          <span>Epidemiology & Clinical 2×2 Contingency Odds Ratio</span>
-        </h3>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Calculates Odds Ratio (OR), Relative Risk (RR), and 95% Wald confidence intervals.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-2 gap-2">
+        <div>
+          <h3 className="font-semibold text-slate-900 text-xs flex items-center gap-2">
+            <HeartPulse className="size-4 text-blue-600" />
+            <span>Epidemiology & Clinical 2×2 Contingency Odds Ratio</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Calculates Odds Ratio (OR), Relative Risk (RR), and 95% Wald confidence intervals.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={handleSaveOddsRatio}
+          className="h-7 bg-blue-600 text-xs text-white hover:bg-blue-700 px-2.5 shrink-0 self-start sm:self-auto"
+        >
+          <BookmarkCheck className="size-3.5 mr-1" />
+          <span>Save Odds Ratio</span>
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

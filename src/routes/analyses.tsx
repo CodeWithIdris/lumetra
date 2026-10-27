@@ -882,6 +882,262 @@ function Analyses() {
                 </div>
               ) : null}
 
+              {/* Persona Engine Outputs */}
+              {viewedAnalysis.type.startsWith("persona_") && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {viewedAnalysis.type === "persona_engineer" && (
+                      <>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">P50 / P99 Latency</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {fmt(viewedAnalysis.results["p50"] as number | null)} / {fmt(viewedAnalysis.results["p99"] as number | null)} ms
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Tail Ratio: {typeof viewedAnalysis.results["tailRatio"] === "number" ? `${(viewedAnalysis.results["tailRatio"] as number).toFixed(2)}×` : "—"}
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Average Jitter</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {fmt(viewedAnalysis.results["jitter"] as number | null)} ms
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Consecutive reading variance</div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">SLO Availability</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-emerald-700">
+                            {typeof viewedAnalysis.results["actualAvailabilityPercent"] === "number"
+                              ? `${(viewedAnalysis.results["actualAvailabilityPercent"] as number).toFixed(2)}%`
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Target: {String(viewedAnalysis.results["sloTarget"] ?? 99)}%
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">SLO Breaches</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {Number(viewedAnalysis.results["breachCount"] ?? 0).toLocaleString()}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5 font-bold uppercase">
+                            Status: {String(viewedAnalysis.results["sloStatus"] ?? "healthy")}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {viewedAnalysis.type === "persona_economist" && (
+                      <>
+                        {"pointElasticity" in viewedAnalysis.results ? (
+                          <>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">Elasticity (Ep)</div>
+                              <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                                {typeof viewedAnalysis.results["pointElasticity"] === "number"
+                                  ? (viewedAnalysis.results["pointElasticity"] as number).toFixed(3)
+                                  : "—"}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                {String(viewedAnalysis.results["classification"])}
+                              </div>
+                            </div>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">Marginal Slope</div>
+                              <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                                {fmt(viewedAnalysis.results["slope"] as number | null, 4)}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">dQ/dP rate of change</div>
+                            </div>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">R² Fit</div>
+                              <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                                {typeof viewedAnalysis.results["rSquared"] === "number"
+                                  ? `${((viewedAnalysis.results["rSquared"] as number) * 100).toFixed(1)}%`
+                                  : "—"}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">Explained volume variance</div>
+                            </div>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">Mean Price / Qty</div>
+                              <div className="num mt-1 text-sm font-bold font-mono text-slate-900">
+                                {fmt(viewedAnalysis.results["meanPrice"] as number | null)} / {fmt(viewedAnalysis.results["meanQuantity"] as number | null)}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">Evaluation point</div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">Gini Coefficient</div>
+                              <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                                {typeof viewedAnalysis.results["gini"] === "number"
+                                  ? (viewedAnalysis.results["gini"] as number).toFixed(3)
+                                  : "—"}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">0 = equality, 1 = inequality</div>
+                            </div>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">Top 10% Share</div>
+                              <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                                {typeof viewedAnalysis.results["top10SharePct"] === "number"
+                                  ? `${(viewedAnalysis.results["top10SharePct"] as number).toFixed(1)}%`
+                                  : "—"}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">Decile concentration</div>
+                            </div>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">Palma Ratio</div>
+                              <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                                {typeof viewedAnalysis.results["palmaRatio"] === "number"
+                                  ? (viewedAnalysis.results["palmaRatio"] as number).toFixed(2)
+                                  : "—"}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">Top 10% / Bottom 40%</div>
+                            </div>
+                            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-[11px] font-medium text-slate-500">Rating</div>
+                              <div className="text-xs font-semibold text-slate-900 mt-1 line-clamp-2">
+                                {String(viewedAnalysis.results["rating"] ?? "Evaluated")}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    {viewedAnalysis.type === "persona_scientist" && (
+                      <>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Mean (SD)</div>
+                          <div className="num mt-1 text-lg font-bold font-mono text-slate-900">
+                            {fmt(viewedAnalysis.results["mean"] as number | null)} ({fmt(viewedAnalysis.results["sd"] as number | null)})
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Median: {fmt(viewedAnalysis.results["median"] as number | null)}
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Skewness (g1)</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {fmt(viewedAnalysis.results["skewness"] as number | null, 2)}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Gaussian target: ~0.0
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Excess Kurtosis (g2)</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {fmt(viewedAnalysis.results["kurtosis"] as number | null, 2)}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Tail weight relative to normal
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">IQR Outliers</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {Number(viewedAnalysis.results["iqrOutliersCount"] ?? 0)}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">1.5× IQR boundary</div>
+                        </div>
+                      </>
+                    )}
+
+                    {viewedAnalysis.type === "persona_product" && (
+                      <>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Relative Lift</div>
+                          <div className={`num mt-1 text-xl font-bold font-mono ${
+                            Number(viewedAnalysis.results["relativeLiftPct"]) > 0 ? "text-emerald-700" : "text-slate-900"
+                          }`}>
+                            {typeof viewedAnalysis.results["relativeLiftPct"] === "number"
+                              ? `${(viewedAnalysis.results["relativeLiftPct"] as number).toFixed(1)}%`
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Abs Lift: {typeof viewedAnalysis.results["absoluteLift"] === "number"
+                              ? `${((viewedAnalysis.results["absoluteLift"] as number) * 100).toFixed(2)} pp`
+                              : "—"}
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">p-Value (Two-Sided)</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {typeof viewedAnalysis.results["pValue"] === "number"
+                              ? (viewedAnalysis.results["pValue"] as number) < 0.001
+                                ? "< 0.001"
+                                : (viewedAnalysis.results["pValue"] as number).toFixed(4)
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            z = {typeof viewedAnalysis.results["zScore"] === "number" ? (viewedAnalysis.results["zScore"] as number).toFixed(2) : "—"}
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Significance</div>
+                          <div className="text-xs font-bold text-emerald-700 mt-1">
+                            {Boolean(viewedAnalysis.results["isSignificant"]) ? "STATISTICALLY SIGNIFICANT" : "INCONCLUSIVE"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Threshold α = 0.05</div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Control vs Variant</div>
+                          <div className="num mt-1 text-sm font-bold font-mono text-slate-900">
+                            {typeof viewedAnalysis.results["controlRate"] === "number" ? `${((viewedAnalysis.results["controlRate"] as number) * 100).toFixed(1)}%` : "—"} → {typeof viewedAnalysis.results["testRate"] === "number" ? `${((viewedAnalysis.results["testRate"] as number) * 100).toFixed(1)}%` : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Conversion proportions</div>
+                        </div>
+                      </>
+                    )}
+
+                    {viewedAnalysis.type === "persona_clinical" && (
+                      <>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Odds Ratio (OR)</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {typeof viewedAnalysis.results["oddsRatio"] === "number"
+                              ? (viewedAnalysis.results["oddsRatio"] as number).toFixed(2)
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            95% CI: [{typeof viewedAnalysis.results["ci95Lower"] === "number" ? (viewedAnalysis.results["ci95Lower"] as number).toFixed(2) : "—"}, {typeof viewedAnalysis.results["ci95Upper"] === "number" ? (viewedAnalysis.results["ci95Upper"] as number).toFixed(2) : "—"}]
+                          </div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Relative Risk (RR)</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {typeof viewedAnalysis.results["relativeRisk"] === "number"
+                              ? (viewedAnalysis.results["relativeRisk"] as number).toFixed(2)
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Exposed risk / Unexposed risk</div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Chi-Square p-value</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {typeof viewedAnalysis.results["chiSquareP"] === "number"
+                              ? (viewedAnalysis.results["chiSquareP"] as number) < 0.001
+                                ? "< 0.001"
+                                : (viewedAnalysis.results["chiSquareP"] as number).toFixed(4)
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Independence test</div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-medium text-slate-500">2×2 Observations</div>
+                          <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+                            {Number(viewedAnalysis.results["n"] ?? 0).toLocaleString()}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Complete subjects</div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* 5-SECTION DETERMINISTIC INTERPRETATION (Requirement 6) */}
               <div className="border-t border-slate-200 pt-4 space-y-4">
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">

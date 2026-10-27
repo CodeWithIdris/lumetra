@@ -23,6 +23,9 @@ import {
   Target,
   HeartPulse,
   HardDrive,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "./ui/button";
 
@@ -59,7 +62,16 @@ function LumetraMark() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const { active, activeProject, persona, setPersona, user, cloudSyncStatus } = useStore();
+  const {
+    active,
+    activeProject,
+    persona,
+    setPersona,
+    user,
+    cloudSyncStatus,
+    saveState,
+    lastSaveError,
+  } = useStore();
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"signup" | "login" | "supabase">("signup");
   const [personaOpen, setPersonaOpen] = useState(false);
@@ -213,12 +225,23 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             <div className="flex items-center gap-1.5 truncate text-xs">
               <span className="font-semibold text-slate-900">{pageTitle}</span>
+              {activeProject && (
+                <>
+                  <span className="text-slate-300">/</span>
+                  <span
+                    className="truncate font-medium text-slate-700 max-w-[160px]"
+                    title={`Project: ${activeProject.name}`}
+                  >
+                    {activeProject.name}
+                  </span>
+                </>
+              )}
               {active && (
                 <>
                   <span className="text-slate-300">/</span>
                   <span
-                    className="truncate font-mono text-slate-500 max-w-[200px]"
-                    title={active.dataset.name}
+                    className="truncate font-mono text-slate-500 max-w-[160px]"
+                    title={`Dataset: ${active.dataset.name}`}
                   >
                     {active.dataset.name}
                   </span>
@@ -229,6 +252,50 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {/* Top Bar Controls */}
           <div className="flex items-center gap-2">
+            {/* Save & Persistence Indicator (Requirement 1) */}
+            {activeProject && (
+              <div
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border ${
+                  saveState === "error"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : saveState === "saving"
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                }`}
+                title={
+                  saveState === "error"
+                    ? (lastSaveError ?? "Save failed")
+                    : saveState === "saving"
+                      ? "Saving changes to vault..."
+                      : "All project changes saved"
+                }
+              >
+                {saveState === "saving" && (
+                  <>
+                    <Loader2 className="size-3 animate-spin text-blue-600" />
+                    <span className="hidden sm:inline">Saving...</span>
+                  </>
+                )}
+                {saveState === "saved" && (
+                  <>
+                    <CheckCircle2 className="size-3 text-emerald-600" />
+                    <span className="text-emerald-700 hidden sm:inline">Saved</span>
+                  </>
+                )}
+                {saveState === "error" && (
+                  <>
+                    <AlertCircle className="size-3 text-red-600" />
+                    <span className="text-red-600 hidden sm:inline">Save failed</span>
+                  </>
+                )}
+                {saveState === "pending" && (
+                  <>
+                    <span className="size-1.5 rounded-full bg-amber-500" />
+                    <span className="text-amber-700 hidden sm:inline">Unsaved</span>
+                  </>
+                )}
+              </div>
+            )}
             {/* Compact Professional Persona Selector */}
             <div className="relative">
               <button

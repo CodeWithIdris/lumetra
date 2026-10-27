@@ -57,7 +57,11 @@ export interface SavedAnalysis {
 }
 
 export function computeDatasetSignature(ds: Dataset): string {
-  return `${ds.id || "ds"}:${ds.columns.join("|")}:${ds.rows.length}`;
+  const headTail =
+    ds.rows.length > 0
+      ? `${ds.rows[0]?.slice(0, 3).join(",")}:${ds.rows[ds.rows.length - 1]?.slice(0, 3).join(",")}`
+      : "empty";
+  return `${ds.name || "dataset"}:${ds.columns.join("|")}:${ds.rows.length}:${headTail}`;
 }
 
 export function isAnalysisStale(analysis: SavedAnalysis, currentDataset: Dataset): boolean {

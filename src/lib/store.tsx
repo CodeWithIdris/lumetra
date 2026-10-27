@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { parseCsvFile, parseCsvText } from "./data/parse";
+import { parseCsvFile, parseCsvText, type ParseCsvOptions } from "./data/parse";
 import { sampleCsvForPersona } from "./data/sample";
 import { deleteChat } from "./persistence/chats";
 import type { Dataset } from "./data/types";
@@ -64,6 +64,7 @@ export interface Store {
   projects: ProjectMeta[];
   active: Active | null;
   activeProject: ProjectMeta | null;
+  activeProjectId: string | null;
   rawDataset: Dataset | null;
   cleaningSteps: CleaningStep[];
   savedAnalyses: SavedAnalysis[];
@@ -73,7 +74,7 @@ export interface Store {
   // Project lifecycle
   createProject: (name: string, description?: string) => ProjectMeta | null;
   saveAsProject: (name: string, description?: string) => ProjectMeta | null;
-  openProject: (id: string) => { error?: string };
+  openProject: (id: string) => { error?: string; notice?: string };
   renameProject: (id: string, name: string) => void;
   duplicateProject: (id: string) => ProjectMeta | null;
   deleteProject: (id: string) => void;
@@ -84,7 +85,8 @@ export interface Store {
   resetAll: () => void;
 
   // Data Loading
-  loadFile: (file: File) => Promise<{ errors: string[] }>;
+  loadFile: (file: File, options?: ParseCsvOptions) => Promise<{ errors: string[] }>;
+  attachDataset: (dataset: Dataset, csv: string) => void;
   loadSample: () => void;
   loadPersonaSample: (personaId?: PersonaId) => void;
   clearDataset: () => void;
@@ -129,6 +131,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [ready, setReady] = useState(false);
   const [active, setActiveState] = useState<Active | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [cleaningSteps, setCleaningSteps] = useState<CleaningStep[]>([]);
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -142,6 +145,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
 
   const activeRef = useRef<Active | null>(null);
+  const activeProjectIdRef = useRef<string | null>(null);
   const cleaningStepsRef = useRef<CleaningStep[]>([]);
   const savedAnalysesRef = useRef<SavedAnalysis[]>([]);
   const personaRef = useRef<PersonaId>("engineer");
@@ -216,7 +220,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const attach = useCallback(
     (dataset: Dataset, csv: string) => {
-      const projectId = activeRef.current?.projectId ?? null;
+      const projectId = activeRef.current?.projectId ?? activeProjectIdRef.current ?? null;
       setCleaningSteps([]);
       cleaningStepsRef.current = [];
 
@@ -240,8 +244,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const loadFile = useCallback(
-    async (file: File) => {
-      const { result, text } = await parseCsvFile(file);
+    async (file: File, options?: ParseCsvOptions) => {
+      const { result, text } = await parseCsvFile(file, options);
       if (!result.ok) return { errors: result.errors };
       attach(result.dataset, text);
       return { errors: [] };
@@ -275,6 +279,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setActive, update]);
 
   const startNew = useCallback(() => {
+    activeProjectIdRef.current = null;
+    setActiveProjectId(null);
     setActive(null);
     setCleaningSteps([]);
     cleaningStepsRef.current = [];
@@ -288,6 +294,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!trimmedName) return null;
 
       const id = "proj_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+      activeProjectIdRef.current = id;
+      setActiveProjectId(id);
+
       const cur = activeRef.current;
       let stored = false;
 
@@ -345,6 +354,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const p = loadProjects().find((x) => x.id === id);
       if (!p) return { error: "Project not found." };
 
+      activeProjectIdRef.current = id;
+      setActiveProjectId(id);
+
       const projectCleaningSteps = p.cleaningSteps ?? [];
       const projectAnalyses = p.savedAnalyses ?? [];
       setCleaningSteps(projectCleaningSteps);
@@ -354,11 +366,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       if (!p.dataset) {
         setActive(null);
-        return { error: "This project has no dataset yet. Upload one in the Data Workspace." };
+        return { notice: "This project has no dataset yet. Upload one in the Data Workspace." };
       }
 
       const csv = loadCsv(id);
       if (!csv) {
+        setActive(null);
         return {
           error:
             "The data for this project was not stored locally. Please upload the CSV file again to continue.",
@@ -407,6 +420,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       getSupabaseClient()
         .deleteProject(id)
         .catch(() => {});
+      if (activeProjectIdRef.current === id) {
+        activeProjectIdRef.current = null;
+        setActiveProjectId(null);
+      }
       const cur = activeRef.current;
       if (cur?.projectId === id) {
         setActive({ ...cur, projectId: null });
@@ -631,8 +648,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const activeProject = useMemo(
-    () => projects.find((p) => p.id === active?.projectId) ?? null,
-    [projects, active],
+    () => projects.find((p) => p.id === (active?.projectId ?? activeProjectId)) ?? null,
+    [projects, active, activeProjectId],
   );
 
   const value: Store = {
@@ -640,6 +657,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     projects,
     active,
     activeProject,
+    activeProjectId,
     rawDataset: active?.rawDataset ?? null,
     cleaningSteps,
     savedAnalyses,
@@ -657,6 +675,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     startNew,
     resetAll,
     loadFile,
+    attachDataset: attach,
     loadSample,
     loadPersonaSample,
     clearDataset,

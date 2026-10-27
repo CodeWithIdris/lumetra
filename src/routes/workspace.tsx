@@ -57,7 +57,8 @@ import {
   Eye,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { Dataset, ParseResult } from "@/lib/data/types";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { Dataset, ParseResult, ColumnType } from "@/lib/data/types";
 
 export const Route = createFileRoute("/workspace")({
   validateSearch: (s: Record<string, unknown>): { notice?: string } =>
@@ -91,6 +92,7 @@ function Workspace() {
     undoCleaning,
     resetCleaning,
     loadFile,
+    attachDataset,
     loadPersonaSample,
     clearDataset,
     saveAsProject,
@@ -113,16 +115,19 @@ function Workspace() {
   const [page, setPage] = useState(0);
   const [activeTab, setActiveTab] = useState<string>("data");
 
-  // Import Preview Modal State
+  // Import Preview Modal State with detection options (Requirement 2)
   const [pendingImport, setPendingImport] = useState<{
     file: File;
     dataset: Dataset;
     csv: string;
+    hasHeader: boolean;
+    delimiter: string;
   } | null>(null);
 
   // Cleaning tool state
   const [cleaningOp, setCleaningOp] = useState<CleaningStepType>("handle_missing");
   const [cleanCol, setCleanCol] = useState<string>("");
+  const [cleanTargetType, setCleanTargetType] = useState<ColumnType>("numeric");
   const [cleanNewName, setCleanNewName] = useState<string>("");
   const [cleanColsToRemove, setCleanColsToRemove] = useState<string[]>([]);
   const [cleanFilterOp, setCleanFilterOp] = useState<FilterOperator>("equals");
@@ -193,8 +198,14 @@ function Workspace() {
         setErrors(result.errors);
         return;
       }
-      // Show Preview modal before committing
-      setPendingImport({ file, dataset: result.dataset, csv: text });
+      // Show Preview modal before committing with detection options (Requirement 2)
+      setPendingImport({
+        file,
+        dataset: result.dataset,
+        csv: text,
+        hasHeader: true,
+        delimiter: result.dataset.delimiter || "auto",
+      });
     } catch (e) {
       setBusy(false);
       setErrors([e instanceof Error ? e.message : "Failed to read file."]);
@@ -202,20 +213,37 @@ function Workspace() {
     if (fileRef.current) fileRef.current.value = "";
   }
 
+  function updatePendingImportOptions(newHasHeader: boolean, newDelimiter: string) {
+    if (!pendingImport) return;
+    const delim = newDelimiter === "auto" ? undefined : newDelimiter;
+    const re = parseCsvText(pendingImport.csv, pendingImport.file.name, "upload", {
+      hasHeader: newHasHeader,
+      delimiter: delim,
+    });
+    if (re.ok) {
+      setPendingImport({
+        ...pendingImport,
+        dataset: re.dataset,
+        hasHeader: newHasHeader,
+        delimiter: newDelimiter,
+      });
+    } else {
+      toast.error(re.errors.join(" "));
+    }
+  }
+
   async function commitPendingImport() {
     if (!pendingImport) return;
     setBusy(true);
-    const r = await loadFile(pendingImport.file);
+    attachDataset(pendingImport.dataset, pendingImport.csv);
     setBusy(false);
+    const importedName = pendingImport.dataset.name;
+    const importedRows = pendingImport.dataset.rows.length;
     setPendingImport(null);
-    if (r.errors.length) {
-      setErrors(r.errors);
-    } else {
-      setPage(0);
-      setQuery("");
-      toast.success(`Imported "${pendingImport.dataset.name}" (${pendingImport.dataset.rows.length.toLocaleString()} rows).`);
-      navigate({ to: "/workspace", search: {} });
-    }
+    setPage(0);
+    setQuery("");
+    toast.success(`Imported "${importedName}" (${importedRows.toLocaleString()} rows).`);
+    navigate({ to: "/workspace", search: {} });
   }
 
   const picker = (
@@ -273,6 +301,13 @@ function Workspace() {
           strategy: cleanMissingStrategy,
           customValue: cleanMissingCustomVal,
         });
+        break;
+      case "change_type":
+        if (!cleanCol) {
+          toast.error("Please choose a column to change its data type.");
+          return;
+        }
+        res = applyCleaning("change_type", { column: cleanCol, targetType: cleanTargetType });
         break;
       case "recode_categorical":
         if (!cleanCol || !cleanRecodeFrom.trim() || !cleanRecodeTo.trim()) {
@@ -893,6 +928,7 @@ function Workspace() {
                         className="w-full rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
                       >
                         <option value="handle_missing">Handle Missing / Null Values</option>
+                        <option value="change_type">Change Column Data Type</option>
                         <option value="remove_duplicates">Remove Exact Duplicate Rows</option>
                         <option value="filter_rows">Filter Rows by Condition</option>
                         <option value="rename_column">Rename Column</option>
@@ -900,6 +936,45 @@ function Workspace() {
                         <option value="recode_categorical">Recode Categorical Value</option>
                       </select>
                     </div>
+
+                    {/* Operation-specific inputs */}
+                    {cleaningOp === "change_type" && (
+                      <div className="space-y-3 rounded border border-slate-200 bg-slate-50/50 p-3">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <label className="text-[11px] font-medium text-slate-600">Target Column:</label>
+                            <select
+                              value={cleanCol}
+                              onChange={(e) => setCleanCol(e.target.value)}
+                              className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                            >
+                              <option value="">Select column...</option>
+                              {profiles.map((p) => (
+                                <option key={p.name} value={p.name}>
+                                  {p.name} (currently {p.type})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-slate-600">Target Data Type:</label>
+                            <select
+                              value={cleanTargetType}
+                              onChange={(e) => setCleanTargetType(e.target.value as ColumnType)}
+                              className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
+                            >
+                              <option value="numeric">Numeric (Numbers, amounts, measurements)</option>
+                              <option value="categorical">Categorical (Discrete levels, groups)</option>
+                              <option value="date">Date/Time (ISO format YYYY-MM-DD)</option>
+                              <option value="text">Text (Freeform strings)</option>
+                            </select>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Converts values safely. Cells that cannot be parsed into the target type become null (never coerced to zero) to preserve statistical validity.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Operation-specific inputs */}
                     {cleaningOp === "handle_missing" && (
@@ -1319,11 +1394,60 @@ function Workspace() {
                 </div>
               </div>
 
+              {/* Header and Delimiter Detection & Correction Controls (Requirement 2) */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-2.5 rounded border border-slate-200">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
+                  <Checkbox
+                    checked={pendingImport.hasHeader}
+                    onCheckedChange={(c) => updatePendingImportOptions(Boolean(c), pendingImport.delimiter)}
+                  />
+                  <span>First row contains column headers</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium text-[11px]">Delimiter:</span>
+                  <select
+                    value={pendingImport.delimiter}
+                    onChange={(e) => updatePendingImportOptions(pendingImport.hasHeader, e.target.value)}
+                    className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-900"
+                  >
+                    <option value="auto">Auto-detect ({pendingImport.dataset.delimiter || ","})</option>
+                    <option value=",">Comma (,)</option>
+                    <option value=";">Semicolon (;)</option>
+                    <option value={"\t"}>Tab (\t)</option>
+                    <option value="|">Pipe (|)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Detected Column Schema & Types */}
+              <div className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Inferred Column Schema:</span>
+                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 bg-slate-50 rounded border border-slate-200">
+                  {profileDataset(pendingImport.dataset).map((p) => (
+                    <span
+                      key={p.name}
+                      className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 border border-slate-200 font-mono text-[10px]"
+                    >
+                      <span className="font-semibold text-slate-800">{p.name}</span>
+                      <span className="text-blue-700 bg-blue-50 px-1 rounded text-[9px] uppercase font-bold">
+                        {p.type}
+                      </span>
+                      {p.missing > 0 && (
+                        <span className="text-amber-700 text-[9px]">
+                          ({p.missing} null)
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               {pendingImport.dataset.warnings.length > 0 && (
                 <div className="rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900 space-y-1">
                   <div className="font-semibold flex items-center gap-1.5">
                     <AlertTriangle className="size-3.5 text-amber-700" />
-                    <span>Import Warnings Detected:</span>
+                    <span>Import Warnings & Malformed Rows:</span>
                   </div>
                   <ul className="list-disc pl-4 text-[11px] space-y-0.5">
                     {pendingImport.dataset.warnings.map((w, i) => (
@@ -1334,29 +1458,36 @@ function Workspace() {
               )}
 
               {/* Sample preview table */}
-              <div className="border border-slate-200 rounded max-h-44 overflow-auto">
-                <table className="w-full text-[11px] text-left border-collapse font-mono">
-                  <thead className="bg-slate-100 text-slate-700 sticky top-0">
-                    <tr>
-                      {pendingImport.dataset.columns.map((c) => (
-                        <th key={c} className="p-1.5 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
-                          {c}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {pendingImport.dataset.rows.slice(0, 5).map((row, rIdx) => (
-                      <tr key={rIdx}>
-                        {row.map((cell, cIdx) => (
-                          <td key={cIdx} className="p-1.5 border-r border-slate-100 last:border-r-0 whitespace-nowrap text-slate-700 truncate max-w-[140px]">
-                            {cell === null ? <span className="text-amber-700 italic">null</span> : cell}
-                          </td>
+              <div className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Preview (first 5 rows):</span>
+                <div className="border border-slate-200 rounded max-h-44 overflow-auto">
+                  <table className="w-full text-[11px] text-left border-collapse font-mono">
+                    <thead className="bg-slate-100 text-slate-700 sticky top-0">
+                      <tr>
+                        {pendingImport.dataset.columns.map((c) => (
+                          <th key={c} className="p-1.5 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
+                            {c}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {pendingImport.dataset.rows.slice(0, 5).map((row, rIdx) => (
+                        <tr key={rIdx}>
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx} className="p-1.5 border-r border-slate-100 last:border-r-0 whitespace-nowrap text-slate-700 truncate max-w-[140px]">
+                              {cell === null ? <span className="text-amber-700 italic font-semibold">null</span> : cell}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-400 font-mono">
+                Browser Limit: Max 20 MB / 200,000 rows • Pure client-side processing • No unconsented data transmission
               </div>
             </div>
           )}
