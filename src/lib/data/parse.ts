@@ -158,10 +158,25 @@ export function parseCsvText(
   }
 
   if (errors.length) return { ok: false, errors };
-  return { ok: true, dataset: { id: makeId(), name, source, columns, rows, sizeBytes, warnings } };
+  return {
+    ok: true,
+    dataset: {
+      id: makeId(),
+      name,
+      source,
+      columns,
+      rows,
+      sizeBytes,
+      warnings,
+      delimiter: detectedDelimiter,
+    },
+  };
 }
 
-export async function parseCsvFile(file: File): Promise<{ result: ParseResult; text: string }> {
+export async function parseCsvFile(
+  file: File,
+  options?: ParseCsvOptions,
+): Promise<{ result: ParseResult; text: string }> {
   const fail = (msg: string) => ({ result: { ok: false as const, errors: [msg] }, text: "" });
   if (file.size === 0) return fail(`"${file.name}" is empty.`);
   if (file.size > MAX_FILE_BYTES) {
@@ -187,7 +202,7 @@ export async function parseCsvFile(file: File): Promise<{ result: ParseResult; t
     return fail(`"${file.name}" could not be read.`);
   }
   try {
-    return { result: parseCsvText(text, file.name), text };
+    return { result: parseCsvText(text, file.name, "upload", options), text };
   } catch (e) {
     return fail(
       `The file could not be parsed: ${e instanceof Error ? e.message : "unknown error"}.`,

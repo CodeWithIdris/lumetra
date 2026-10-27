@@ -1,5 +1,5 @@
 import type { Cell, ColumnProfile, ColumnType, Dataset } from "./types";
-import { profileDataset, columnValues, isNumeric } from "./infer";
+import { profileDataset, columnValues, isNumeric, isIsoDate } from "./infer";
 import { describe, median } from "../stats/descriptive";
 
 export type CleaningStepType =
@@ -98,6 +98,7 @@ function cloneDataset(ds: Dataset): Dataset {
     columns: [...ds.columns],
     rows: ds.rows.map((r) => [...r]),
     warnings: [...ds.warnings],
+    typeOverrides: ds.typeOverrides ? { ...ds.typeOverrides } : undefined,
   };
 }
 
