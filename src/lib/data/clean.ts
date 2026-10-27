@@ -344,6 +344,55 @@ export function recodeCategorical(
   };
 }
 
+export function changeColumnType(
+  dataset: Dataset,
+  column: string,
+  targetType: ColumnType,
+): Dataset {
+  const colIdx = dataset.columns.indexOf(column);
+  if (colIdx === -1) return dataset;
+
+  const nextRows = dataset.rows.map((row) => {
+    const nextRow = [...row];
+    const cell = nextRow[colIdx];
+    if (cell === null) return nextRow;
+
+    if (targetType === "numeric") {
+      const cleaned = cell.replace(/[$,\s]/g, "");
+      if (isNumeric(cleaned)) {
+        nextRow[colIdx] = cleaned;
+      } else {
+        nextRow[colIdx] = null;
+      }
+    } else if (targetType === "date") {
+      if (isIsoDate(cell)) {
+        nextRow[colIdx] = cell.slice(0, 10);
+      } else {
+        const parsedTime = Date.parse(cell);
+        if (!isNaN(parsedTime)) {
+          nextRow[colIdx] = new Date(parsedTime).toISOString().slice(0, 10);
+        } else {
+          nextRow[colIdx] = null;
+        }
+      }
+    } else {
+      nextRow[colIdx] = String(cell);
+    }
+    return nextRow;
+  });
+
+  const nextOverrides = {
+    ...(dataset.typeOverrides ?? {}),
+    [column]: targetType,
+  };
+
+  return {
+    ...dataset,
+    rows: nextRows,
+    typeOverrides: nextOverrides,
+  };
+}
+
 export function executeCleaningStep(
   dataset: Dataset,
   type: CleaningStepType,
@@ -396,10 +445,14 @@ export function executeCleaningStep(
       break;
     }
     case "change_type": {
-      // Type is inferred dynamically by infer.ts, but can record explicit assertion in notes
       const col = String(params["column"] ?? "");
-      const targetType = String(params["targetType"] ?? "");
-      description = `Asserted type of "${col}" as ${targetType}`;
+      const targetType = params["targetType"] as ColumnType;
+      if (col && targetType) {
+        nextDs = changeColumnType(nextDs, col, targetType);
+        description = `Changed column "${col}" type to ${targetType}`;
+      } else {
+        description = `Asserted type of "${col}" as ${targetType}`;
+      }
       break;
     }
     default:
