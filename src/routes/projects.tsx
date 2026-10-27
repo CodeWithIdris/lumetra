@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,6 +13,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState, PageHeader } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { pageMeta } from "@/lib/meta";
@@ -21,11 +30,13 @@ import {
   ArrowUpDown,
   RefreshCw,
   HardDrive,
-  Database,
+  Cloud,
   Trash2,
   Edit2,
-  ExternalLink,
+  Copy,
   Plus,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,12 +62,16 @@ function Projects() {
     openProject,
     renameProject,
     deleteProject,
+    duplicateProject,
+    createProject,
     active,
     activeProject,
     startNew,
     syncWithCloud,
     cloudSyncStatus,
     user,
+    saveState,
+    lastSaveError,
   } = useStore();
 
   const navigate = useNavigate();
@@ -67,6 +82,46 @@ function Projects() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"updatedAt" | "name" | "rows">("updatedAt");
   const [sortAsc, setSortAsc] = useState(false);
+
+  // Create Project dialog state
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createDesc, setCreateDesc] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+
+  const handleCreateProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createName.trim() || createBusy) return;
+
+    setCreateBusy(true);
+    try {
+      const p = createProject(createName.trim(), createDesc.trim());
+      setCreateBusy(false);
+      if (p) {
+        toast.success(`Project "${p.name}" created.`);
+        setCreateOpen(false);
+        setCreateName("");
+        setCreateDesc("");
+        // Open the newly created project and navigate to workspace for data import
+        openProject(p.id);
+        navigate({ to: "/workspace" });
+      } else {
+        toast.error("Failed to create project. Please verify storage permissions.");
+      }
+    } catch {
+      setCreateBusy(false);
+      toast.error("An error occurred while creating project.");
+    }
+  };
+
+  const handleDuplicate = (p: ProjectMeta) => {
+    const copy = duplicateProject(p.id);
+    if (copy) {
+      toast.success(`Project duplicated as "${copy.name}".`);
+    } else {
+      toast.error("Could not duplicate project.");
+    }
+  };
 
   const handleSyncAll = async () => {
     setSyncing(true);
@@ -88,7 +143,7 @@ function Projects() {
       if (!q) return true;
       const matchName = p.name.toLowerCase().includes(q);
       const matchDataset = p.dataset?.name.toLowerCase().includes(q);
-      const matchObjective = p.objective?.toLowerCase().includes(q);
+      const matchObjective = p.objective?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q);
       return matchName || matchDataset || matchObjective;
     });
 
@@ -139,16 +194,25 @@ function Projects() {
               size="sm"
               className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
               onClick={() => {
-                startNew();
-                navigate({ to: "/workspace" });
+                setCreateName("");
+                setCreateDesc("");
+                setCreateOpen(true);
               }}
             >
               <Plus className="mr-1.5 size-3.5" />
-              New Analysis
+              New Project
             </Button>
           </div>
         }
       />
+
+      {/* Save Status / Error Notification */}
+      {saveState === "error" && lastSaveError && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900 flex items-center gap-2">
+          <AlertCircle className="size-4 text-red-600 shrink-0" />
+          <span>{lastSaveError}</span>
+        </div>
+      )}
 
       {/* Active Unsaved Session Alert */}
       {active && !activeProject && (
@@ -225,26 +289,27 @@ function Projects() {
         {!ready ? (
           <div className="h-40 animate-pulse bg-white" />
         ) : projects.length === 0 ? (
-        <EmptyState
-          title="No saved projects yet"
-          action={
-            <Button
-              className="bg-blue-600 text-xs text-white hover:bg-blue-700"
-              onClick={() => {
-                startNew();
-                navigate({ to: "/workspace" });
-              }}
-            >
-              Start New Analysis
-            </Button>
-          }
-        >
-          When you load a dataset in the Data Workspace and save your project, it will appear here
-          with full local persistence and optional Supabase cloud synchronization.
-        </EmptyState>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <EmptyState
+            title="No saved projects yet"
+            action={
+              <Button
+                className="bg-blue-600 text-xs text-white hover:bg-blue-700"
+                onClick={() => {
+                  setCreateName("");
+                  setCreateDesc("");
+                  setCreateOpen(true);
+                }}
+              >
+                Create Project
+              </Button>
+            }
+          >
+            Create a project or import a dataset in the Data Workspace to begin. All records are
+            stored with full local persistence and optional Supabase cloud synchronization.
+          </EmptyState>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 text-slate-600 font-medium">
                 <tr>
                   <th className="px-4 py-2.5">Project</th>
@@ -308,9 +373,9 @@ function Projects() {
                             >
                               {p.name}
                             </button>
-                            {p.objective && (
+                            {(p.description || p.objective) && (
                               <div className="text-[11px] text-slate-500 truncate max-w-sm mt-0.5">
-                                {p.objective}
+                                {p.description || p.objective}
                               </div>
                             )}
                           </div>
@@ -322,10 +387,15 @@ function Projects() {
                             <div className="font-medium text-slate-900">{p.dataset.name}</div>
                             <div className="num text-[11px] font-mono text-slate-500">
                               {p.dataset.rows.toLocaleString()} rows × {p.dataset.columns} cols
+                              {p.cleaningSteps && p.cleaningSteps.length > 0 && (
+                                <span className="ml-1 text-blue-600">
+                                  ({p.cleaningSteps.length} cleaning step{p.cleaningSteps.length > 1 ? "s" : ""})
+                                </span>
+                              )}
                             </div>
                           </div>
                         ) : (
-                          <span className="text-slate-400 font-mono">—</span>
+                          <span className="text-slate-400 font-mono">No dataset imported</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -374,12 +444,23 @@ function Projects() {
                           <Button
                             size="sm"
                             variant="ghost"
+                            className="h-7 size-7 p-0 text-slate-400 hover:text-blue-600"
+                            onClick={() => handleDuplicate(p)}
+                            aria-label={`Duplicate ${p.name}`}
+                            title="Duplicate Project"
+                          >
+                            <Copy className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
                             className="h-7 size-7 p-0 text-slate-400 hover:text-slate-700"
                             onClick={() => {
                               setEditing(p.id);
                               setDraft(p.name);
                             }}
                             aria-label={`Rename ${p.name}`}
+                            title="Rename Project"
                           >
                             <Edit2 className="size-3.5" />
                           </Button>
@@ -389,6 +470,7 @@ function Projects() {
                             className="h-7 size-7 p-0 text-slate-400 hover:text-red-600"
                             onClick={() => setToDelete(p)}
                             aria-label={`Delete ${p.name}`}
+                            title="Delete Project"
                           >
                             <Trash2 className="size-3.5" />
                           </Button>
@@ -400,25 +482,90 @@ function Projects() {
               </tbody>
             </table>
 
-          {filteredProjects.length === 0 && (
-            <div className="py-10 text-center text-xs text-slate-500">
-              No projects matched “{search}”.
-            </div>
-          )}
-        </div>
-      )}
+            {filteredProjects.length === 0 && (
+              <div className="py-10 text-center text-xs text-slate-500">
+                No projects matched “{search}”.
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* Storage Architecture Footnote */}
-      <div className="flex flex-wrap items-center justify-between border-t border-slate-200/80 bg-slate-50/50 px-3.5 py-2 text-[11px] text-slate-500">
-        <div className="flex items-center gap-1.5">
-          <span className="size-1.5 rounded-full bg-emerald-500" />
-          <span>Computations execute in-browser locally.</span>
+        {/* Storage Architecture Footnote */}
+        <div className="flex flex-wrap items-center justify-between border-t border-slate-200/80 bg-slate-50/50 px-3.5 py-2 text-[11px] text-slate-500">
+          <div className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-emerald-500" />
+            <span>
+              Computations execute in-browser client-side. {saveState === "saving" ? "Saving changes..." : saveState === "saved" ? "Local storage up to date." : "Persistence notice."}
+            </span>
+          </div>
+          <span>
+            {user ? `Account: ${user.name} (${cloudSyncStatus.lastSyncedAt ? "Cloud Synced" : "Local Vault"})` : `Local Vault (${projects.length} saved)`}
+          </span>
         </div>
-        <span>
-          {user ? `Account: ${user.name} (${cloudSyncStatus.lastSyncedAt ? "Synced" : "Local"})` : `Local Storage (${projects.length} saved)`}
-        </span>
       </div>
-    </div>
+
+      {/* Create Project Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="bg-white text-slate-900 border-slate-200 sm:max-w-md">
+          <form onSubmit={handleCreateProject} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-semibold">Create New Project</DialogTitle>
+              <DialogDescription className="text-xs text-slate-600">
+                Set up a data analysis project. You can load or import your CSV dataset right after.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-700">
+                  Project Name <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  required
+                  placeholder="e.g. Q3 Sales Analysis"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  className="h-8 text-xs border-slate-300 bg-white"
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-700">
+                  Description / Analytical Objective (optional)
+                </label>
+                <Textarea
+                  placeholder="State the analytical question, hypothesis, or context for this project…"
+                  value={createDesc}
+                  onChange={(e) => setCreateDesc(e.target.value)}
+                  className="h-20 text-xs border-slate-300 bg-white"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs border-slate-300 text-slate-700"
+                onClick={() => setCreateOpen(false)}
+                disabled={createBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700"
+                disabled={!createName.trim() || createBusy}
+              >
+                {createBusy ? "Creating..." : "Create Project"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Alert */}
       <AlertDialog open={toDelete !== null} onOpenChange={(o) => !o && setToDelete(null)}>
@@ -426,8 +573,8 @@ function Projects() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete project “{toDelete?.name}”?</AlertDialogTitle>
             <AlertDialogDescription className="text-slate-600 text-xs">
-              This will remove the project metadata and cached analysis session from your storage.
-              This action cannot be undone.
+              This will remove the project metadata, cached dataset, and saved analysis sessions from
+              your local storage vault. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

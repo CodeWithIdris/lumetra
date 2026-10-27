@@ -1,10 +1,13 @@
 /** Local-only persistence (browser localStorage). Nothing leaves the device. */
+import type { CleaningStep } from "../data/clean";
+import type { SavedAnalysis } from "../stats/analysis";
 
 export type ProjectStatus = "no-data" | "data-loaded" | "analysed";
 
 export interface ProjectMeta {
   id: string;
   name: string;
+  description?: string;
   createdAt: string;
   updatedAt: string;
   status: ProjectStatus;
@@ -16,6 +19,8 @@ export interface ProjectMeta {
     stored: boolean;
   } | null;
   objective?: string;
+  cleaningSteps?: CleaningStep[];
+  savedAnalyses?: SavedAnalysis[];
 }
 
 const KEY = "lumetra.projects.v1";
@@ -48,8 +53,15 @@ export function loadProjects(): ProjectMeta[] {
   }
 }
 
-export function saveProjects(list: ProjectMeta[]) {
-  storage()?.setItem(KEY, JSON.stringify(list));
+export function saveProjects(list: ProjectMeta[]): boolean {
+  const s = storage();
+  if (!s) return false;
+  try {
+    s.setItem(KEY, JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Store raw CSV for a project if small enough. Returns whether it was stored. */
@@ -85,4 +97,37 @@ export function clearAll() {
 export function replaceCsv(projectId: string, csv: string): boolean {
   deleteCsv(projectId);
   return storeCsv(projectId, csv);
+}
+
+/**
+ * Duplicate a project without sharing any mutable analysis state or data references.
+ */
+export function duplicateProject(projectId: string): ProjectMeta | null {
+  const projects = loadProjects();
+  const source = projects.find((p) => p.id === projectId);
+  if (!source) return null;
+
+  const newId = "proj_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+  const now = new Date().toISOString();
+
+  // Deep clone metadata, cleaning steps, and saved analyses
+  const copy: ProjectMeta = {
+    ...JSON.parse(JSON.stringify(source)),
+    id: newId,
+    name: `${source.name} (Copy)`,
+    createdAt: now,
+    updatedAt: now,
+    cleaningSteps: source.cleaningSteps ? JSON.parse(JSON.stringify(source.cleaningSteps)) : [],
+    savedAnalyses: source.savedAnalyses ? JSON.parse(JSON.stringify(source.savedAnalyses)) : [],
+  };
+
+  // Clone stored CSV data under the new ID if it exists
+  const existingCsv = loadCsv(projectId);
+  if (existingCsv) {
+    storeCsv(newId, existingCsv);
+  }
+
+  const updatedProjects = [copy, ...projects];
+  saveProjects(updatedProjects);
+  return copy;
 }

@@ -279,9 +279,9 @@ function EngineerToolkit({
               <div className="text-[11px] font-medium text-slate-500">Budget Consumed</div>
               <div
                 className={`num mt-1 text-lg font-bold font-mono ${
-                  sloStats.budgetConsumedPercent > 100
+                  sloStats.budgetConsumedPercent !== null && sloStats.budgetConsumedPercent > 100
                     ? "text-red-700"
-                    : sloStats.budgetConsumedPercent > 80
+                    : sloStats.budgetConsumedPercent !== null && sloStats.budgetConsumedPercent > 80
                       ? "text-amber-700"
                       : "text-slate-900"
                 }`}

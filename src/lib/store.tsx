@@ -10,9 +10,16 @@ import {
   type ReactNode,
 } from "react";
 import { parseCsvFile, parseCsvText } from "./data/parse";
-import { sampleCsvForPersona, sampleCsv, SAMPLE_NAME } from "./data/sample";
+import { sampleCsvForPersona } from "./data/sample";
 import { deleteChat } from "./persistence/chats";
 import type { Dataset } from "./data/types";
+import {
+  applyCleaningStep,
+  replayCleaningSteps,
+  type CleaningStep,
+  type CleaningStepType,
+} from "./data/clean";
+import type { SavedAnalysis } from "./stats/analysis";
 import {
   clearAll,
   deleteCsv,
@@ -21,14 +28,14 @@ import {
   saveProjects,
   storeCsv,
   replaceCsv,
+  duplicateProject as duplicateProjectPersistence,
   type ProjectMeta,
   type ProjectStatus,
 } from "./persistence/projects";
-import { type PersonaId, PERSONAS } from "./stats/personas";
+import { type PersonaId } from "./stats/personas";
 import {
   type UserProfile,
   loadStoredUser,
-  saveStoredUser,
   loadActivePersona,
   saveActivePersona,
   registerUser,
@@ -39,9 +46,12 @@ import { getSupabaseClient } from "./persistence/supabase";
 
 interface Active {
   dataset: Dataset;
+  rawDataset: Dataset;
   csv: string;
   projectId: string | null;
 }
+
+export type SaveState = "saved" | "pending" | "saving" | "error";
 
 export interface CloudSyncStatus {
   isConfigured: boolean;
@@ -54,19 +64,39 @@ export interface Store {
   projects: ProjectMeta[];
   active: Active | null;
   activeProject: ProjectMeta | null;
+  rawDataset: Dataset | null;
+  cleaningSteps: CleaningStep[];
+  savedAnalyses: SavedAnalysis[];
+  saveState: SaveState;
+  lastSaveError: string | null;
+
+  // Project lifecycle
+  createProject: (name: string, description?: string) => ProjectMeta | null;
+  saveAsProject: (name: string, description?: string) => ProjectMeta | null;
+  openProject: (id: string) => { error?: string };
+  renameProject: (id: string, name: string) => void;
+  duplicateProject: (id: string) => ProjectMeta | null;
+  deleteProject: (id: string) => void;
+  setStatus: (status: ProjectStatus) => void;
+  setObjective: (text: string) => void;
+  setDescription: (text: string) => void;
+  startNew: () => void;
+  resetAll: () => void;
+
+  // Data Loading
   loadFile: (file: File) => Promise<{ errors: string[] }>;
   loadSample: () => void;
   loadPersonaSample: (personaId?: PersonaId) => void;
   clearDataset: () => void;
-  /** Detach from a saved project (its data stays saved). Unsaved sessions are kept. */
-  startNew: () => void;
-  saveAsProject: (name: string) => ProjectMeta | null;
-  openProject: (id: string) => { error?: string };
-  renameProject: (id: string, name: string) => void;
-  deleteProject: (id: string) => void;
-  setStatus: (status: ProjectStatus) => void;
-  setObjective: (text: string) => void;
-  resetAll: () => void;
+
+  // Data Cleaning
+  applyCleaning: (type: CleaningStepType, params: Record<string, unknown>) => { success: boolean; error?: string };
+  undoCleaning: () => void;
+  resetCleaning: () => void;
+
+  // Analyses History
+  saveAnalysis: (analysis: SavedAnalysis) => void;
+  removeAnalysis: (analysisId: string) => void;
 
   // Persona
   persona: PersonaId;
@@ -99,6 +129,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [ready, setReady] = useState(false);
   const [active, setActiveState] = useState<Active | null>(null);
+  const [cleaningSteps, setCleaningSteps] = useState<CleaningStep[]>([]);
+  const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
+  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [lastSaveError, setLastSaveError] = useState<string | null>(null);
   const [persona, setPersonaState] = useState<PersonaId>("engineer");
   const [user, setUser] = useState<UserProfile | null>(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({
@@ -108,6 +142,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
 
   const activeRef = useRef<Active | null>(null);
+  const cleaningStepsRef = useRef<CleaningStep[]>([]);
+  const savedAnalysesRef = useRef<SavedAnalysis[]>([]);
   const personaRef = useRef<PersonaId>("engineer");
 
   const setActive = useCallback((next: Active | null) => {
@@ -142,24 +178,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
-  const commit = useCallback((next: ProjectMeta[]) => {
-    setProjects(next);
-    saveProjects(next);
+  const commit = useCallback((next: ProjectMeta[]): boolean => {
+    setSaveState("saving");
+    const ok = saveProjects(next);
+    if (ok) {
+      setProjects(next);
+      setSaveState("saved");
+      setLastSaveError(null);
+      return true;
+    } else {
+      setSaveState("error");
+      setLastSaveError("Failed to save changes to local storage. Storage quota may be exceeded.");
+      return false;
+    }
   }, []);
 
   const update = useCallback(
-    (id: string, patch: Partial<ProjectMeta>) => {
-      const next = loadProjects().map((p) =>
+    (id: string, patch: Partial<ProjectMeta>): boolean => {
+      const currentList = loadProjects();
+      const next = currentList.map((p) =>
         p.id === id ? { ...p, ...patch, updatedAt: nowIso() } : p,
       );
-      commit(next);
-      const updatedProject = next.find((p) => p.id === id);
-      if (updatedProject) {
-        const csv = loadCsv(id);
-        getSupabaseClient()
-          .saveProject(updatedProject, csv, user?.id)
-          .catch(() => {});
+      const saved = commit(next);
+      if (saved) {
+        const updatedProject = next.find((p) => p.id === id);
+        if (updatedProject) {
+          const csv = loadCsv(id);
+          getSupabaseClient()
+            .saveProject(updatedProject, csv, user?.id)
+            .catch(() => {});
+        }
       }
+      return saved;
     },
     [commit, user],
   );
@@ -167,6 +217,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const attach = useCallback(
     (dataset: Dataset, csv: string) => {
       const projectId = activeRef.current?.projectId ?? null;
+      setCleaningSteps([]);
+      cleaningStepsRef.current = [];
+
       if (projectId) {
         const stored = replaceCsv(projectId, csv);
         update(projectId, {
@@ -178,9 +231,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             source: dataset.source,
             stored,
           },
+          cleaningSteps: [],
         });
       }
-      setActive({ dataset, csv, projectId });
+      setActive({ dataset, rawDataset: dataset, csv, projectId });
     },
     [setActive, update],
   );
@@ -206,7 +260,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const loadSample = useCallback(() => {
-    // Loads the sample customized for active persona
     loadPersonaSample(personaRef.current);
   }, [loadPersonaSample]);
 
@@ -214,74 +267,136 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const cur = activeRef.current;
     if (cur?.projectId) {
       deleteCsv(cur.projectId);
-      update(cur.projectId, { status: "no-data", dataset: null });
+      update(cur.projectId, { status: "no-data", dataset: null, cleaningSteps: [] });
     }
+    setCleaningSteps([]);
+    cleaningStepsRef.current = [];
     setActive(null);
   }, [setActive, update]);
 
   const startNew = useCallback(() => {
-    if (activeRef.current?.projectId) setActive(null);
+    setActive(null);
+    setCleaningSteps([]);
+    cleaningStepsRef.current = [];
+    setSavedAnalyses([]);
+    savedAnalysesRef.current = [];
   }, [setActive]);
 
-  const saveAsProject = useCallback(
-    (name: string) => {
-      if (!active) return null;
-      const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-      const stored = storeCsv(id, active.csv);
+  const createProject = useCallback(
+    (name: string, description?: string): ProjectMeta | null => {
+      const trimmedName = name.trim();
+      if (!trimmedName) return null;
+
+      const id = "proj_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+      const cur = activeRef.current;
+      let stored = false;
+
+      if (cur?.csv) {
+        stored = storeCsv(id, cur.csv);
+      }
+
       const p: ProjectMeta = {
         id,
-        name: name.trim() || active.dataset.name,
+        name: trimmedName,
+        description: description?.trim() || "",
+        objective: description?.trim() || "",
         createdAt: nowIso(),
         updatedAt: nowIso(),
-        status: "data-loaded",
-        dataset: {
-          name: active.dataset.name,
-          rows: active.dataset.rows.length,
-          columns: active.dataset.columns.length,
-          source: active.dataset.source,
-          stored,
-        },
+        status: cur ? "data-loaded" : "no-data",
+        dataset: cur
+          ? {
+              name: cur.dataset.name,
+              rows: cur.dataset.rows.length,
+              columns: cur.dataset.columns.length,
+              source: cur.dataset.source,
+              stored,
+            }
+          : null,
+        cleaningSteps: cur ? cleaningStepsRef.current : [],
+        savedAnalyses: cur ? savedAnalysesRef.current : [],
       };
-      commit([p, ...loadProjects()]);
-      setActive({ ...active, projectId: id });
 
-      // Persist safely in Supabase Cloud
+      const success = commit([p, ...loadProjects()]);
+      if (!success) return null;
+
+      if (cur) {
+        setActive({ ...cur, projectId: id });
+      }
+
       getSupabaseClient()
-        .saveProject(p, active.csv, user?.id)
-        .catch((err) => {
-          console.warn("Could not save to Supabase cloud immediately:", err);
-        });
+        .saveProject(p, cur?.csv ?? null, user?.id)
+        .catch(() => {});
 
       return p;
     },
-    [active, commit, user, setActive],
+    [commit, user, setActive],
+  );
+
+  const saveAsProject = useCallback(
+    (name: string, description?: string) => {
+      if (!active) return null;
+      return createProject(name.trim() || active.dataset.name, description);
+    },
+    [active, createProject],
   );
 
   const openProject = useCallback(
     (id: string) => {
       const p = loadProjects().find((x) => x.id === id);
       if (!p) return { error: "Project not found." };
+
+      const projectCleaningSteps = p.cleaningSteps ?? [];
+      const projectAnalyses = p.savedAnalyses ?? [];
+      setCleaningSteps(projectCleaningSteps);
+      cleaningStepsRef.current = projectCleaningSteps;
+      setSavedAnalyses(projectAnalyses);
+      savedAnalysesRef.current = projectAnalyses;
+
       if (!p.dataset) {
         setActive(null);
         return { error: "This project has no dataset yet. Upload one in the Data Workspace." };
       }
+
       const csv = loadCsv(id);
-      if (!csv)
+      if (!csv) {
         return {
           error:
-            "The data for this project was too large to keep on this device. Re-upload the file to continue.",
+            "The data for this project was not stored locally. Please upload the CSV file again to continue.",
         };
+      }
+
       const res = parseCsvText(csv, p.dataset.name, p.dataset.source);
       if (!res.ok) return { error: res.errors.join(" ") };
-      setActive({ dataset: res.dataset, csv, projectId: id });
+
+      const rawDataset = res.dataset;
+      let analyticalDataset = rawDataset;
+      if (projectCleaningSteps.length > 0) {
+        const replayed = replayCleaningSteps(rawDataset, projectCleaningSteps);
+        analyticalDataset = replayed.dataset;
+      }
+
+      setActive({ dataset: analyticalDataset, rawDataset, csv, projectId: id });
       return {};
     },
     [setActive],
   );
 
   const renameProject = useCallback(
-    (id: string, name: string) => update(id, { name: name.trim() || "Untitled project" }),
+    (id: string, name: string) => {
+      update(id, { name: name.trim() || "Untitled project" });
+    },
     [update],
+  );
+
+  const duplicateProject = useCallback(
+    (id: string): ProjectMeta | null => {
+      const copy = duplicateProjectPersistence(id);
+      if (copy) {
+        setProjects(loadProjects());
+      }
+      return copy;
+    },
+    [],
   );
 
   const deleteProject = useCallback(
@@ -293,7 +408,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         .deleteProject(id)
         .catch(() => {});
       const cur = activeRef.current;
-      if (cur?.projectId === id) setActive({ ...cur, projectId: null });
+      if (cur?.projectId === id) {
+        setActive({ ...cur, projectId: null });
+      }
     },
     [commit, setActive],
   );
@@ -307,7 +424,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setObjective = useCallback(
     (objective: string) => {
-      if (active?.projectId) update(active.projectId, { objective });
+      if (active?.projectId) update(active.projectId, { objective, description: objective });
+    },
+    [active, update],
+  );
+
+  const setDescription = useCallback(
+    (description: string) => {
+      if (active?.projectId) update(active.projectId, { description, objective: description });
     },
     [active, update],
   );
@@ -316,7 +440,140 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearAll();
     setProjects([]);
     setActive(null);
+    setCleaningSteps([]);
+    cleaningStepsRef.current = [];
+    setSavedAnalyses([]);
+    savedAnalysesRef.current = [];
   }, [setActive]);
+
+  // Data Cleaning handlers
+  const applyCleaning = useCallback(
+    (type: CleaningStepType, params: Record<string, unknown>) => {
+      const cur = activeRef.current;
+      if (!cur) return { success: false, error: "No active dataset." };
+
+      try {
+        const { dataset: nextDs, step } = applyCleaningStep(cur.dataset, type, params);
+        const nextSteps = [...cleaningStepsRef.current, step];
+        setCleaningSteps(nextSteps);
+        cleaningStepsRef.current = nextSteps;
+
+        setActive({
+          ...cur,
+          dataset: nextDs,
+        });
+
+        if (cur.projectId) {
+          update(cur.projectId, {
+            cleaningSteps: nextSteps,
+            dataset: cur.dataset
+              ? {
+                  ...cur.dataset,
+                  name: nextDs.name,
+                  rows: nextDs.rows.length,
+                  columns: nextDs.columns.length,
+                  source: nextDs.source,
+                  stored: true,
+                }
+              : null,
+          });
+        }
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : "Cleaning failed." };
+      }
+    },
+    [setActive, update],
+  );
+
+  const undoCleaning = useCallback(() => {
+    const cur = activeRef.current;
+    if (!cur || cleaningStepsRef.current.length === 0) return;
+
+    const nextSteps = cleaningStepsRef.current.slice(0, -1);
+    const { dataset: replayedDataset } = replayCleaningSteps(cur.rawDataset, nextSteps);
+
+    setCleaningSteps(nextSteps);
+    cleaningStepsRef.current = nextSteps;
+
+    setActive({
+      ...cur,
+      dataset: replayedDataset,
+    });
+
+    if (cur.projectId) {
+      update(cur.projectId, {
+        cleaningSteps: nextSteps,
+        dataset: {
+          name: replayedDataset.name,
+          rows: replayedDataset.rows.length,
+          columns: replayedDataset.columns.length,
+          source: replayedDataset.source,
+          stored: true,
+        },
+      });
+    }
+  }, [setActive, update]);
+
+  const resetCleaning = useCallback(() => {
+    const cur = activeRef.current;
+    if (!cur) return;
+
+    setCleaningSteps([]);
+    cleaningStepsRef.current = [];
+
+    setActive({
+      ...cur,
+      dataset: cur.rawDataset,
+    });
+
+    if (cur.projectId) {
+      update(cur.projectId, {
+        cleaningSteps: [],
+        dataset: {
+          name: cur.rawDataset.name,
+          rows: cur.rawDataset.rows.length,
+          columns: cur.rawDataset.columns.length,
+          source: cur.rawDataset.source,
+          stored: true,
+        },
+      });
+    }
+  }, [setActive, update]);
+
+  // Saved Analyses handlers
+  const saveAnalysis = useCallback(
+    (analysis: SavedAnalysis) => {
+      const cur = activeRef.current;
+      const next = [analysis, ...savedAnalysesRef.current.filter((a) => a.id !== analysis.id)];
+      setSavedAnalyses(next);
+      savedAnalysesRef.current = next;
+
+      if (cur?.projectId) {
+        update(cur.projectId, {
+          status: "analysed",
+          savedAnalyses: next,
+        });
+      }
+    },
+    [update],
+  );
+
+  const removeAnalysis = useCallback(
+    (analysisId: string) => {
+      const cur = activeRef.current;
+      const next = savedAnalysesRef.current.filter((a) => a.id !== analysisId);
+      setSavedAnalyses(next);
+      savedAnalysesRef.current = next;
+
+      if (cur?.projectId) {
+        update(cur.projectId, {
+          savedAnalyses: next,
+        });
+      }
+    },
+    [update],
+  );
 
   // Auth handlers
   const handleRegister = useCallback(
@@ -383,18 +640,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     projects,
     active,
     activeProject,
+    rawDataset: active?.rawDataset ?? null,
+    cleaningSteps,
+    savedAnalyses,
+    saveState,
+    lastSaveError,
+    createProject,
+    saveAsProject,
+    openProject,
+    renameProject,
+    duplicateProject,
+    deleteProject,
+    setStatus,
+    setObjective,
+    setDescription,
+    startNew,
+    resetAll,
     loadFile,
     loadSample,
     loadPersonaSample,
     clearDataset,
-    startNew,
-    saveAsProject,
-    openProject,
-    renameProject,
-    deleteProject,
-    setStatus,
-    setObjective,
-    resetAll,
+    applyCleaning,
+    undoCleaning,
+    resetCleaning,
+    saveAnalysis,
+    removeAnalysis,
     persona,
     setPersona,
     user,

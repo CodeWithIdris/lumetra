@@ -85,14 +85,14 @@ describe("Economist Persona - Price Elasticity & Gini Inequality", () => {
     const result = calculateGini([6, 1, 5, 2, 4, 3]);
     expect(result.gini).toBeCloseTo(35 / 126, 12);
     expect(result.quintiles.map((q) => q.sharePct)).toEqual([
-      expect.closeTo((1.2 / 21) * 100, 10),
+      expect.closeTo((1.4 / 21) * 100, 10),
       expect.closeTo((2.8 / 21) * 100, 10),
       expect.closeTo((4.2 / 21) * 100, 10),
       expect.closeTo((5.6 / 21) * 100, 10),
       expect.closeTo((7 / 21) * 100, 10),
     ]);
     expect(result.top10SharePct).toBeCloseTo((3.6 / 21) * 100, 10);
-    expect(result.palmaRatio).toBeCloseTo(0.9, 10);
+    expect(result.palmaRatio).toBeCloseTo(3.6 / 4.2, 10);
   });
 
   it("does not silently drop negative incomes or invent positive-only Gini estimates", () => {

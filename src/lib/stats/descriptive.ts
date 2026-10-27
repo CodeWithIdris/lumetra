@@ -42,6 +42,13 @@ export function toNumbers(
   return { nums, missing, invalid };
 }
 
+export function mean(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  let m = 0;
+  for (let i = 0; i < xs.length; i++) m += (xs[i]! - m) / (i + 1);
+  return m;
+}
+
 export function median(sorted: number[]): number | null {
   const n = sorted.length;
   if (n === 0) return null;
