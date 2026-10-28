@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState, PageHeader } from "@/components/AppShell";
 import { MethodNote, ResultsView } from "@/components/ResultsView";
+import { ScatterPlotChart } from "@/components/Charts";
 import { useStore } from "@/lib/store";
 import {
   runDescriptive,
   isAnalysisStale,
+  reconstructCorrelationChartData,
   type DescriptiveReport,
   type SavedAnalysis,
 } from "@/lib/stats/analysis";
@@ -608,6 +610,63 @@ function Reports() {
 
                     {/* Computed Numerical Outputs & Comparison Tables */}
                     <AnalysisResultsSummary analysis={a} />
+
+                    {/* Bivariate Scatter Plot for Correlation Analyses */}
+                    {a.type === "correlation" &&
+                      (() => {
+                        const recon = reconstructCorrelationChartData(a, ds);
+                        return (
+                          <div className="space-y-2 break-inside-avoid">
+                            {recon.status === "discrepancy" && (
+                              <div className="rounded border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                                <div className="font-semibold flex items-center gap-1.5">
+                                  <AlertTriangle className="size-3.5 text-amber-600 shrink-0" />
+                                  Dataset Discrepancy Notice
+                                </div>
+                                <p className="mt-0.5 text-[11px] text-amber-800">
+                                  {recon.message}
+                                </p>
+                              </div>
+                            )}
+
+                            {recon.data ? (
+                              <ScatterPlotChart
+                                xLabel={recon.data.colX}
+                                yLabel={recon.data.colY}
+                                points={recon.data.points}
+                                totalPairs={recon.data.n}
+                                r={
+                                  typeof a.results["r"] === "number"
+                                    ? (a.results["r"] as number)
+                                    : recon.data.r
+                                }
+                                pValue={
+                                  typeof a.results["pValue"] === "number"
+                                    ? (a.results["pValue"] as number)
+                                    : recon.data.pValue
+                                }
+                                method={recon.data.method}
+                                regression={recon.data.regression}
+                                trendLine={recon.data.trendLine}
+                                missingCount={a.missingCount}
+                                staleNotice={
+                                  recon.status === "stale"
+                                    ? "Earlier dataset version"
+                                    : recon.status === "discrepancy"
+                                      ? "Discrepancy with active data"
+                                      : undefined
+                                }
+                                caption={`Report Figure: Paired observations of ${recon.data.colY} versus ${recon.data.colX} with fitted OLS reference line.`}
+                              />
+                            ) : (
+                              <div className="rounded border border-dashed border-slate-200 bg-slate-50/50 p-3 text-xs text-slate-500">
+                                <span className="font-medium text-slate-700">Scatter plot not available: </span>
+                                <span>{recon.message ?? "Observations cannot be reconstructed."}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                     {/* Interpretation Grid */}
                     <div className="grid gap-2.5 sm:grid-cols-2 text-xs">

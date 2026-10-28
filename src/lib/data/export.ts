@@ -105,17 +105,64 @@ export function generateReportMarkdown(opts: ReportMarkdownOptions): string {
 
       // Computed outputs tables
       if (a.type === "correlation") {
+        const colX = (a.configuration["colX"] as string) || a.variables[0] || "X";
+        const colY = (a.configuration["colY"] as string) || a.variables[1] || "Y";
+        const rVal = typeof a.results["r"] === "number" ? (a.results["r"] as number) : null;
+        const pVal =
+          typeof a.results["pValue"] === "number" ? (a.results["pValue"] as number) : null;
+        const reg = a.results["regression"] as
+          | {
+              slope: number | null;
+              intercept: number | null;
+              rSquared: number | null;
+            }
+          | undefined;
+        const minX = typeof a.results["minX"] === "number" ? (a.results["minX"] as number) : null;
+        const maxX = typeof a.results["maxX"] === "number" ? (a.results["maxX"] as number) : null;
+        const minY = typeof a.results["minY"] === "number" ? (a.results["minY"] as number) : null;
+        const maxY = typeof a.results["maxY"] === "number" ? (a.results["maxY"] as number) : null;
+
         lines.push(`\n**Computed Outputs:**`);
         lines.push(`| Metric | Value |`);
         lines.push(`| :--- | :--- |`);
         lines.push(
-          `| Correlation Coefficient (r) | ${typeof a.results["r"] === "number" ? (a.results["r"] as number).toFixed(3) : "—"} |`,
+          `| Correlation Coefficient (r) | ${rVal !== null ? rVal.toFixed(3) : "—"} |`,
         );
         lines.push(
-          `| Two-Sided p-Value | ${typeof a.results["pValue"] === "number" ? ((a.results["pValue"] as number) < 0.001 ? "< 0.001" : (a.results["pValue"] as number).toFixed(4)) : "—"} |`,
+          `| Two-Sided p-Value | ${pVal !== null ? (pVal < 0.001 ? "< 0.001" : pVal.toFixed(4)) : "—"} |`,
         );
         lines.push(`| Method | ${String(a.results["method"] ?? "pearson")} |`);
         lines.push(`| Complete Pairs (n) | ${a.results["n"] ?? a.sampleSize} |`);
+        lines.push(`| Excluded Incomplete Rows | ${a.missingCount} |`);
+        if (reg && reg.slope !== null && reg.intercept !== null) {
+          lines.push(
+            `| Linear Fit (OLS) | y = ${fmt(reg.intercept, 3)} + ${fmt(reg.slope, 3)}·x |`,
+          );
+          if (reg.rSquared !== null) {
+            lines.push(`| Coefficient of Determination (R²) | ${fmt(reg.rSquared, 3)} |`);
+          }
+        }
+
+        lines.push(`\n**Visual Analytics — Bivariate Scatter Plot Description:**`);
+        lines.push(
+          `- Paired Observations: ${Number(a.results["n"] ?? a.sampleSize).toLocaleString()} complete coordinates plotted with Variable X ("${colX}") on the horizontal axis and Variable Y ("${colY}") on the vertical axis.`,
+        );
+        if (minX !== null && maxX !== null && minY !== null && maxY !== null) {
+          lines.push(
+            `- Coordinate Extents: "${colX}" ranges from ${fmt(minX, 2)} to ${fmt(maxX, 2)}; "${colY}" ranges from ${fmt(minY, 2)} to ${fmt(maxY, 2)}.`,
+          );
+        }
+        if (reg && reg.slope !== null && reg.intercept !== null) {
+          lines.push(
+            `- Fitted Reference Trendline (OLS): Estimated slope b = ${fmt(reg.slope, 4)}, intercept a = ${fmt(reg.intercept, 4)}.`,
+          );
+        }
+        lines.push(
+          `- Association Assessment: ${rVal !== null ? (Math.abs(rVal) >= 0.7 ? "Strong" : Math.abs(rVal) >= 0.4 ? "Moderate" : Math.abs(rVal) >= 0.1 ? "Weak" : "Negligible") : "Undefined"} ${rVal !== null && rVal >= 0 ? "positive" : "negative"} ${a.results["method"] === "spearman" ? "monotonic rank" : "linear"} association.`,
+        );
+        lines.push(
+          `- Causal Disclosure: Linear reference trendline is fitted solely to describe sample covariance; correlation does not establish causation.`,
+        );
       } else if (a.type === "ttest") {
         lines.push(`\n**Computed Outputs:**`);
         lines.push(`| Metric | Value |`);

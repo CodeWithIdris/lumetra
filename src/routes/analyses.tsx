@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { MethodNote, ResultsView } from "@/components/ResultsView";
+import { ScatterPlotChart } from "@/components/Charts";
 import { useStore } from "@/lib/store";
 import { profileDataset } from "@/lib/data/infer";
 import {
@@ -12,6 +13,7 @@ import {
   createCorrelationSavedAnalysis,
   createTTestSavedAnalysis,
   createCrosstabSavedAnalysis,
+  reconstructCorrelationChartData,
   isAnalysisStale,
   type DescriptiveReport,
   type SavedAnalysis,
@@ -725,52 +727,112 @@ function Analyses() {
               ) : null}
 
               {viewedAnalysis.type === "correlation" ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-[11px] font-medium text-slate-500">Correlation (r)</div>
-                    <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
-                      {typeof viewedAnalysis.results["r"] === "number"
-                        ? (viewedAnalysis.results["r"] as number).toFixed(3)
-                        : "—"}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                      Method: {String(viewedAnalysis.results["method"])}
-                    </div>
-                  </div>
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-[11px] font-medium text-slate-500">
-                      p-Value (Two-Sided)
-                    </div>
-                    <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
-                      {typeof viewedAnalysis.results["pValue"] === "number"
-                        ? (viewedAnalysis.results["pValue"] as number) < 0.001
-                          ? "< 0.001"
-                          : (viewedAnalysis.results["pValue"] as number).toFixed(4)
-                        : "—"}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                      {typeof viewedAnalysis.results["pValue"] === "number" &&
-                      (viewedAnalysis.results["pValue"] as number) < 0.05
-                        ? "Statistically significant"
-                        : "Inconclusive"}
-                    </div>
-                  </div>
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-[11px] font-medium text-slate-500">Paired Sample Size</div>
-                    <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
-                      {Number(viewedAnalysis.results["n"]).toLocaleString()}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                      Complete pairs
-                    </div>
-                  </div>
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-[11px] font-medium text-slate-500">Variables</div>
-                    <div className="font-mono text-xs font-semibold text-slate-800 mt-1 truncate">
-                      {viewedAnalysis.variables.join(" × ")}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">Bivariate association</div>
-                  </div>
+                <div className="space-y-4">
+                  {(() => {
+                    const recon = reconstructCorrelationChartData(viewedAnalysis, ds);
+                    return (
+                      <>
+                        {recon.status === "discrepancy" && (
+                          <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                            <div className="font-semibold flex items-center gap-1.5">
+                              <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+                              Data Discrepancy Detected
+                            </div>
+                            <p className="mt-1 text-[11px] text-amber-800 leading-relaxed">
+                              {recon.message}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-[11px] font-medium text-slate-500">
+                              Correlation ({String(viewedAnalysis.results["method"]) === "spearman" ? "ρ" : "r"})
+                            </div>
+                            <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
+                              {typeof viewedAnalysis.results["r"] === "number"
+                                ? (viewedAnalysis.results["r"] as number).toFixed(3)
+                                : "—"}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                              Method: {String(viewedAnalysis.results["method"] ?? "pearson")}
+                            </div>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-[11px] font-medium text-slate-500">
+                              p-Value (Two-Sided)
+                            </div>
+                            <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
+                              {typeof viewedAnalysis.results["pValue"] === "number"
+                                ? (viewedAnalysis.results["pValue"] as number) < 0.001
+                                  ? "< 0.001"
+                                  : (viewedAnalysis.results["pValue"] as number).toFixed(4)
+                                : "—"}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                              {typeof viewedAnalysis.results["pValue"] === "number" &&
+                              (viewedAnalysis.results["pValue"] as number) < 0.05
+                                ? "Statistically significant"
+                                : "Inconclusive"}
+                            </div>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-[11px] font-medium text-slate-500">Paired Sample Size</div>
+                            <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
+                              {Number(viewedAnalysis.results["n"] ?? viewedAnalysis.sampleSize).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                              Complete pairs
+                            </div>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-[11px] font-medium text-slate-500">Variables</div>
+                            <div className="font-mono text-xs font-semibold text-slate-800 mt-1 truncate">
+                              {viewedAnalysis.variables.join(" × ")}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">Bivariate association</div>
+                          </div>
+                        </div>
+
+                        {/* Scatter Plot Visualisation */}
+                        {recon.data ? (
+                          <ScatterPlotChart
+                            xLabel={recon.data.colX}
+                            yLabel={recon.data.colY}
+                            points={recon.data.points}
+                            totalPairs={recon.data.n}
+                            r={
+                              typeof viewedAnalysis.results["r"] === "number"
+                                ? (viewedAnalysis.results["r"] as number)
+                                : recon.data.r
+                            }
+                            pValue={
+                              typeof viewedAnalysis.results["pValue"] === "number"
+                                ? (viewedAnalysis.results["pValue"] as number)
+                                : recon.data.pValue
+                            }
+                            method={recon.data.method}
+                            regression={recon.data.regression}
+                            trendLine={recon.data.trendLine}
+                            missingCount={viewedAnalysis.missingCount}
+                            staleNotice={
+                              recon.status === "stale"
+                                ? "Earlier dataset version"
+                                : recon.status === "discrepancy"
+                                  ? "Discrepancy with active data"
+                                  : undefined
+                            }
+                            caption={`Bivariate distribution: ${recon.data.colY} against ${recon.data.colX} with ordinary least squares trendline.`}
+                          />
+                        ) : (
+                          <div className="rounded border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500">
+                            <p className="font-medium text-slate-700">Scatter plot preview unavailable</p>
+                            <p className="mt-0.5 text-[11px]">{recon.message}</p>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               ) : null}
 

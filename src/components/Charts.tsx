@@ -124,6 +124,7 @@ export interface ScatterPlotChartProps {
   className?: string;
   height?: number;
   staleNotice?: string;
+  discrepancyNotice?: string;
   caption?: string;
 }
 
@@ -141,9 +142,9 @@ function CustomScatterTooltip({
   if (!active || !payload || !payload.length || !payload[0]?.payload) return null;
   const p = payload[0].payload;
   return (
-    <div className="rounded border border-slate-200 bg-white/95 p-2 text-xs shadow-md font-mono space-y-0.5">
+    <div className="rounded border border-slate-200 bg-white/95 p-2 text-xs shadow-md font-mono space-y-0.5 z-50">
       {p.rowIndex !== undefined && (
-        <div className="text-[10px] text-slate-500 font-sans">Observation #{p.rowIndex + 1}</div>
+        <div className="text-[10px] text-slate-500 font-sans font-medium">Observation #{p.rowIndex + 1}</div>
       )}
       <div className="text-slate-800">
         <span className="text-slate-500 font-sans">{xLabel}: </span>
@@ -171,16 +172,21 @@ export function ScatterPlotChart({
   className = "",
   height = 280,
   staleNotice,
+  discrepancyNotice,
   caption,
 }: ScatterPlotChartProps) {
-  const n = totalPairs ?? points.length;
+  // Ensure we only process valid, finite observations
+  const validPoints = points.filter(
+    (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y),
+  );
+  const n = totalPairs ?? validPoints.length;
 
-  if (points.length === 0) {
+  if (validPoints.length === 0) {
     return (
       <figure
         role="region"
         aria-label={`Scatter plot of ${yLabel} versus ${xLabel}`}
-        className={`rounded border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs text-slate-500 ${className}`}
+        className={`rounded border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs text-slate-500 break-inside-avoid ${className}`}
       >
         <p className="font-medium text-slate-700">No complete paired observations</p>
         <p className="mt-1 text-[11px] text-slate-500">
@@ -192,10 +198,23 @@ export function ScatterPlotChart({
 
   // Downsample if dataset is exceptionally large (>2,000 points) to keep SVG rendering performant
   const MAX_DISPLAY_POINTS = 2000;
-  const isDownsampled = points.length > MAX_DISPLAY_POINTS;
+  const isDownsampled = validPoints.length > MAX_DISPLAY_POINTS;
   const displayPoints = isDownsampled
-    ? points.filter((_, idx) => idx % Math.ceil(points.length / MAX_DISPLAY_POINTS) === 0)
-    : points;
+    ? validPoints.filter((_, idx) => idx % Math.ceil(validPoints.length / MAX_DISPLAY_POINTS) === 0)
+    : validPoints;
+
+  // Safe domain calculation: handles identical values (zero variance) safely without axis collapse
+  const xs = validPoints.map((p) => p.x);
+  const ys = validPoints.map((p) => p.y);
+  const minX = xs.length ? Math.min(...xs) : 0;
+  const maxX = xs.length ? Math.max(...xs) : 0;
+  const minY = ys.length ? Math.min(...ys) : 0;
+  const maxY = ys.length ? Math.max(...ys) : 0;
+
+  const xDomain: [number | string, number | string] =
+    minX === maxX ? [minX - 1, maxX + 1] : ["auto", "auto"];
+  const yDomain: [number | string, number | string] =
+    minY === maxY ? [minY - 1, maxY + 1] : ["auto", "auto"];
 
   // Compute trendline points if not explicitly provided
   let activeTrendLine = trendLine;
@@ -207,9 +226,6 @@ export function ScatterPlotChart({
     regression.intercept !== null &&
     regression.intercept !== undefined
   ) {
-    const xs = points.map((p) => p.x);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
     if (minX !== maxX) {
       activeTrendLine = [
         { x: minX, y: regression.intercept + regression.slope * minX },
@@ -224,13 +240,16 @@ export function ScatterPlotChart({
     <figure
       role="region"
       aria-label={`Scatter plot of ${yLabel} versus ${xLabel}`}
-      className={`rounded border border-slate-200 bg-white p-3 space-y-2.5 ${className}`}
+      className={`rounded border border-slate-200 bg-white p-3 space-y-2.5 break-inside-avoid print:border-slate-300 ${className}`}
     >
       {/* Chart Header & Metadata Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 text-xs">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-slate-900">
             {yLabel} vs {xLabel}
+          </span>
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-600">
+            {method === "spearman" ? "Spearman rank" : "Pearson r"}
           </span>
           {staleNotice && (
             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
@@ -239,10 +258,10 @@ export function ScatterPlotChart({
           )}
         </div>
         <div className="flex items-center gap-3 font-mono text-[11px] text-slate-600">
-          <span>n = {n.toLocaleString()} pairs</span>
+          <span>n = {n.toLocaleString()} complete pairs</span>
           {r !== undefined && r !== null && (
             <span>
-              r = {r.toFixed(3)}
+              {method === "spearman" ? "ρ" : "r"} = {r.toFixed(3)}
               {pValue !== undefined && pValue !== null
                 ? ` (p ${pValue < 0.001 ? "< 0.001" : `= ${pValue.toFixed(4)}`})`
                 : ""}
@@ -254,35 +273,44 @@ export function ScatterPlotChart({
         </div>
       </div>
 
+      {/* Discrepancy Alert */}
+      {discrepancyNotice && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+          <strong>Notice:</strong> {discrepancyNotice}
+        </div>
+      )}
+
       {/* Small sample warning */}
-      {points.length < 3 && (
+      {validPoints.length < 3 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-800">
-          Correlation and regression require at least 3 complete pairs (found n = {points.length}).
+          Correlation and regression require at least 3 complete pairs (found n = {validPoints.length}).
         </div>
       )}
 
       {/* SVG Scatter Plot Container */}
       <div style={{ height }} className="w-full print:h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ top: 10, right: 16, bottom: 24, left: 8 }}>
+          <ScatterChart margin={{ top: 12, right: 20, bottom: 35, left: 16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
             <XAxis
               type="number"
               dataKey="x"
               name={xLabel}
               tick={axis}
-              domain={["auto", "auto"]}
+              domain={xDomain}
               tickFormatter={(v) => fmt(v, 2)}
-              label={{ value: xLabel, position: "insideBottom", offset: -16, ...axis }}
+              height={40}
+              label={{ value: xLabel, position: "insideBottom", offset: -24, ...axis }}
             />
             <YAxis
               type="number"
               dataKey="y"
               name={yLabel}
               tick={axis}
-              domain={["auto", "auto"]}
+              width={50}
+              domain={yDomain}
               tickFormatter={(v) => fmt(v, 2)}
-              label={{ value: yLabel, angle: -90, position: "insideLeft", offset: 0, ...axis }}
+              label={{ value: yLabel, angle: -90, position: "insideLeft", offset: -4, ...axis }}
             />
             <ZAxis range={[25, 25]} />
             <Tooltip
@@ -298,7 +326,7 @@ export function ScatterPlotChart({
             />
             {hasTrendLine && (
               <Scatter
-                name="Fitted Trend Line (OLS)"
+                name="Fitted Reference Line (OLS)"
                 data={activeTrendLine}
                 line={{ stroke: "#475569", strokeWidth: 2, strokeDasharray: "4 4" }}
                 shape={() => null}
@@ -336,7 +364,7 @@ export function ScatterPlotChart({
       {/* Downsampling or custom caption note */}
       {isDownsampled && (
         <figcaption className="text-[10px] text-slate-400">
-          Showing {displayPoints.length.toLocaleString()} sampled points from {points.length.toLocaleString()}{" "}
+          Showing {displayPoints.length.toLocaleString()} sampled points from {validPoints.length.toLocaleString()}{" "}
           observations for browser rendering efficiency. Full sample used in calculations.
         </figcaption>
       )}
@@ -348,6 +376,10 @@ export function ScatterPlotChart({
         {r !== undefined && r !== null
           ? `${method === "spearman" ? "Spearman" : "Pearson"} r = ${r.toFixed(3)}.`
           : ""}
+        {hasTrendLine && regression && regression.slope !== null && regression.intercept !== null
+          ? ` Ordinary Least Squares reference regression line slope is ${fmt(regression.slope, 3)} with intercept ${fmt(regression.intercept, 3)}.`
+          : ""}
+        {" Note: Linear trendline is for reference only; correlation does not establish causation."}
       </div>
     </figure>
   );

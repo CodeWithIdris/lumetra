@@ -332,15 +332,62 @@ export interface ReconstructedBivariateChartData {
   data: BivariateAnalysisData | null;
 }
 
+/** Extract stored paired observations and summary metrics from a saved correlation analysis */
+export function getSavedBivariateData(analysis: SavedAnalysis): BivariateAnalysisData | null {
+  const points = analysis.results["points"] as PairedPoint[] | undefined;
+  if (!points || !Array.isArray(points)) return null;
+
+  const colX = (analysis.configuration["colX"] as string) || analysis.variables[0] || "X";
+  const colY = (analysis.configuration["colY"] as string) || analysis.variables[1] || "Y";
+  const method = (analysis.configuration["method"] as "pearson" | "spearman") || "pearson";
+  const regression = (analysis.results["regression"] as RegressionResult) || {
+    n: analysis.sampleSize,
+    slope: null,
+    intercept: null,
+    rSquared: null,
+    slopeSE: null,
+    slopeP: null,
+  };
+
+  return {
+    colX,
+    colY,
+    points,
+    n: Number(analysis.results["n"] ?? analysis.sampleSize),
+    missingCount: analysis.missingCount,
+    method,
+    r: typeof analysis.results["r"] === "number" ? (analysis.results["r"] as number) : null,
+    pValue:
+      typeof analysis.results["pValue"] === "number" ? (analysis.results["pValue"] as number) : null,
+    note: typeof analysis.results["note"] === "string" ? (analysis.results["note"] as string) : undefined,
+    regression,
+    trendLine: (analysis.results["trendLine"] as Array<{ x: number; y: number }>) ?? null,
+    minX: typeof analysis.results["minX"] === "number" ? (analysis.results["minX"] as number) : null,
+    maxX: typeof analysis.results["maxX"] === "number" ? (analysis.results["maxX"] as number) : null,
+    minY: typeof analysis.results["minY"] === "number" ? (analysis.results["minY"] as number) : null,
+    maxY: typeof analysis.results["maxY"] === "number" ? (analysis.results["maxY"] as number) : null,
+  };
+}
+
 /**
  * Reconstructs paired points for a saved correlation analysis and verifies
  * that recalculated results faithfully match the saved analytical record.
+ * Never silently substitutes results from an altered or mismatched dataset version.
  */
 export function reconstructCorrelationChartData(
   analysis: SavedAnalysis,
   currentDataset: Dataset | null,
 ): ReconstructedBivariateChartData {
+  const savedData = getSavedBivariateData(analysis);
+
   if (!currentDataset) {
+    if (savedData) {
+      return {
+        status: "verified",
+        message: "No active dataset in memory. Displaying observations from saved record.",
+        data: savedData,
+      };
+    }
     return {
       status: "missing_dataset",
       message: "No active dataset loaded in memory.",
@@ -356,11 +403,20 @@ export function reconstructCorrelationChartData(
     return {
       status: "missing_columns",
       message: "Analysis configuration missing variable definitions.",
-      data: null,
+      data: savedData,
     };
   }
 
+  const isDifferentDataset = Boolean(analysis.datasetId && currentDataset.id !== analysis.datasetId);
+
   if (!currentDataset.columns.includes(colX) || !currentDataset.columns.includes(colY)) {
+    if (savedData) {
+      return {
+        status: "stale",
+        message: `Variables "${colX}" and "${colY}" are not both present in active dataset. Displaying saved observations.`,
+        data: savedData,
+      };
+    }
     return {
       status: "missing_columns",
       message: `Variables "${colX}" and "${colY}" are not both present in current dataset schema.`,
@@ -375,11 +431,11 @@ export function reconstructCorrelationChartData(
     return {
       status: "missing_columns",
       message: err instanceof Error ? err.message : "Failed to extract variables from dataset.",
-      data: null,
+      data: savedData,
     };
   }
 
-  const isStale = isAnalysisStale(analysis, currentDataset);
+  const isStale = isAnalysisStale(analysis, currentDataset) || isDifferentDataset;
   const savedR =
     typeof analysis.results["r"] === "number" ? (analysis.results["r"] as number) : null;
   const recalculatedR = recalculated.r;
@@ -392,7 +448,7 @@ export function reconstructCorrelationChartData(
   if (nMatches && rMatches && !isStale) {
     return {
       status: "verified",
-      data: recalculated,
+      data: savedData ?? recalculated,
     };
   }
 
@@ -400,14 +456,16 @@ export function reconstructCorrelationChartData(
     return {
       status: "discrepancy",
       message: `Recalculated values (r = ${recalculatedR !== null ? recalculatedR.toFixed(3) : "—"}, n = ${recalculated.n}) diverge from saved record (r = ${savedR !== null ? savedR.toFixed(3) : "—"}, n = ${analysis.sampleSize}). Dataset has been modified.`,
-      data: recalculated,
+      data: savedData ?? recalculated,
     };
   }
 
   return {
     status: "stale",
-    message: "Current dataset rows or values have changed since this analysis was saved.",
-    data: recalculated,
+    message: isDifferentDataset
+      ? `Active dataset ("${currentDataset.name}") differs from the dataset used for this saved analysis ("${analysis.datasetName}").`
+      : "Current dataset rows or values have changed since this analysis was saved.",
+    data: savedData ?? recalculated,
   };
 }
 
@@ -453,6 +511,8 @@ export function createCorrelationSavedAnalysis(
         slopeSE: data.regression.slopeSE,
         slopeP: data.regression.slopeP,
       },
+      points: data.points,
+      trendLine: data.trendLine,
       minX: data.minX,
       maxX: data.maxX,
       minY: data.minY,

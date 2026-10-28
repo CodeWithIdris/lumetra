@@ -136,4 +136,12 @@
     background: #ffffff;
     color: #000000;
   }
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  figure {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
 }
