@@ -12,6 +12,7 @@ export interface ProjectMeta {
   updatedAt: string;
   status: ProjectStatus;
   dataset: {
+    id?: string;
     name: string;
     rows: number;
     columns: number;
@@ -109,6 +110,9 @@ export function duplicateProject(projectId: string): ProjectMeta | null {
 
   const newId = "proj_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
   const now = new Date().toISOString();
+  const newDatasetId = source.dataset
+    ? "ds_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36)
+    : undefined;
 
   // Deep clone metadata, cleaning steps, and saved analyses
   const copy: ProjectMeta = {
@@ -119,6 +123,12 @@ export function duplicateProject(projectId: string): ProjectMeta | null {
     updatedAt: now,
     cleaningSteps: source.cleaningSteps ? JSON.parse(JSON.stringify(source.cleaningSteps)) : [],
     savedAnalyses: source.savedAnalyses ? JSON.parse(JSON.stringify(source.savedAnalyses)) : [],
+    dataset: source.dataset
+      ? {
+          ...JSON.parse(JSON.stringify(source.dataset)),
+          id: newDatasetId,
+        }
+      : null,
   };
 
   // Clone stored CSV data under the new ID if it exists

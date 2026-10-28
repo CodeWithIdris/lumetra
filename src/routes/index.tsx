@@ -288,8 +288,8 @@ function Overview() {
                     <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="px-3.5 py-2.5 align-middle">
                         <button
-                          onClick={() => {
-                            openProject(p.id);
+                          onClick={async () => {
+                            await openProject(p.id);
                             navigate({ to: "/workspace" });
                           }}
                           className="font-semibold text-slate-900 hover:text-blue-600 text-left block truncate max-w-sm"
@@ -323,8 +323,8 @@ function Overview() {
                             variant="ghost"
                             size="sm"
                             className="h-6.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
-                            onClick={() => {
-                              openProject(p.id);
+                            onClick={async () => {
+                              await openProject(p.id);
                               navigate({ to: "/analyses" });
                             }}
                           >
@@ -334,8 +334,8 @@ function Overview() {
                             variant="ghost"
                             size="sm"
                             className="h-6.5 text-xs text-slate-600 hover:text-slate-900 px-2"
-                            onClick={() => {
-                              openProject(p.id);
+                            onClick={async () => {
+                              await openProject(p.id);
                               navigate({ to: "/workspace" });
                             }}
                           >

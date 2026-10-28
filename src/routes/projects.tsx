@@ -89,7 +89,7 @@ function Projects() {
   const [createDesc, setCreateDesc] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
 
-  const handleCreateProject = (e: React.FormEvent) => {
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createName.trim() || createBusy) return;
 
@@ -103,7 +103,7 @@ function Projects() {
         setCreateName("");
         setCreateDesc("");
         // Open the newly created project and navigate to workspace for data import
-        openProject(p.id);
+        await openProject(p.id);
         navigate({ to: "/workspace" });
       } else {
         toast.error("Failed to create project. Please verify storage permissions.");
@@ -365,8 +365,8 @@ function Projects() {
                         ) : (
                           <div>
                             <button
-                              onClick={() => {
-                                const r = openProject(p.id);
+                              onClick={async () => {
+                                const r = await openProject(p.id);
                                 navigate({
                                   to: "/workspace",
                                   search: r.error
@@ -428,8 +428,8 @@ function Projects() {
                             size="sm"
                             variant="ghost"
                             className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
-                            onClick={() => {
-                              openProject(p.id);
+                            onClick={async () => {
+                              await openProject(p.id);
                               navigate({ to: "/analyses" });
                             }}
                           >
@@ -439,8 +439,8 @@ function Projects() {
                             size="sm"
                             variant="ghost"
                             className="h-7 text-xs text-slate-600 hover:text-slate-900 px-2"
-                            onClick={() => {
-                              const r = openProject(p.id);
+                            onClick={async () => {
+                              const r = await openProject(p.id);
                               navigate({
                                 to: "/workspace",
                                 search: r.error ? { notice: r.error } : {},

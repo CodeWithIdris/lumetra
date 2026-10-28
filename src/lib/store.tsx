@@ -32,6 +32,17 @@ import {
   type ProjectMeta,
   type ProjectStatus,
 } from "./persistence/projects";
+import {
+  saveDataset,
+  loadDataset,
+  loadDatasetByProject,
+  deleteDataset,
+  deleteDatasetByProject,
+  duplicateDataset as duplicateDatasetIdb,
+  clearAllDatasets,
+  migrateFromLocalStorage,
+  checkStorageAvailable,
+} from "./persistence/indexeddb";
 import { type PersonaId } from "./stats/personas";
 import {
   type UserProfile,
@@ -74,7 +85,7 @@ export interface Store {
   // Project lifecycle
   createProject: (name: string, description?: string, attachActive?: boolean) => ProjectMeta | null;
   saveAsProject: (name: string, description?: string) => ProjectMeta | null;
-  openProject: (id: string) => { error?: string; notice?: string };
+  openProject: (id: string) => Promise<{ error?: string; notice?: string }>;
   renameProject: (id: string, name: string) => void;
   duplicateProject: (id: string) => ProjectMeta | null;
   deleteProject: (id: string) => void;
@@ -165,24 +176,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const loadedProjects = loadProjects();
-    setProjects(loadedProjects);
+    let mounted = true;
+    async function init() {
+      // 1. Run safe migration from legacy localStorage in background
+      try {
+        await migrateFromLocalStorage();
+      } catch (e) {
+        console.warn("Legacy storage migration notice:", e);
+      }
 
-    const initialPersona = loadActivePersona();
-    setPersonaState(initialPersona);
-    personaRef.current = initialPersona;
+      if (!mounted) return;
 
-    const initialUser = loadStoredUser();
-    setUser(initialUser);
+      const loadedProjects = loadProjects();
+      setProjects(loadedProjects);
 
-    const supabase = getSupabaseClient();
-    setCloudSyncStatus({
-      isConfigured: supabase.isConfigured(),
-      isSyncing: false,
-      lastSyncedAt: initialUser ? nowIso() : null,
-    });
+      const initialPersona = loadActivePersona();
+      setPersonaState(initialPersona);
+      personaRef.current = initialPersona;
 
-    setReady(true);
+      const initialUser = loadStoredUser();
+      setUser(initialUser);
+
+      const supabase = getSupabaseClient();
+      setCloudSyncStatus({
+        isConfigured: supabase.isConfigured(),
+        isSyncing: false,
+        lastSyncedAt: initialUser ? nowIso() : null,
+      });
+
+      setReady(true);
+    }
+
+    init();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const commit = useCallback((next: ProjectMeta[]): boolean => {
@@ -209,10 +237,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const saved = commit(next);
       if (saved) {
         const updatedProject = next.find((p) => p.id === id);
-        if (updatedProject) {
-          const csv = loadCsv(id);
-          getSupabaseClient()
-            .saveProject(updatedProject, csv, user?.id)
+        const supabase = getSupabaseClient();
+        if (updatedProject && supabase.isConfigured() && supabase.getConfig().autoSync) {
+          loadDataset(updatedProject.dataset?.id || id)
+            .then((stored) => {
+              const csv = stored?.csv || loadCsv(id);
+              supabase.saveProject(updatedProject, csv, user?.id).catch(() => {});
+            })
             .catch(() => {});
         }
       }
@@ -228,18 +259,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cleaningStepsRef.current = [];
 
       if (projectId) {
-        const stored = replaceCsv(projectId, csv);
-        update(projectId, {
-          status: "data-loaded",
-          dataset: {
-            name: dataset.name,
-            rows: dataset.rows.length,
-            columns: dataset.columns.length,
-            source: dataset.source,
-            stored,
-          },
-          cleaningSteps: [],
-        });
+        checkStorageAvailable(dataset.sizeBytes)
+          .then((quotaCheck) => {
+            if (!quotaCheck.ok) {
+              setSaveState("error");
+              setLastSaveError(quotaCheck.warning || "Storage quota critically low.");
+            }
+          })
+          .catch(() => {});
+
+        saveDataset(dataset, { projectId, csv })
+          .then(() => {
+            update(projectId, {
+              status: "data-loaded",
+              dataset: {
+                id: dataset.id,
+                name: dataset.name,
+                rows: dataset.rows.length,
+                columns: dataset.columns.length,
+                source: dataset.source,
+                stored: true,
+              },
+              cleaningSteps: [],
+            });
+          })
+          .catch((err) => {
+            console.warn("IndexedDB save failed, using fallback:", err);
+            const stored = replaceCsv(projectId, csv);
+            update(projectId, {
+              status: "data-loaded",
+              dataset: {
+                id: dataset.id,
+                name: dataset.name,
+                rows: dataset.rows.length,
+                columns: dataset.columns.length,
+                source: dataset.source,
+                stored,
+              },
+              cleaningSteps: [],
+            });
+            if (!stored) {
+              setSaveState("error");
+              setLastSaveError(
+                err instanceof Error
+                  ? err.message
+                  : "Failed to store dataset locally. Storage limit reached.",
+              );
+            }
+          });
       }
       setActive({ dataset, rawDataset: dataset, csv, projectId });
     },
@@ -273,6 +340,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const clearDataset = useCallback(() => {
     const cur = activeRef.current;
     if (cur?.projectId) {
+      if (cur.dataset?.id) {
+        deleteDataset(cur.dataset.id).catch(() => {});
+      }
+      deleteDatasetByProject(cur.projectId).catch(() => {});
       deleteCsv(cur.projectId);
       update(cur.projectId, { status: "no-data", dataset: null, cleaningSteps: [] });
     }
@@ -303,8 +374,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const cur = attachActive ? activeRef.current : null;
       let stored = false;
 
-      if (cur?.csv) {
-        stored = storeCsv(id, cur.csv);
+      if (cur?.dataset) {
+        const datasetToSave = { ...cur.dataset };
+        saveDataset(datasetToSave, { projectId: id, csv: cur.csv })
+          .then(() => {
+            update(id, {
+              dataset: {
+                id: datasetToSave.id,
+                name: datasetToSave.name,
+                rows: datasetToSave.rows.length,
+                columns: datasetToSave.columns.length,
+                source: datasetToSave.source,
+                stored: true,
+              },
+            });
+          })
+          .catch(() => {
+            if (cur.csv) {
+              storeCsv(id, cur.csv);
+            }
+          });
+
+        stored = true;
       }
 
       const p: ProjectMeta = {
@@ -317,6 +408,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         status: cur ? "data-loaded" : "no-data",
         dataset: cur
           ? {
+              id: cur.dataset.id,
               name: cur.dataset.name,
               rows: cur.dataset.rows.length,
               columns: cur.dataset.columns.length,
@@ -341,13 +433,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         savedAnalysesRef.current = [];
       }
 
-      getSupabaseClient()
-        .saveProject(p, cur?.csv ?? null, user?.id)
-        .catch(() => {});
+      const supabase = getSupabaseClient();
+      if (supabase.isConfigured() && supabase.getConfig().autoSync) {
+        supabase.saveProject(p, cur?.csv ?? null, user?.id).catch(() => {});
+      }
 
       return p;
     },
-    [commit, user, setActive],
+    [commit, user, setActive, update],
   );
 
   const saveAsProject = useCallback(
@@ -359,7 +452,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const openProject = useCallback(
-    (id: string) => {
+    async (id: string): Promise<{ error?: string; notice?: string }> => {
       const p = loadProjects().find((x) => x.id === id);
       if (!p) return { error: "Project not found." };
 
@@ -378,6 +471,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return { notice: "This project has no dataset yet. Upload one in the Data Workspace." };
       }
 
+      // 1. Try to load structured dataset from IndexedDB first
+      try {
+        let stored = p.dataset.id ? await loadDataset(p.dataset.id) : null;
+        if (!stored) {
+          stored = await loadDatasetByProject(id);
+        }
+
+        if (stored) {
+          const rawDataset: Dataset = {
+            id: stored.id,
+            name: stored.name,
+            source: stored.source,
+            columns: stored.columns,
+            rows: stored.rows,
+            sizeBytes: stored.sizeBytes,
+            warnings: stored.warnings ?? [],
+            delimiter: stored.delimiter,
+            typeOverrides: stored.typeOverrides,
+          };
+
+          let analyticalDataset = rawDataset;
+          if (projectCleaningSteps.length > 0) {
+            const replayed = replayCleaningSteps(rawDataset, projectCleaningSteps);
+            analyticalDataset = replayed.dataset;
+          }
+
+          setActive({
+            dataset: analyticalDataset,
+            rawDataset,
+            csv: stored.csv ?? "",
+            projectId: id,
+          });
+          return {};
+        }
+      } catch (err) {
+        console.warn("Failed to load dataset from IndexedDB:", err);
+      }
+
+      // 2. Fallback to legacy localStorage CSV
       const csv = loadCsv(id);
       if (!csv) {
         setActive(null);
@@ -397,6 +529,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         analyticalDataset = replayed.dataset;
       }
 
+      // Migrate to IndexedDB in background
+      saveDataset(rawDataset, { projectId: id, csv }).catch(() => {});
+
       setActive({ dataset: analyticalDataset, rawDataset, csv, projectId: id });
       return {};
     },
@@ -414,18 +549,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const copy = duplicateProjectPersistence(id);
     if (copy) {
       setProjects(loadProjects());
+      const source = loadProjects().find((p) => p.id === id);
+      const sourceDsId = source?.dataset?.id || id;
+      const newDsId = copy.dataset?.id || "ds_" + copy.id;
+      duplicateDatasetIdb(sourceDsId, newDsId, copy.id).catch((err) => {
+        console.warn("Failed to duplicate dataset in IndexedDB:", err);
+      });
     }
     return copy;
   }, []);
 
   const deleteProject = useCallback(
     (id: string) => {
+      const p = loadProjects().find((x) => x.id === id);
+      if (p?.dataset?.id) {
+        deleteDataset(p.dataset.id).catch(() => {});
+      }
+      deleteDatasetByProject(id).catch(() => {});
       deleteCsv(id);
       deleteChat(id);
-      commit(loadProjects().filter((p) => p.id !== id));
-      getSupabaseClient()
-        .deleteProject(id)
-        .catch(() => {});
+      commit(loadProjects().filter((x) => x.id !== id));
+      const supabase = getSupabaseClient();
+      if (supabase.isConfigured() && supabase.getConfig().autoSync) {
+        supabase.deleteProject(id).catch(() => {});
+      }
       if (activeProjectIdRef.current === id) {
         activeProjectIdRef.current = null;
         setActiveProjectId(null);
@@ -459,7 +606,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [active, update],
   );
 
-  const resetAll = useCallback(() => {
+  const resetAll = useCallback(async () => {
+    try {
+      await clearAllDatasets();
+    } catch (e) {
+      console.warn("Failed to clear IndexedDB datasets:", e);
+    }
     clearAll();
     setProjects([]);
     setActive(null);
@@ -637,7 +789,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const currentProjects = loadProjects();
       let syncedCount = 0;
       for (const p of currentProjects) {
-        const csv = loadCsv(p.id);
+        let csv: string | null = null;
+        if (p.dataset?.id) {
+          const stored = await loadDataset(p.dataset.id).catch(() => null);
+          csv = stored?.csv || null;
+        }
+        if (!csv) {
+          const stored = await loadDatasetByProject(p.id).catch(() => null);
+          csv = stored?.csv || null;
+        }
+        if (!csv) {
+          csv = loadCsv(p.id);
+        }
         const res = await supabase.saveProject(p, csv, user?.id);
         if (res.ok) syncedCount++;
       }

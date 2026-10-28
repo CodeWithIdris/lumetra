@@ -1,4 +1,19 @@
 import "@testing-library/jest-dom/vitest";
+import { createMockIndexedDB, harnessControls } from "./indexeddb-test-harness";
+
+const mockIdb = createMockIndexedDB();
+Object.defineProperty(window, "indexedDB", {
+  writable: true,
+  value: mockIdb,
+});
+Object.defineProperty(globalThis, "indexedDB", {
+  writable: true,
+  value: mockIdb,
+});
+
+beforeEach(() => {
+  harnessControls.resetAll();
+});
 
 Object.defineProperty(window, "scrollTo", {
   writable: true,

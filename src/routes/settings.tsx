@@ -22,6 +22,7 @@ import {
   saveSupabaseConfig,
   getSupabaseClient,
 } from "@/lib/persistence/supabase";
+import { getStorageEstimate, type StorageEstimateInfo } from "@/lib/persistence/indexeddb";
 import { toast } from "sonner";
 import {
   Database,
@@ -57,6 +58,13 @@ function Settings() {
   const { resetAll, projects, persona, setPersona, user, syncWithCloud, cloudSyncStatus } =
     useStore();
   const [confirm, setConfirm] = useState(false);
+  const [storageEstimate, setStorageEstimate] = useState<StorageEstimateInfo | null>(null);
+
+  useEffect(() => {
+    getStorageEstimate()
+      .then((est) => setStorageEstimate(est))
+      .catch(() => {});
+  }, [projects]);
 
   // Supabase connection state
   const config = loadSupabaseConfig();
@@ -266,20 +274,71 @@ function Settings() {
           </div>
         </section>
 
-        {/* Section 4: Local Cache Management */}
-        <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">Local Data Storage</h2>
-          <p className="text-xs text-slate-600">
-            {projects.length} project record(s) currently stored in this browser session.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-            onClick={() => setConfirm(true)}
-          >
-            Clear Browser Cache & Local Data
-          </Button>
+        {/* Section 4: Local Storage & Quota Management */}
+        <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <HardDrive className="size-4 text-blue-600" />
+                <h2 className="text-sm font-semibold text-slate-900">Browser-Local Storage</h2>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-600">
+                Datasets are stored locally using browser IndexedDB with metadata preserved in local
+                storage.
+              </p>
+            </div>
+            <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-mono text-emerald-700">
+              IndexedDB Active
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[10px] text-slate-500">Local Projects</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5 font-mono">
+                {projects.length} project{projects.length === 1 ? "" : "s"}
+              </div>
+            </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[10px] text-slate-500">Storage Used</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5 font-mono">
+                {storageEstimate
+                  ? `${(storageEstimate.usage / (1024 * 1024)).toFixed(1)} MB`
+                  : "Client managed"}
+              </div>
+            </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[10px] text-slate-500">Available Quota</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5 font-mono">
+                {storageEstimate && storageEstimate.quota > 0
+                  ? `${(storageEstimate.available / (1024 * 1024)).toFixed(0)} MB free (${storageEstimate.percentUsed.toFixed(1)}% used)`
+                  : "Browser managed"}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 space-y-1">
+            <div className="font-semibold text-amber-950 flex items-center gap-1.5">
+              <span>Notice on Browser-Local Persistence</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-amber-900">
+              Browser-local data is subject to client environment boundaries: clearing browser
+              cookies/site data, operating in private/incognito browsing windows, or disk space
+              pressure can lead to browser eviction. We strongly recommend exporting critical
+              datasets and analytical reports from the Export view.
+            </p>
+          </div>
+
+          <div className="pt-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={() => setConfirm(true)}
+            >
+              Clear Browser Cache & Local Data
+            </Button>
+          </div>
         </section>
       </div>
 

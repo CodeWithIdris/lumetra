@@ -520,7 +520,7 @@ function Workspace() {
                       onSubmit={(e) => {
                         e.preventDefault();
                         const p = saveAsProject(projectName);
-                        if (p) toast.success(`Project “${p.name}” saved and synced.`);
+                        if (p) toast.success(`Project “${p.name}” saved locally.`);
                       }}
                     >
                       <Input

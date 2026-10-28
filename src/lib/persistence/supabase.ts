@@ -38,7 +38,7 @@ const DEFAULT_CONFIG: SupabaseConfig = {
   url: "",
   anonKey: "",
   tableName: "lumetra_projects",
-  autoSync: true,
+  autoSync: false,
 };
 
 export function loadSupabaseConfig(): SupabaseConfig {
@@ -364,7 +364,13 @@ class SupabaseService {
       } else {
         vault.unshift(record);
       }
-      localStorage.setItem(CLOUD_CACHE_KEY, JSON.stringify(vault.slice(0, 50)));
+      try {
+        localStorage.setItem(CLOUD_CACHE_KEY, JSON.stringify(vault.slice(0, 50)));
+      } catch {
+        // If localStorage quota is exceeded, strip large csv_content to preserve metadata safely
+        const fallbackVault = vault.slice(0, 50).map(({ csv_content: _, ...rest }) => rest);
+        localStorage.setItem(CLOUD_CACHE_KEY, JSON.stringify(fallbackVault));
+      }
     } catch (e) {
       console.warn("Could not write to local cloud cache:", e);
     }
