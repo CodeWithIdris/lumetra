@@ -144,7 +144,9 @@ function CustomScatterTooltip({
   return (
     <div className="rounded border border-slate-200 bg-white/95 p-2 text-xs shadow-md font-mono space-y-0.5 z-50">
       {p.rowIndex !== undefined && (
-        <div className="text-[10px] text-slate-500 font-sans font-medium">Observation #{p.rowIndex + 1}</div>
+        <div className="text-[10px] text-slate-500 font-sans font-medium">
+          Observation #{p.rowIndex + 1}
+        </div>
       )}
       <div className="text-slate-800">
         <span className="text-slate-500 font-sans">{xLabel}: </span>
@@ -176,9 +178,7 @@ export function ScatterPlotChart({
   caption,
 }: ScatterPlotChartProps) {
   // Ensure we only process valid, finite observations
-  const validPoints = points.filter(
-    (p) => p && Number.isFinite(p.x) && Number.isFinite(p.y),
-  );
+  const validPoints = points.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
   const n = totalPairs ?? validPoints.length;
 
   if (validPoints.length === 0) {
@@ -283,7 +283,8 @@ export function ScatterPlotChart({
       {/* Small sample warning */}
       {validPoints.length < 3 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-800">
-          Correlation and regression require at least 3 complete pairs (found n = {validPoints.length}).
+          Correlation and regression require at least 3 complete pairs (found n ={" "}
+          {validPoints.length}).
         </div>
       )}
 
@@ -364,8 +365,9 @@ export function ScatterPlotChart({
       {/* Downsampling or custom caption note */}
       {isDownsampled && (
         <figcaption className="text-[10px] text-slate-400">
-          Showing {displayPoints.length.toLocaleString()} sampled points from {validPoints.length.toLocaleString()}{" "}
-          observations for browser rendering efficiency. Full sample used in calculations.
+          Showing {displayPoints.length.toLocaleString()} sampled points from{" "}
+          {validPoints.length.toLocaleString()} observations for browser rendering efficiency. Full
+          sample used in calculations.
         </figcaption>
       )}
       {caption && <figcaption className="text-[11px] text-slate-600">{caption}</figcaption>}

@@ -747,7 +747,8 @@ function Analyses() {
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                           <div className="rounded border border-slate-200 bg-slate-50 p-3">
                             <div className="text-[11px] font-medium text-slate-500">
-                              Correlation ({String(viewedAnalysis.results["method"]) === "spearman" ? "ρ" : "r"})
+                              Correlation (
+                              {String(viewedAnalysis.results["method"]) === "spearman" ? "ρ" : "r"})
                             </div>
                             <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
                               {typeof viewedAnalysis.results["r"] === "number"
@@ -777,9 +778,13 @@ function Analyses() {
                             </div>
                           </div>
                           <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-[11px] font-medium text-slate-500">Paired Sample Size</div>
+                            <div className="text-[11px] font-medium text-slate-500">
+                              Paired Sample Size
+                            </div>
                             <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
-                              {Number(viewedAnalysis.results["n"] ?? viewedAnalysis.sampleSize).toLocaleString()}
+                              {Number(
+                                viewedAnalysis.results["n"] ?? viewedAnalysis.sampleSize,
+                              ).toLocaleString()}
                             </div>
                             <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
                               Complete pairs
@@ -790,7 +795,9 @@ function Analyses() {
                             <div className="font-mono text-xs font-semibold text-slate-800 mt-1 truncate">
                               {viewedAnalysis.variables.join(" × ")}
                             </div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">Bivariate association</div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">
+                              Bivariate association
+                            </div>
                           </div>
                         </div>
 
@@ -826,7 +833,9 @@ function Analyses() {
                           />
                         ) : (
                           <div className="rounded border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500">
-                            <p className="font-medium text-slate-700">Scatter plot preview unavailable</p>
+                            <p className="font-medium text-slate-700">
+                              Scatter plot preview unavailable
+                            </p>
                             <p className="mt-0.5 text-[11px]">{recon.message}</p>
                           </div>
                         )}

@@ -358,14 +358,23 @@ export function getSavedBivariateData(analysis: SavedAnalysis): BivariateAnalysi
     method,
     r: typeof analysis.results["r"] === "number" ? (analysis.results["r"] as number) : null,
     pValue:
-      typeof analysis.results["pValue"] === "number" ? (analysis.results["pValue"] as number) : null,
-    note: typeof analysis.results["note"] === "string" ? (analysis.results["note"] as string) : undefined,
+      typeof analysis.results["pValue"] === "number"
+        ? (analysis.results["pValue"] as number)
+        : null,
+    note:
+      typeof analysis.results["note"] === "string"
+        ? (analysis.results["note"] as string)
+        : undefined,
     regression,
     trendLine: (analysis.results["trendLine"] as Array<{ x: number; y: number }>) ?? null,
-    minX: typeof analysis.results["minX"] === "number" ? (analysis.results["minX"] as number) : null,
-    maxX: typeof analysis.results["maxX"] === "number" ? (analysis.results["maxX"] as number) : null,
-    minY: typeof analysis.results["minY"] === "number" ? (analysis.results["minY"] as number) : null,
-    maxY: typeof analysis.results["maxY"] === "number" ? (analysis.results["maxY"] as number) : null,
+    minX:
+      typeof analysis.results["minX"] === "number" ? (analysis.results["minX"] as number) : null,
+    maxX:
+      typeof analysis.results["maxX"] === "number" ? (analysis.results["maxX"] as number) : null,
+    minY:
+      typeof analysis.results["minY"] === "number" ? (analysis.results["minY"] as number) : null,
+    maxY:
+      typeof analysis.results["maxY"] === "number" ? (analysis.results["maxY"] as number) : null,
   };
 }
 
@@ -407,7 +416,9 @@ export function reconstructCorrelationChartData(
     };
   }
 
-  const isDifferentDataset = Boolean(analysis.datasetId && currentDataset.id !== analysis.datasetId);
+  const isDifferentDataset = Boolean(
+    analysis.datasetId && currentDataset.id !== analysis.datasetId,
+  );
 
   if (!currentDataset.columns.includes(colX) || !currentDataset.columns.includes(colY)) {
     if (savedData) {

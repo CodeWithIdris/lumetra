@@ -125,9 +125,7 @@ export function generateReportMarkdown(opts: ReportMarkdownOptions): string {
         lines.push(`\n**Computed Outputs:**`);
         lines.push(`| Metric | Value |`);
         lines.push(`| :--- | :--- |`);
-        lines.push(
-          `| Correlation Coefficient (r) | ${rVal !== null ? rVal.toFixed(3) : "—"} |`,
-        );
+        lines.push(`| Correlation Coefficient (r) | ${rVal !== null ? rVal.toFixed(3) : "—"} |`);
         lines.push(
           `| Two-Sided p-Value | ${pVal !== null ? (pVal < 0.001 ? "< 0.001" : pVal.toFixed(4)) : "—"} |`,
         );

@@ -623,9 +623,7 @@ function Reports() {
                                   <AlertTriangle className="size-3.5 text-amber-600 shrink-0" />
                                   Dataset Discrepancy Notice
                                 </div>
-                                <p className="mt-0.5 text-[11px] text-amber-800">
-                                  {recon.message}
-                                </p>
+                                <p className="mt-0.5 text-[11px] text-amber-800">{recon.message}</p>
                               </div>
                             )}
 
@@ -660,8 +658,12 @@ function Reports() {
                               />
                             ) : (
                               <div className="rounded border border-dashed border-slate-200 bg-slate-50/50 p-3 text-xs text-slate-500">
-                                <span className="font-medium text-slate-700">Scatter plot not available: </span>
-                                <span>{recon.message ?? "Observations cannot be reconstructed."}</span>
+                                <span className="font-medium text-slate-700">
+                                  Scatter plot not available:{" "}
+                                </span>
+                                <span>
+                                  {recon.message ?? "Observations cannot be reconstructed."}
+                                </span>
                               </div>
                             )}
                           </div>

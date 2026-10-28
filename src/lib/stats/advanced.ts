@@ -166,10 +166,7 @@ export interface PairedPoint {
 }
 
 /** Extract paired numeric points retaining the original row index. */
-export function extractPairedPoints(
-  a: (number | null)[],
-  b: (number | null)[],
-): PairedPoint[] {
+export function extractPairedPoints(a: (number | null)[], b: (number | null)[]): PairedPoint[] {
   const points: PairedPoint[] = [];
   const limit = Math.min(a.length, b.length);
   for (let i = 0; i < limit; i++) {

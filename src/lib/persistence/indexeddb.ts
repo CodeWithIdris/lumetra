@@ -839,4 +839,3 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
 
   return result;
 }
-
