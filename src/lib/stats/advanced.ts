@@ -159,6 +159,29 @@ function pearsonRaw(x: number[], y: number[]): number | null {
   return sxx === 0 || syy === 0 ? null : sxy / Math.sqrt(sxx * syy);
 }
 
+export interface PairedPoint {
+  x: number;
+  y: number;
+  rowIndex: number;
+}
+
+/** Extract paired numeric points retaining the original row index. */
+export function extractPairedPoints(
+  a: (number | null)[],
+  b: (number | null)[],
+): PairedPoint[] {
+  const points: PairedPoint[] = [];
+  const limit = Math.min(a.length, b.length);
+  for (let i = 0; i < limit; i++) {
+    const u = a[i];
+    const v = b[i];
+    if (u != null && v != null && Number.isFinite(u) && Number.isFinite(v)) {
+      points.push({ x: u, y: v, rowIndex: i });
+    }
+  }
+  return points;
+}
+
 /** Pairs where both values are present. */
 export function pairs(a: (number | null)[], b: (number | null)[]): [number[], number[]] {
   const x: number[] = [],

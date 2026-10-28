@@ -14,9 +14,13 @@ import {
   correlation,
   welchTTest,
   crosstab,
+  linearRegression,
+  extractPairedPoints,
   type CorrelationResult,
   type WelchResult,
   type CrosstabResult,
+  type RegressionResult,
+  type PairedPoint,
 } from "./advanced";
 import {
   interpretDescriptive,
@@ -228,12 +232,31 @@ export function createDescriptiveSavedAnalysis(
   };
 }
 
-export function createCorrelationSavedAnalysis(
+export interface BivariateAnalysisData {
+  colX: string;
+  colY: string;
+  points: PairedPoint[];
+  n: number;
+  missingCount: number;
+  method: "pearson" | "spearman";
+  r: number | null;
+  pValue: number | null;
+  note?: string;
+  regression: RegressionResult;
+  trendLine: Array<{ x: number; y: number }> | null;
+  minX: number | null;
+  maxX: number | null;
+  minY: number | null;
+  maxY: number | null;
+}
+
+/** Extract deterministic paired observations and compute correlation + OLS regression */
+export function extractBivariateData(
   ds: Dataset,
   colX: string,
   colY: string,
   method: "pearson" | "spearman" = "pearson",
-): SavedAnalysis {
+): BivariateAnalysisData {
   const idxX = ds.columns.indexOf(colX);
   const idxY = ds.columns.indexOf(colY);
   if (idxX === -1 || idxY === -1) {
@@ -246,13 +269,163 @@ export function createCorrelationSavedAnalysis(
   const numX = rawX.map((v) => (v !== null && isNumeric(v) ? Number(v) : null));
   const numY = rawY.map((v) => (v !== null && isNumeric(v) ? Number(v) : null));
 
-  const result = correlation(numX as number[], numY as number[], method);
-  const interpretation = interpretCorrelation(colX, colY, result);
+  const points = extractPairedPoints(numX, numY);
+  const pairedX = points.map((p) => p.x);
+  const pairedY = points.map((p) => p.y);
+
+  const corr = correlation(pairedX, pairedY, method);
+  const regression = linearRegression(pairedX, pairedY);
 
   let missingCount = 0;
   for (let i = 0; i < ds.rows.length; i++) {
     if (numX[i] === null || numY[i] === null) missingCount++;
   }
+
+  let minX: number | null = null;
+  let maxX: number | null = null;
+  let minY: number | null = null;
+  let maxY: number | null = null;
+
+  if (points.length > 0) {
+    minX = Math.min(...pairedX);
+    maxX = Math.max(...pairedX);
+    minY = Math.min(...pairedY);
+    maxY = Math.max(...pairedY);
+  }
+
+  let trendLine: Array<{ x: number; y: number }> | null = null;
+  if (
+    regression.slope !== null &&
+    regression.intercept !== null &&
+    minX !== null &&
+    maxX !== null &&
+    minX !== maxX
+  ) {
+    trendLine = [
+      { x: minX, y: regression.intercept + regression.slope * minX },
+      { x: maxX, y: regression.intercept + regression.slope * maxX },
+    ];
+  }
+
+  return {
+    colX,
+    colY,
+    points,
+    n: corr.n,
+    missingCount,
+    method,
+    r: corr.r,
+    pValue: corr.pValue,
+    note: corr.note,
+    regression,
+    trendLine,
+    minX,
+    maxX,
+    minY,
+    maxY,
+  };
+}
+
+export interface ReconstructedBivariateChartData {
+  status: "verified" | "discrepancy" | "stale" | "missing_columns" | "missing_dataset";
+  message?: string;
+  data: BivariateAnalysisData | null;
+}
+
+/**
+ * Reconstructs paired points for a saved correlation analysis and verifies
+ * that recalculated results faithfully match the saved analytical record.
+ */
+export function reconstructCorrelationChartData(
+  analysis: SavedAnalysis,
+  currentDataset: Dataset | null,
+): ReconstructedBivariateChartData {
+  if (!currentDataset) {
+    return {
+      status: "missing_dataset",
+      message: "No active dataset loaded in memory.",
+      data: null,
+    };
+  }
+
+  const colX = (analysis.configuration["colX"] as string) || analysis.variables[0];
+  const colY = (analysis.configuration["colY"] as string) || analysis.variables[1];
+  const method = (analysis.configuration["method"] as "pearson" | "spearman") || "pearson";
+
+  if (!colX || !colY) {
+    return {
+      status: "missing_columns",
+      message: "Analysis configuration missing variable definitions.",
+      data: null,
+    };
+  }
+
+  if (!currentDataset.columns.includes(colX) || !currentDataset.columns.includes(colY)) {
+    return {
+      status: "missing_columns",
+      message: `Variables "${colX}" and "${colY}" are not both present in current dataset schema.`,
+      data: null,
+    };
+  }
+
+  let recalculated: BivariateAnalysisData;
+  try {
+    recalculated = extractBivariateData(currentDataset, colX, colY, method);
+  } catch (err) {
+    return {
+      status: "missing_columns",
+      message: err instanceof Error ? err.message : "Failed to extract variables from dataset.",
+      data: null,
+    };
+  }
+
+  const isStale = isAnalysisStale(analysis, currentDataset);
+  const savedR =
+    typeof analysis.results["r"] === "number" ? (analysis.results["r"] as number) : null;
+  const recalculatedR = recalculated.r;
+
+  const nMatches = recalculated.n === analysis.sampleSize;
+  const rMatches =
+    (savedR === null && recalculatedR === null) ||
+    (savedR !== null && recalculatedR !== null && Math.abs(savedR - recalculatedR) < 1e-5);
+
+  if (nMatches && rMatches && !isStale) {
+    return {
+      status: "verified",
+      data: recalculated,
+    };
+  }
+
+  if (!nMatches || !rMatches) {
+    return {
+      status: "discrepancy",
+      message: `Recalculated values (r = ${recalculatedR !== null ? recalculatedR.toFixed(3) : "—"}, n = ${recalculated.n}) diverge from saved record (r = ${savedR !== null ? savedR.toFixed(3) : "—"}, n = ${analysis.sampleSize}). Dataset has been modified.`,
+      data: recalculated,
+    };
+  }
+
+  return {
+    status: "stale",
+    message: "Current dataset rows or values have changed since this analysis was saved.",
+    data: recalculated,
+  };
+}
+
+export function createCorrelationSavedAnalysis(
+  ds: Dataset,
+  colX: string,
+  colY: string,
+  method: "pearson" | "spearman" = "pearson",
+): SavedAnalysis {
+  const data = extractBivariateData(ds, colX, colY, method);
+  const result: CorrelationResult = {
+    method: data.method,
+    n: data.n,
+    r: data.r,
+    pValue: data.pValue,
+    note: data.note,
+  };
+  const interpretation = interpretCorrelation(colX, colY, result);
 
   return {
     id: "analysis_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36),
@@ -264,21 +437,33 @@ export function createCorrelationSavedAnalysis(
     datasetSignature: computeDatasetSignature(ds),
     variables: [colX, colY],
     configuration: { colX, colY, method },
-    sampleSize: result.n,
-    missingCount,
+    sampleSize: data.n,
+    missingCount: data.missingCount,
     missingHandling: "Pairwise complete deletion: pairs with any missing coordinate excluded.",
     results: {
-      r: result.r,
-      pValue: result.pValue,
-      n: result.n,
-      method: result.method,
-      note: result.note,
+      r: data.r,
+      pValue: data.pValue,
+      n: data.n,
+      method: data.method,
+      note: data.note,
+      regression: {
+        slope: data.regression.slope,
+        intercept: data.regression.intercept,
+        rSquared: data.regression.rSquared,
+        slopeSE: data.regression.slopeSE,
+        slopeP: data.regression.slopeP,
+      },
+      minX: data.minX,
+      maxX: data.maxX,
+      minY: data.minY,
+      maxY: data.maxY,
     },
     interpretation,
     methodNotes: [
       method === "pearson"
         ? "Pearson product-moment correlation coefficient r, p-value via Student's t approximation."
         : "Spearman rank correlation coefficient, average ranks used for ties, t approximation for p-value.",
+      "Linear regression (OLS) fitted trendline provides reference slope and intercept; does not imply causality.",
     ],
   };
 }
