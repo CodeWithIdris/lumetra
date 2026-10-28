@@ -139,8 +139,7 @@ export function summarise(r: DescriptiveReport): string[] {
     const s = n.summary;
     if (s.n === 0) continue;
     let line = `"${n.column}" (n = ${s.n}) has a mean of ${fmt(s.mean)} and a median of ${fmt(s.median)}, ranging from ${fmt(s.min)} to ${fmt(s.max)}`;
-    if (s.invalid > 0)
-      line += `; ${s.invalid} invalid numeric value(s) were excluded`;
+    if (s.invalid > 0) line += `; ${s.invalid} invalid numeric value(s) were excluded`;
     line +=
       s.sd === null
         ? "; standard deviation is undefined for a single value."
@@ -315,7 +314,9 @@ export function createTTestSavedAnalysis(
 
   const distinctGroups = [...groups.keys()];
   if (distinctGroups.length < 2) {
-    throw new Error(`Grouping column "${groupCol}" needs at least 2 distinct groups (found ${distinctGroups.length}).`);
+    throw new Error(
+      `Grouping column "${groupCol}" needs at least 2 distinct groups (found ${distinctGroups.length}).`,
+    );
   }
 
   const g1Name = distinctGroups[0]!;

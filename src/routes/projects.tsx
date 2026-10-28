@@ -143,7 +143,8 @@ function Projects() {
       if (!q) return true;
       const matchName = p.name.toLowerCase().includes(q);
       const matchDataset = p.dataset?.name.toLowerCase().includes(q);
-      const matchObjective = p.objective?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q);
+      const matchObjective =
+        p.objective?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q);
       return matchName || matchDataset || matchObjective;
     });
 
@@ -187,7 +188,9 @@ function Projects() {
               onClick={handleSyncAll}
               className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
             >
-              <RefreshCw className={`mr-1.5 size-3.5 text-slate-500 ${syncing ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`mr-1.5 size-3.5 text-slate-500 ${syncing ? "animate-spin" : ""}`}
+              />
               <span>{syncing ? "Syncing..." : "Sync to Supabase"}</span>
             </Button>
             <Button
@@ -366,7 +369,11 @@ function Projects() {
                                 const r = openProject(p.id);
                                 navigate({
                                   to: "/workspace",
-                                  search: r.error ? { notice: r.error } : {},
+                                  search: r.error
+                                    ? { notice: r.error }
+                                    : r.notice
+                                      ? { notice: r.notice }
+                                      : {},
                                 });
                               }}
                               className="font-semibold text-slate-900 hover:text-blue-600 text-left"
@@ -389,7 +396,8 @@ function Projects() {
                               {p.dataset.rows.toLocaleString()} rows × {p.dataset.columns} cols
                               {p.cleaningSteps && p.cleaningSteps.length > 0 && (
                                 <span className="ml-1 text-blue-600">
-                                  ({p.cleaningSteps.length} cleaning step{p.cleaningSteps.length > 1 ? "s" : ""})
+                                  ({p.cleaningSteps.length} cleaning step
+                                  {p.cleaningSteps.length > 1 ? "s" : ""})
                                 </span>
                               )}
                             </div>
@@ -495,11 +503,18 @@ function Projects() {
           <div className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-emerald-500" />
             <span>
-              Computations execute in-browser client-side. {saveState === "saving" ? "Saving changes..." : saveState === "saved" ? "Local storage up to date." : "Persistence notice."}
+              Computations execute in-browser client-side.{" "}
+              {saveState === "saving"
+                ? "Saving changes..."
+                : saveState === "saved"
+                  ? "Local storage up to date."
+                  : "Persistence notice."}
             </span>
           </div>
           <span>
-            {user ? `Account: ${user.name} (${cloudSyncStatus.lastSyncedAt ? "Cloud Synced" : "Local Vault"})` : `Local Vault (${projects.length} saved)`}
+            {user
+              ? `Account: ${user.name} (${cloudSyncStatus.lastSyncedAt ? "Cloud Synced" : "Local Vault"})`
+              : `Local Vault (${projects.length} saved)`}
           </span>
         </div>
       </div>
@@ -573,8 +588,8 @@ function Projects() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete project “{toDelete?.name}”?</AlertDialogTitle>
             <AlertDialogDescription className="text-slate-600 text-xs">
-              This will remove the project metadata, cached dataset, and saved analysis sessions from
-              your local storage vault. This action cannot be undone.
+              This will remove the project metadata, cached dataset, and saved analysis sessions
+              from your local storage vault. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

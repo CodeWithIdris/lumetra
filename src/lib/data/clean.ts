@@ -236,11 +236,7 @@ export function filterRows(
 }
 
 export type MissingStrategy =
-  | "drop_rows"
-  | "fill_mean"
-  | "fill_median"
-  | "fill_mode"
-  | "fill_custom";
+  "drop_rows" | "fill_mean" | "fill_median" | "fill_mode" | "fill_custom";
 
 export function handleMissingValues(
   dataset: Dataset,
@@ -431,7 +427,8 @@ export function executeCleaningStep(
     case "handle_missing": {
       const col = String(params["column"] ?? "");
       const strategy = params["strategy"] as MissingStrategy;
-      const customVal = params["customValue"] !== undefined ? String(params["customValue"]) : undefined;
+      const customVal =
+        params["customValue"] !== undefined ? String(params["customValue"]) : undefined;
       nextDs = handleMissingValues(nextDs, col, strategy, customVal);
       description = `Missing value handling on "${col}": ${strategy}${customVal ? ` ("${customVal}")` : ""}`;
       break;

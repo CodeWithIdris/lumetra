@@ -25,6 +25,8 @@ export interface CloudRecord {
   dataset_columns?: number | undefined;
   dataset_source?: string | undefined;
   csv_content?: string | undefined;
+  cleaning_steps?: string | undefined;
+  saved_analyses?: string | undefined;
   created_at: string;
   updated_at: string;
 }
@@ -218,6 +220,14 @@ class SupabaseService {
       dataset_columns: project.dataset?.columns,
       dataset_source: project.dataset?.source,
       csv_content: csvContent || undefined,
+      cleaning_steps:
+        project.cleaningSteps && project.cleaningSteps.length > 0
+          ? JSON.stringify(project.cleaningSteps)
+          : undefined,
+      saved_analyses:
+        project.savedAnalyses && project.savedAnalyses.length > 0
+          ? JSON.stringify(project.savedAnalyses)
+          : undefined,
       created_at: project.createdAt,
       updated_at: project.updatedAt,
     };
@@ -240,6 +250,22 @@ class SupabaseService {
         },
         body: JSON.stringify(record),
       });
+
+      // If remote Supabase table schema lacks cleaning_steps or saved_analyses columns, retry with core fields
+      if (!res.ok && (record.cleaning_steps || record.saved_analyses)) {
+        const { cleaning_steps: _, saved_analyses: __, ...coreRecord } = record;
+        const retryRes = await fetch(`${cleanUrl}/rest/v1/${c.tableName}`, {
+          method: "POST",
+          headers: {
+            ...this.getHeaders(),
+            Prefer: "resolution=merge-duplicates",
+          },
+          body: JSON.stringify(coreRecord),
+        });
+        if (retryRes.ok) {
+          return { ok: true };
+        }
+      }
 
       if (!res.ok) {
         const text = await res.text();

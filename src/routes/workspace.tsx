@@ -23,7 +23,13 @@ import {
 import { EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { columnValues, profileDataset, isNumeric } from "@/lib/data/infer";
-import { fmt, describe, frequencies, toNumbers, type NumericSummary } from "@/lib/stats/descriptive";
+import {
+  fmt,
+  describe,
+  frequencies,
+  toNumbers,
+  type NumericSummary,
+} from "@/lib/stats/descriptive";
 import { parseCsvFile, parseCsvText } from "@/lib/data/parse";
 import {
   auditDataset,
@@ -412,11 +418,14 @@ function Workspace() {
 
             <div className="mt-4">
               <div className="text-base font-semibold text-slate-900">
-                Import CSV Dataset
+                {activeProject
+                  ? `Import CSV Dataset into “${activeProject.name}”`
+                  : "Import CSV Dataset"}
               </div>
               <p className="mt-1 max-w-md text-xs text-slate-500 leading-relaxed">
-                Drag and drop your CSV file here, or browse local files.
-                Supports UTF-8 CSV with column headers in row 1.
+                {activeProject
+                  ? `Upload a CSV dataset to associate with project “${activeProject.name}”. Data is parsed and kept securely in browser memory.`
+                  : "Drag and drop your CSV file here, or browse local files. Supports UTF-8 CSV with column headers in row 1."}{" "}
                 Browser memory limit is <strong>20 MB</strong> for optimal client-side performance.
               </p>
             </div>
@@ -467,7 +476,9 @@ function Workspace() {
                   <div className="h-3 w-px bg-slate-200 hidden sm:block" />
                   <div>
                     <span className="text-[11px] font-medium text-slate-400">Columns: </span>
-                    <span className="num font-mono font-semibold text-slate-900">{ds.columns.length}</span>
+                    <span className="num font-mono font-semibold text-slate-900">
+                      {ds.columns.length}
+                    </span>
                   </div>
                   <div className="h-3 w-px bg-slate-200 hidden sm:block" />
                   <div>
@@ -486,7 +497,9 @@ function Workspace() {
                   <div className="h-3 w-px bg-slate-200 hidden sm:block" />
                   <div>
                     <span className="text-[11px] font-medium text-slate-400">Duplicates: </span>
-                    <span className={`num font-mono font-semibold ${duplicateRows > 0 ? "text-amber-700" : "text-slate-700"}`}>
+                    <span
+                      className={`num font-mono font-semibold ${duplicateRows > 0 ? "text-amber-700" : "text-slate-700"}`}
+                    >
                       {duplicateRows}
                     </span>
                   </div>
@@ -538,7 +551,8 @@ function Workspace() {
                       Cleaned Analytical Dataset: {cleaningSteps.length} transformation(s) active.
                     </span>
                     <span className="text-slate-500">
-                      Original raw dataset ({rawDataset?.rows.length ?? ds.rows.length} rows) is preserved in vault.
+                      Original raw dataset ({rawDataset?.rows.length ?? ds.rows.length} rows) is
+                      preserved in vault.
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -835,7 +849,8 @@ function Workspace() {
                         </h4>
                       </div>
                       <span className="text-xs text-slate-500">
-                        {inspectedProfile.nonMissing.toLocaleString()} non-missing • {inspectedProfile.distinct.toLocaleString()} distinct
+                        {inspectedProfile.nonMissing.toLocaleString()} non-missing •{" "}
+                        {inspectedProfile.distinct.toLocaleString()} distinct
                       </span>
                     </div>
 
@@ -915,13 +930,16 @@ function Workspace() {
                         <span>Data Cleaning Pipeline</span>
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                        Apply deterministic, reproducible transformations. The original imported data is never overwritten silently.
+                        Apply deterministic, reproducible transformations. The original imported
+                        data is never overwritten silently.
                       </p>
                     </div>
 
                     {/* Step selector */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-700">Choose Cleaning Operation:</label>
+                      <label className="text-xs font-medium text-slate-700">
+                        Choose Cleaning Operation:
+                      </label>
                       <select
                         value={cleaningOp}
                         onChange={(e) => setCleaningOp(e.target.value as CleaningStepType)}
@@ -942,7 +960,9 @@ function Workspace() {
                       <div className="space-y-3 rounded border border-slate-200 bg-slate-50/50 p-3">
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Target Column:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Target Column:
+                            </label>
                             <select
                               value={cleanCol}
                               onChange={(e) => setCleanCol(e.target.value)}
@@ -957,21 +977,28 @@ function Workspace() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Target Data Type:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Target Data Type:
+                            </label>
                             <select
                               value={cleanTargetType}
                               onChange={(e) => setCleanTargetType(e.target.value as ColumnType)}
                               className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                             >
-                              <option value="numeric">Numeric (Numbers, amounts, measurements)</option>
-                              <option value="categorical">Categorical (Discrete levels, groups)</option>
+                              <option value="numeric">
+                                Numeric (Numbers, amounts, measurements)
+                              </option>
+                              <option value="categorical">
+                                Categorical (Discrete levels, groups)
+                              </option>
                               <option value="date">Date/Time (ISO format YYYY-MM-DD)</option>
                               <option value="text">Text (Freeform strings)</option>
                             </select>
                           </div>
                         </div>
                         <p className="text-[11px] text-slate-500">
-                          Converts values safely. Cells that cannot be parsed into the target type become null (never coerced to zero) to preserve statistical validity.
+                          Converts values safely. Cells that cannot be parsed into the target type
+                          become null (never coerced to zero) to preserve statistical validity.
                         </p>
                       </div>
                     )}
@@ -981,14 +1008,18 @@ function Workspace() {
                       <div className="space-y-3 rounded border border-slate-200 bg-slate-50/50 p-3">
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Target Column:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Target Column:
+                            </label>
                             <select
                               value={cleanCol}
                               onChange={(e) => setCleanCol(e.target.value)}
                               className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                             >
                               <option value="">Select column...</option>
-                              <option value="all_columns">All Columns (Drop rows with any null)</option>
+                              <option value="all_columns">
+                                All Columns (Drop rows with any null)
+                              </option>
                               {ds.columns.map((c) => (
                                 <option key={c} value={c}>
                                   {c}
@@ -997,15 +1028,21 @@ function Workspace() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Strategy:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Strategy:
+                            </label>
                             <select
                               value={cleanMissingStrategy}
-                              onChange={(e) => setCleanMissingStrategy(e.target.value as MissingStrategy)}
+                              onChange={(e) =>
+                                setCleanMissingStrategy(e.target.value as MissingStrategy)
+                              }
                               className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900"
                             >
                               <option value="drop_rows">Drop rows with missing values</option>
                               <option value="fill_mean">Impute with Mean (Numeric columns)</option>
-                              <option value="fill_median">Impute with Median (Numeric columns)</option>
+                              <option value="fill_median">
+                                Impute with Median (Numeric columns)
+                              </option>
                               <option value="fill_mode">Impute with Mode (Most frequent)</option>
                               <option value="fill_custom">Fill with Custom Value</option>
                             </select>
@@ -1014,7 +1051,9 @@ function Workspace() {
 
                         {cleanMissingStrategy === "fill_custom" && (
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Custom Replacement Value:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Custom Replacement Value:
+                            </label>
                             <Input
                               placeholder="e.g. Unknown, 0, N/A"
                               value={cleanMissingCustomVal}
@@ -1029,10 +1068,12 @@ function Workspace() {
                     {cleaningOp === "remove_duplicates" && (
                       <div className="rounded border border-slate-200 bg-slate-50/50 p-3 text-xs text-slate-700">
                         <p>
-                          Detected <strong>{duplicateRows}</strong> exact duplicate row(s) in the dataset.
+                          Detected <strong>{duplicateRows}</strong> exact duplicate row(s) in the
+                          dataset.
                         </p>
                         <p className="mt-1 text-slate-500 text-[11px]">
-                          Applying this will keep the first occurrence of each unique row and remove identical subsequent rows.
+                          Applying this will keep the first occurrence of each unique row and remove
+                          identical subsequent rows.
                         </p>
                       </div>
                     )}
@@ -1041,7 +1082,9 @@ function Workspace() {
                       <div className="space-y-3 rounded border border-slate-200 bg-slate-50/50 p-3">
                         <div className="grid gap-2 sm:grid-cols-3">
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Column:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Column:
+                            </label>
                             <select
                               value={cleanCol}
                               onChange={(e) => setCleanCol(e.target.value)}
@@ -1056,7 +1099,9 @@ function Workspace() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Operator:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Operator:
+                            </label>
                             <select
                               value={cleanFilterOp}
                               onChange={(e) => setCleanFilterOp(e.target.value as FilterOperator)}
@@ -1088,7 +1133,9 @@ function Workspace() {
                     {cleaningOp === "rename_column" && (
                       <div className="grid gap-2 sm:grid-cols-2 rounded border border-slate-200 bg-slate-50/50 p-3">
                         <div>
-                          <label className="text-[11px] font-medium text-slate-600">Column to Rename:</label>
+                          <label className="text-[11px] font-medium text-slate-600">
+                            Column to Rename:
+                          </label>
                           <select
                             value={cleanCol}
                             onChange={(e) => setCleanCol(e.target.value)}
@@ -1103,7 +1150,9 @@ function Workspace() {
                           </select>
                         </div>
                         <div>
-                          <label className="text-[11px] font-medium text-slate-600">New Column Name:</label>
+                          <label className="text-[11px] font-medium text-slate-600">
+                            New Column Name:
+                          </label>
                           <Input
                             placeholder="e.g. response_time_ms"
                             value={cleanNewName}
@@ -1166,7 +1215,9 @@ function Workspace() {
                         </div>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Original Value:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Original Value:
+                            </label>
                             <Input
                               placeholder="e.g. Pending"
                               value={cleanRecodeFrom}
@@ -1175,7 +1226,9 @@ function Workspace() {
                             />
                           </div>
                           <div>
-                            <label className="text-[11px] font-medium text-slate-600">Recode to:</label>
+                            <label className="text-[11px] font-medium text-slate-600">
+                              Recode to:
+                            </label>
                             <Input
                               placeholder="e.g. Under Review"
                               value={cleanRecodeTo}
@@ -1230,7 +1283,8 @@ function Workspace() {
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-500 font-mono">
-                              Rows: {s.effect.rowsBefore} → {s.effect.rowsAfter} | Nulls: {s.effect.missingBefore} → {s.effect.missingAfter}
+                              Rows: {s.effect.rowsBefore} → {s.effect.rowsAfter} | Nulls:{" "}
+                              {s.effect.missingBefore} → {s.effect.missingAfter}
                             </div>
                           </div>
                         ))}
@@ -1266,9 +1320,7 @@ function Workspace() {
               <TabsContent value="quality" className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-4">
                   <div className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs">
-                    <div className="text-[11px] font-medium text-slate-500">
-                      Data Completeness
-                    </div>
+                    <div className="text-[11px] font-medium text-slate-500">Data Completeness</div>
                     <div className="mt-1 num font-mono text-xl font-bold text-slate-900">
                       {fmt(completenessPct, 1)}%
                     </div>
@@ -1280,9 +1332,7 @@ function Workspace() {
                   </div>
 
                   <div className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs">
-                    <div className="text-[11px] font-medium text-slate-500">
-                      Duplicate Rows
-                    </div>
+                    <div className="text-[11px] font-medium text-slate-500">Duplicate Rows</div>
                     <div className="mt-1 num font-mono text-xl font-bold text-slate-900">
                       {duplicateRows.toLocaleString()}
                     </div>
@@ -1294,9 +1344,7 @@ function Workspace() {
                   </div>
 
                   <div className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs">
-                    <div className="text-[11px] font-medium text-slate-500">
-                      Incomplete Columns
-                    </div>
+                    <div className="text-[11px] font-medium text-slate-500">Incomplete Columns</div>
                     <div className="mt-1 num font-mono text-xl font-bold text-slate-900">
                       {profiles.filter((p) => p.missing > 0).length} / {profiles.length}
                     </div>
@@ -1328,7 +1376,8 @@ function Workspace() {
                     <div className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-800">
                       <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
                       <span>
-                        Excellent data health! No missing values or blank records found in this dataset.
+                        Excellent data health! No missing values or blank records found in this
+                        dataset.
                       </span>
                     </div>
                   ) : (
@@ -1384,13 +1433,16 @@ function Workspace() {
             <div className="space-y-3 py-1 text-xs">
               <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded border border-slate-200 font-mono text-[11px]">
                 <div>
-                  <span className="text-slate-400">Rows:</span> <strong>{pendingImport.dataset.rows.length.toLocaleString()}</strong>
+                  <span className="text-slate-400">Rows:</span>{" "}
+                  <strong>{pendingImport.dataset.rows.length.toLocaleString()}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400">Columns:</span> <strong>{pendingImport.dataset.columns.length}</strong>
+                  <span className="text-slate-400">Columns:</span>{" "}
+                  <strong>{pendingImport.dataset.columns.length}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400">File Size:</span> <strong>{(pendingImport.file.size / 1024).toFixed(1)} KB</strong>
+                  <span className="text-slate-400">File Size:</span>{" "}
+                  <strong>{(pendingImport.file.size / 1024).toFixed(1)} KB</strong>
                 </div>
               </div>
 
@@ -1399,7 +1451,9 @@ function Workspace() {
                 <label className="flex items-center gap-2 cursor-pointer text-slate-800 font-medium">
                   <Checkbox
                     checked={pendingImport.hasHeader}
-                    onCheckedChange={(c) => updatePendingImportOptions(Boolean(c), pendingImport.delimiter)}
+                    onCheckedChange={(c) =>
+                      updatePendingImportOptions(Boolean(c), pendingImport.delimiter)
+                    }
                   />
                   <span>First row contains column headers</span>
                 </label>
@@ -1408,10 +1462,14 @@ function Workspace() {
                   <span className="text-slate-500 font-medium text-[11px]">Delimiter:</span>
                   <select
                     value={pendingImport.delimiter}
-                    onChange={(e) => updatePendingImportOptions(pendingImport.hasHeader, e.target.value)}
+                    onChange={(e) =>
+                      updatePendingImportOptions(pendingImport.hasHeader, e.target.value)
+                    }
                     className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-900"
                   >
-                    <option value="auto">Auto-detect ({pendingImport.dataset.delimiter || ","})</option>
+                    <option value="auto">
+                      Auto-detect ({pendingImport.dataset.delimiter || ","})
+                    </option>
                     <option value=",">Comma (,)</option>
                     <option value=";">Semicolon (;)</option>
                     <option value={"\t"}>Tab (\t)</option>
@@ -1422,7 +1480,9 @@ function Workspace() {
 
               {/* Detected Column Schema & Types */}
               <div className="space-y-1">
-                <span className="text-[11px] font-medium text-slate-500">Inferred Column Schema:</span>
+                <span className="text-[11px] font-medium text-slate-500">
+                  Inferred Column Schema:
+                </span>
                 <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 bg-slate-50 rounded border border-slate-200">
                   {profileDataset(pendingImport.dataset).map((p) => (
                     <span
@@ -1434,9 +1494,7 @@ function Workspace() {
                         {p.type}
                       </span>
                       {p.missing > 0 && (
-                        <span className="text-amber-700 text-[9px]">
-                          ({p.missing} null)
-                        </span>
+                        <span className="text-amber-700 text-[9px]">({p.missing} null)</span>
                       )}
                     </span>
                   ))}
@@ -1459,13 +1517,18 @@ function Workspace() {
 
               {/* Sample preview table */}
               <div className="space-y-1">
-                <span className="text-[11px] font-medium text-slate-500">Preview (first 5 rows):</span>
+                <span className="text-[11px] font-medium text-slate-500">
+                  Preview (first 5 rows):
+                </span>
                 <div className="border border-slate-200 rounded max-h-44 overflow-auto">
                   <table className="w-full text-[11px] text-left border-collapse font-mono">
                     <thead className="bg-slate-100 text-slate-700 sticky top-0">
                       <tr>
                         {pendingImport.dataset.columns.map((c) => (
-                          <th key={c} className="p-1.5 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
+                          <th
+                            key={c}
+                            className="p-1.5 border-r border-slate-200 last:border-r-0 whitespace-nowrap"
+                          >
                             {c}
                           </th>
                         ))}
@@ -1475,8 +1538,15 @@ function Workspace() {
                       {pendingImport.dataset.rows.slice(0, 5).map((row, rIdx) => (
                         <tr key={rIdx}>
                           {row.map((cell, cIdx) => (
-                            <td key={cIdx} className="p-1.5 border-r border-slate-100 last:border-r-0 whitespace-nowrap text-slate-700 truncate max-w-[140px]">
-                              {cell === null ? <span className="text-amber-700 italic font-semibold">null</span> : cell}
+                            <td
+                              key={cIdx}
+                              className="p-1.5 border-r border-slate-100 last:border-r-0 whitespace-nowrap text-slate-700 truncate max-w-[140px]"
+                            >
+                              {cell === null ? (
+                                <span className="text-amber-700 italic font-semibold">null</span>
+                              ) : (
+                                cell
+                              )}
                             </td>
                           ))}
                         </tr>
@@ -1487,7 +1557,8 @@ function Workspace() {
               </div>
 
               <div className="text-[10px] text-slate-400 font-mono">
-                Browser Limit: Max 20 MB / 200,000 rows • Pure client-side processing • No unconsented data transmission
+                Browser Limit: Max 20 MB / 200,000 rows • Pure client-side processing • No
+                unconsented data transmission
               </div>
             </div>
           )}
@@ -1571,8 +1642,8 @@ function Workspace() {
           <AlertDialogHeader>
             <AlertDialogTitle>Reset to original raw dataset?</AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600">
-              This will discard all {cleaningSteps.length} cleaning transformations and restore the raw
-              imported CSV rows and columns.
+              This will discard all {cleaningSteps.length} cleaning transformations and restore the
+              raw imported CSV rows and columns.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

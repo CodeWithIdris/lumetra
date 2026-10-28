@@ -53,7 +53,9 @@ export function interpretDescriptive(summary: {
         `The mean (${fmt(mean)}) is notably below the median (${fmt(median)}), indicating leftward (negative) skew.`,
       );
     } else {
-      inference.push("Mean and median are closely aligned, consistent with symmetric central distribution.");
+      inference.push(
+        "Mean and median are closely aligned, consistent with symmetric central distribution.",
+      );
     }
   }
 
@@ -105,8 +107,12 @@ export function interpretCorrelation(
   if (r !== null && p !== null) {
     const absR = Math.abs(r);
     const dir = r > 0 ? "positive" : r < 0 ? "negative" : "zero";
-    const strength = absR >= 0.7 ? "strong" : absR >= 0.4 ? "moderate" : absR >= 0.1 ? "weak" : "negligible";
-    const sig = p < 0.05 ? "statistically significant (p < 0.05)" : "not statistically significant (p ≥ 0.05)";
+    const strength =
+      absR >= 0.7 ? "strong" : absR >= 0.4 ? "moderate" : absR >= 0.1 ? "weak" : "negligible";
+    const sig =
+      p < 0.05
+        ? "statistically significant (p < 0.05)"
+        : "not statistically significant (p ≥ 0.05)";
 
     inference.push(
       `Observed a ${strength} ${dir} association (r = ${r.toFixed(3)}, p = ${p < 0.001 ? "< 0.001" : p.toFixed(4)}).`,
@@ -130,7 +136,9 @@ export function interpretCorrelation(
   const limitations: string[] = [
     "CRITICAL: Correlation measures statistical association only. It DOES NOT prove or imply causation.",
     "Unmeasured confounding variables or reverse causality may account for the observed association.",
-    n < 30 ? `Small sample size (n = ${n}) increases standard errors and vulnerability to influential outliers.` : "",
+    n < 30
+      ? `Small sample size (n = ${n}) increases standard errors and vulnerability to influential outliers.`
+      : "",
   ].filter(Boolean);
 
   const recommendations: string[] = [
@@ -176,7 +184,9 @@ export function interpretTTest(
         : `No statistically significant difference between group means at the α = 0.05 level (p = ${p.toFixed(4)}). This does not prove equality.`,
     );
   } else {
-    inference.push(res.note ?? "Unable to compute two-sample test (insufficient observations or zero variance).");
+    inference.push(
+      res.note ?? "Unable to compute two-sample test (insufficient observations or zero variance).",
+    );
   }
 
   const assumptions: string[] = [
@@ -295,7 +305,9 @@ export function interpretTailLatency(
 
   const limitations: string[] = [
     "Sample percentiles describe the observed window; upstream dependencies or queue spikes outside this sample may alter tail distribution.",
-    res.missing > 0 ? `${res.missing} missing values were excluded from percentile calculations.` : "",
+    res.missing > 0
+      ? `${res.missing} missing values were excluded from percentile calculations.`
+      : "",
   ].filter(Boolean);
 
   const recommendations: string[] = [
@@ -305,7 +317,13 @@ export function interpretTailLatency(
     "Track error budget consumption rate across rolling operational intervals.",
   ];
 
-  return { observedResults: observed, statisticalInference: inference, assumptions, limitations, recommendations };
+  return {
+    observedResults: observed,
+    statisticalInference: inference,
+    assumptions,
+    limitations,
+    recommendations,
+  };
 }
 
 export function interpretElasticity(
@@ -344,7 +362,13 @@ export function interpretElasticity(
         : "Conduct randomized pricing experiments or structural modeling to confirm causal elasticity.",
   ];
 
-  return { observedResults: observed, statisticalInference: inference, assumptions, limitations, recommendations };
+  return {
+    observedResults: observed,
+    statisticalInference: inference,
+    assumptions,
+    limitations,
+    recommendations,
+  };
 }
 
 export function interpretGini(valCol: string, res: GiniResult): AnalysisInterpretation {
@@ -376,7 +400,13 @@ export function interpretGini(valCol: string, res: GiniResult): AnalysisInterpre
     "Pair with percentile ratios (P90/P10) for a comprehensive view of distribution spread.",
   ];
 
-  return { observedResults: observed, statisticalInference: inference, assumptions, limitations, recommendations };
+  return {
+    observedResults: observed,
+    statisticalInference: inference,
+    assumptions,
+    limitations,
+    recommendations,
+  };
 }
 
 export function interpretNormality(
@@ -413,7 +443,13 @@ export function interpretNormality(
       : "For parametric inference, verify that sample size provides adequate power under central limit approximations.",
   ];
 
-  return { observedResults: observed, statisticalInference: inference, assumptions, limitations, recommendations };
+  return {
+    observedResults: observed,
+    statisticalInference: inference,
+    assumptions,
+    limitations,
+    recommendations,
+  };
 }
 
 export function interpretABTest(
@@ -454,7 +490,13 @@ export function interpretABTest(
       : "Continue collecting data until pre-calculated statistical sample size is achieved, or conclude that treatment effect is negligible.",
   ];
 
-  return { observedResults: observed, statisticalInference: inference, assumptions, limitations, recommendations };
+  return {
+    observedResults: observed,
+    statisticalInference: inference,
+    assumptions,
+    limitations,
+    recommendations,
+  };
 }
 
 export function interpretOddsRatio(
@@ -468,11 +510,16 @@ export function interpretOddsRatio(
     `Calculated Odds Ratio (OR): ${res.oddsRatio !== null ? res.oddsRatio.toFixed(3) : "Undefined"}, Relative Risk (RR): ${res.relativeRisk !== null ? res.relativeRisk.toFixed(3) : "—"}.`,
   ];
 
-  const ciStr = res.ci95Lower !== null && res.ci95Upper !== null ? `[${res.ci95Lower.toFixed(3)}, ${res.ci95Upper.toFixed(3)}]` : "—";
+  const ciStr =
+    res.ci95Lower !== null && res.ci95Upper !== null
+      ? `[${res.ci95Lower.toFixed(3)}, ${res.ci95Upper.toFixed(3)}]`
+      : "—";
 
   const inference: string[] = [
     `Wald 95% Confidence Interval for Odds Ratio: ${ciStr}.`,
-    res.chiSquareP !== null ? `Pearson chi-square p-value: ${res.chiSquareP < 0.001 ? "< 0.001" : res.chiSquareP.toFixed(4)}.` : "",
+    res.chiSquareP !== null
+      ? `Pearson chi-square p-value: ${res.chiSquareP < 0.001 ? "< 0.001" : res.chiSquareP.toFixed(4)}.`
+      : "",
     res.interpretation,
   ].filter(Boolean);
 
@@ -494,5 +541,11 @@ export function interpretOddsRatio(
       : "Perform multivariable regression to adjust for potential confounding covariates (e.g. age, baseline severity).",
   ];
 
-  return { observedResults: observed, statisticalInference: inference, assumptions, limitations, recommendations };
+  return {
+    observedResults: observed,
+    statisticalInference: inference,
+    assumptions,
+    limitations,
+    recommendations,
+  };
 }

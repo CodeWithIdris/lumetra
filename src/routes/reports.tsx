@@ -5,9 +5,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmptyState, PageHeader } from "@/components/AppShell";
 import { MethodNote, ResultsView } from "@/components/ResultsView";
 import { useStore } from "@/lib/store";
-import { runDescriptive, isAnalysisStale, type DescriptiveReport, type SavedAnalysis } from "@/lib/stats/analysis";
+import {
+  runDescriptive,
+  isAnalysisStale,
+  type DescriptiveReport,
+  type SavedAnalysis,
+} from "@/lib/stats/analysis";
 import { fmt } from "@/lib/stats/descriptive";
-import { descriptiveToCsv, downloadText } from "@/lib/data/export";
+import { descriptiveToCsv, downloadText, generateReportMarkdown } from "@/lib/data/export";
 import { pageMeta } from "@/lib/meta";
 import { Printer, Download, FileText, Wand2, Layers, AlertTriangle, FileCode } from "lucide-react";
 
@@ -32,72 +37,356 @@ function Section({ n, title, children }: { n: number; title: string; children: R
   );
 }
 
-function generateReportMarkdown(
-  projectName: string,
-  objective: string,
-  dsName: string,
-  rawRows: number,
-  cleanRows: number,
-  colsCount: number,
-  colsList: string[],
-  cleaningSteps: Array<{ description: string; effect: { rowsBefore: number; rowsAfter: number } }>,
-  savedAnalyses: SavedAnalysis[],
-  descriptiveReport: DescriptiveReport,
-): string {
-  const lines: string[] = [];
-  lines.push(`# Statistical Analysis Report: ${projectName}`);
-  lines.push(`Generated: ${new Date().toISOString()} • Lumetra Analytical Engine\n`);
+function AnalysisResultsSummary({ analysis }: { analysis: SavedAnalysis }) {
+  const { type, results, variables } = analysis;
 
-  lines.push(`## 1. Objective & Analytical Hypothesis`);
-  lines.push(objective || "No formal research objective specified.\n");
-
-  lines.push(`## 2. Dataset Inventory`);
-  lines.push(`- Dataset: ${dsName}`);
-  lines.push(`- Dimensions: ${cleanRows.toLocaleString()} analytical rows × ${colsCount} columns (Original: ${rawRows.toLocaleString()} rows)`);
-  lines.push(`- Schema: ${colsList.join(", ")}\n`);
-
-  if (cleaningSteps.length > 0) {
-    lines.push(`## 3. Data Cleaning & Transformation History`);
-    cleaningSteps.forEach((s, idx) => {
-      lines.push(`${idx + 1}. ${s.description} (Rows: ${s.effect.rowsBefore} → ${s.effect.rowsAfter})`);
-    });
-    lines.push("");
+  if (type === "correlation") {
+    return (
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 text-xs font-mono">
+        <div className="rounded border border-slate-200 bg-slate-50 p-2">
+          <div className="text-[10px] text-slate-500 font-sans">Correlation (r)</div>
+          <div className="text-base font-bold text-slate-900 mt-0.5">
+            {typeof results["r"] === "number" ? (results["r"] as number).toFixed(3) : "—"}
+          </div>
+          <div className="text-[9px] text-slate-400 font-sans">
+            {String(results["method"] ?? "pearson")}
+          </div>
+        </div>
+        <div className="rounded border border-slate-200 bg-slate-50 p-2">
+          <div className="text-[10px] text-slate-500 font-sans">p-Value</div>
+          <div className="text-base font-bold text-slate-900 mt-0.5">
+            {typeof results["pValue"] === "number"
+              ? (results["pValue"] as number) < 0.001
+                ? "< 0.001"
+                : (results["pValue"] as number).toFixed(4)
+              : "—"}
+          </div>
+          <div className="text-[9px] text-slate-400 font-sans">Two-sided</div>
+        </div>
+        <div className="rounded border border-slate-200 bg-slate-50 p-2">
+          <div className="text-[10px] text-slate-500 font-sans">Pairs (n)</div>
+          <div className="text-base font-bold text-slate-900 mt-0.5">
+            {Number(results["n"] ?? analysis.sampleSize).toLocaleString()}
+          </div>
+          <div className="text-[9px] text-slate-400 font-sans">Complete pairs</div>
+        </div>
+        <div className="rounded border border-slate-200 bg-slate-50 p-2">
+          <div className="text-[10px] text-slate-500 font-sans">Variables</div>
+          <div className="text-xs font-semibold text-slate-800 mt-0.5 truncate">
+            {variables.join(" × ")}
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  lines.push(`## 4. Analytical Findings & Saved Analyses`);
-  if (savedAnalyses.length === 0) {
-    lines.push("No specific parametric or domain analyses saved yet. Baseline descriptive statistics provided below.\n");
-  } else {
-    savedAnalyses.forEach((a, idx) => {
-      lines.push(`### 4.${idx + 1} ${a.name}`);
-      lines.push(`- Type: ${a.type.toUpperCase()}`);
-      lines.push(`- Effective Sample Size: n = ${a.sampleSize.toLocaleString()}`);
-      lines.push(`- Missing Data Policy: ${a.missingHandling}`);
-      lines.push(`\n**Interpretation:**`);
-      lines.push(`- Observed Results: ${a.interpretation.observedResults.join(" ")}`);
-      lines.push(`- Statistical Inference: ${a.interpretation.statisticalInference.join(" ")}`);
-      lines.push(`- Assumptions: ${a.interpretation.assumptions.join(" ")}`);
-      lines.push(`- Limitations: ${a.interpretation.limitations.join(" ")}`);
-      lines.push(`- Recommendations: ${a.interpretation.recommendations.join(" ")}\n`);
-    });
+  if (type === "ttest") {
+    const groups = results["groups"] as
+      Array<{ name: string; n: number; mean: number | null; sd: number | null }> | undefined;
+    return (
+      <div className="space-y-2.5 text-xs font-mono">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">Mean Difference</div>
+            <div className="text-base font-bold text-slate-900 mt-0.5">
+              {fmt(results["difference"] as number | null)}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">Welch's t</div>
+            <div className="text-base font-bold text-slate-900 mt-0.5">
+              {typeof results["t"] === "number" ? (results["t"] as number).toFixed(3) : "—"}
+            </div>
+            <div className="text-[9px] text-slate-400 font-sans">
+              df = {typeof results["df"] === "number" ? (results["df"] as number).toFixed(1) : "—"}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">p-Value</div>
+            <div className="text-base font-bold text-slate-900 mt-0.5">
+              {typeof results["pValue"] === "number"
+                ? (results["pValue"] as number) < 0.001
+                  ? "< 0.001"
+                  : (results["pValue"] as number).toFixed(4)
+                : "—"}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">Method</div>
+            <div className="text-xs font-semibold text-emerald-700 mt-0.5 font-sans">
+              Welch's unequal var
+            </div>
+          </div>
+        </div>
+
+        {groups && groups.length > 0 && (
+          <div className="border border-slate-200 rounded overflow-hidden">
+            <table className="w-full text-[11px] text-left">
+              <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200 font-sans">
+                <tr>
+                  <th className="px-2.5 py-1.5">Group Level</th>
+                  <th className="px-2.5 py-1.5 text-right">Sample (n)</th>
+                  <th className="px-2.5 py-1.5 text-right">Mean</th>
+                  <th className="px-2.5 py-1.5 text-right">Std Dev (s)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {groups.map((g) => (
+                  <tr key={g.name}>
+                    <td className="px-2.5 py-1.5 font-semibold text-slate-900">{g.name}</td>
+                    <td className="px-2.5 py-1.5 text-right text-slate-700">{g.n}</td>
+                    <td className="px-2.5 py-1.5 text-right text-slate-900 font-semibold">
+                      {fmt(g.mean)}
+                    </td>
+                    <td className="px-2.5 py-1.5 text-right text-slate-600">{fmt(g.sd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
   }
 
-  lines.push(`## 5. Descriptive Statistics Summary`);
-  descriptiveReport.numeric.forEach((num) => {
-    const s = num.summary;
-    lines.push(`- **${num.column}** (n = ${s.n}): Mean = ${fmt(s.mean)}, Median = ${fmt(s.median)}, SD = ${fmt(s.sd)}, Range = [${fmt(s.min)}, ${fmt(s.max)}]`);
-  });
-  lines.push("");
+  if (type === "crosstab") {
+    const rows = results["rows"] as string[] | undefined;
+    const cols = results["cols"] as string[] | undefined;
+    const counts = results["counts"] as number[][] | undefined;
 
-  lines.push(`## 6. Limitations & Data Quality Audit`);
-  lines.push("- Missing values are excluded pairwise and never coerced to zero.");
-  lines.push("- Statistical associations summarize observed data and do not establish causal relationships.");
+    return (
+      <div className="space-y-2.5 text-xs font-mono">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">Chi-Square (χ²)</div>
+            <div className="text-base font-bold text-slate-900 mt-0.5">
+              {typeof results["chiSquare"] === "number"
+                ? (results["chiSquare"] as number).toFixed(2)
+                : "—"}
+            </div>
+            <div className="text-[9px] text-slate-400 font-sans">
+              df = {String(results["df"] ?? "—")}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">p-Value</div>
+            <div className="text-base font-bold text-slate-900 mt-0.5">
+              {typeof results["pValue"] === "number"
+                ? (results["pValue"] as number) < 0.001
+                  ? "< 0.001"
+                  : (results["pValue"] as number).toFixed(4)
+                : "—"}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">Cramer's V</div>
+            <div className="text-base font-bold text-slate-900 mt-0.5">
+              {typeof results["cramersV"] === "number"
+                ? (results["cramersV"] as number).toFixed(3)
+                : "—"}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2">
+            <div className="text-[10px] text-slate-500 font-sans">Pairs (n)</div>
+            <div className="text-base font-bold text-slate-900 mt-0.5">
+              {Number(results["n"] ?? analysis.sampleSize).toLocaleString()}
+            </div>
+          </div>
+        </div>
 
-  return lines.join("\n");
+        {rows && cols && counts && (
+          <div className="border border-slate-200 rounded overflow-x-auto">
+            <table className="w-full text-[11px] text-left">
+              <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200 font-sans">
+                <tr>
+                  <th className="px-2.5 py-1.5 bg-slate-100">
+                    {variables[0] ?? "Row"} \ {variables[1] ?? "Col"}
+                  </th>
+                  {cols.map((c) => (
+                    <th key={c} className="px-2.5 py-1.5 text-right">
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r, rIdx) => (
+                  <tr key={r}>
+                    <td className="px-2.5 py-1.5 font-semibold text-slate-900 bg-slate-50/50">
+                      {r}
+                    </td>
+                    {cols.map((_, cIdx) => (
+                      <td key={cIdx} className="px-2.5 py-1.5 text-right text-slate-800">
+                        {(counts[rIdx]?.[cIdx] ?? 0).toLocaleString()}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (type.startsWith("persona_")) {
+    return (
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 text-xs font-mono">
+        {type === "persona_engineer" && (
+          <>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">P50 / P99 Latency</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                {fmt(results["p50"] as number | null)} / {fmt(results["p99"] as number | null)} ms
+              </div>
+            </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">Tail Ratio</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                {typeof results["tailRatio"] === "number"
+                  ? `${(results["tailRatio"] as number).toFixed(2)}×`
+                  : "—"}
+              </div>
+            </div>
+            {"actualAvailabilityPercent" in results && (
+              <>
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] text-slate-500 font-sans">SLO Compliance</div>
+                  <div className="text-sm font-bold text-emerald-700 mt-0.5">
+                    {typeof results["actualAvailabilityPercent"] === "number"
+                      ? `${(results["actualAvailabilityPercent"] as number).toFixed(2)}%`
+                      : "—"}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] text-slate-500 font-sans">Breaches</div>
+                  <div className="text-sm font-bold text-slate-900 mt-0.5">
+                    {Number(results["breachCount"] ?? 0).toLocaleString()}
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+        {type === "persona_economist" && (
+          <>
+            {"pointElasticity" in results && (
+              <>
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] text-slate-500 font-sans">Elasticity (Ep)</div>
+                  <div className="text-sm font-bold text-slate-900 mt-0.5">
+                    {typeof results["pointElasticity"] === "number"
+                      ? (results["pointElasticity"] as number).toFixed(3)
+                      : "—"}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] text-slate-500 font-sans">Classification</div>
+                  <div className="text-xs font-semibold text-slate-800 mt-0.5 font-sans">
+                    {String(results["classification"] ?? "")}
+                  </div>
+                </div>
+              </>
+            )}
+            {"gini" in results && (
+              <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                <div className="text-[10px] text-slate-500 font-sans">Gini Index</div>
+                <div className="text-sm font-bold text-slate-900 mt-0.5">
+                  {typeof results["gini"] === "number"
+                    ? (results["gini"] as number).toFixed(3)
+                    : "—"}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        {type === "persona_scientist" && (
+          <>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">Shapiro-Wilk W</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                {typeof results["shapiroWilkW"] === "number"
+                  ? (results["shapiroWilkW"] as number).toFixed(3)
+                  : "—"}
+              </div>
+            </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">Skewness</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                {typeof results["skewness"] === "number"
+                  ? (results["skewness"] as number).toFixed(3)
+                  : "—"}
+              </div>
+            </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">Excess Kurtosis</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                {typeof results["kurtosis"] === "number"
+                  ? (results["kurtosis"] as number).toFixed(3)
+                  : "—"}
+              </div>
+            </div>
+          </>
+        )}
+        {type === "persona_product" && (
+          <>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">Relative Lift</div>
+              <div className="text-sm font-bold text-emerald-700 mt-0.5">
+                {typeof results["relativeLift"] === "number"
+                  ? `${(results["relativeLift"] as number).toFixed(2)}%`
+                  : "—"}
+              </div>
+            </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">p-Value</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                {typeof results["pValue"] === "number"
+                  ? (results["pValue"] as number) < 0.001
+                    ? "< 0.001"
+                    : (results["pValue"] as number).toFixed(4)
+                  : "—"}
+              </div>
+            </div>
+          </>
+        )}
+        {type === "persona_clinical" && (
+          <>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">Odds Ratio</div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                {typeof results["oddsRatio"] === "number"
+                  ? (results["oddsRatio"] as number).toFixed(2)
+                  : "—"}
+              </div>
+            </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="text-[10px] text-slate-500 font-sans">95% CI</div>
+              <div className="text-xs font-semibold text-slate-800 mt-0.5">
+                [
+                {typeof results["ciLower"] === "number"
+                  ? (results["ciLower"] as number).toFixed(2)
+                  : "—"}
+                ,{" "}
+                {typeof results["ciUpper"] === "number"
+                  ? (results["ciUpper"] as number).toFixed(2)
+                  : "—"}
+                ]
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function Reports() {
-  const { active, activeProject, setObjective, rawDataset, cleaningSteps, savedAnalyses } = useStore();
+  const { active, activeProject, setObjective, rawDataset, cleaningSteps, savedAnalyses } =
+    useStore();
   const navigate = useNavigate();
   const ds = active?.dataset;
   const report = useMemo(() => (ds ? runDescriptive(ds) : null), [ds]);
@@ -105,7 +394,7 @@ function Reports() {
 
   useEffect(() => {
     setObj(activeProject?.objective || activeProject?.description || "");
-  }, [activeProject?.id]);
+  }, [activeProject?.id, activeProject?.objective, activeProject?.description]);
 
   if (!ds || !report) {
     return (
@@ -135,18 +424,18 @@ function Reports() {
   );
 
   const handleExportMarkdown = () => {
-    const md = generateReportMarkdown(
-      activeProject?.name ?? ds.name,
+    const md = generateReportMarkdown({
+      projectName: activeProject?.name ?? ds.name,
       objective,
-      ds.name,
-      rawDataset?.rows.length ?? ds.rows.length,
-      ds.rows.length,
-      ds.columns.length,
-      ds.columns,
+      datasetName: ds.name,
+      rawRowCount: rawDataset?.rows.length ?? ds.rows.length,
+      cleanRowCount: ds.rows.length,
+      columnCount: ds.columns.length,
+      columnsList: ds.columns,
       cleaningSteps,
       savedAnalyses,
-      report,
-    );
+      descriptiveReport: report,
+    });
     downloadText(`${(activeProject?.name ?? ds.name).replace(/\.[^.]+$/, "")}-report.md`, md);
   };
 
@@ -195,9 +484,7 @@ function Reports() {
 
       <article className="rounded-md border border-slate-200 bg-white p-6 md:p-8 space-y-6 shadow-2xs print:border-none print:shadow-none print:p-0">
         <header className="border-b border-slate-200 pb-3">
-          <div className="text-[11px] font-medium text-slate-400">
-            Statistical Analysis Report
-          </div>
+          <div className="text-[11px] font-medium text-slate-400">Statistical Analysis Report</div>
           <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900">
             {activeProject?.name ?? ds.name}
           </h1>
@@ -234,15 +521,16 @@ function Reports() {
           <p className="text-xs text-slate-700 leading-relaxed">
             Source: <strong>“{ds.name}”</strong> (
             {ds.source === "sample" ? "synthetic benchmark dataset" : "user-supplied CSV file"})
-            comprising <strong>{report.rowCount.toLocaleString()}</strong> analytical observations and{" "}
-            <strong>{report.columnCount}</strong> variables:{" "}
+            comprising <strong>{report.rowCount.toLocaleString()}</strong> analytical observations
+            and <strong>{report.columnCount}</strong> variables:{" "}
             <span className="font-mono text-[11px] text-slate-600">
               {report.profiles.map((p) => `${p.name} (${p.type})`).join(", ")}
             </span>
             .
             {rawDataset && rawDataset.rows.length !== ds.rows.length && (
               <span className="block mt-1 text-[11px] text-slate-500">
-                (Imported with {rawDataset.rows.length.toLocaleString()} raw rows before cleaning transformations).
+                (Imported with {rawDataset.rows.length.toLocaleString()} raw rows before cleaning
+                transformations).
               </span>
             )}
           </p>
@@ -253,18 +541,24 @@ function Reports() {
           <Section n={3} title="Data Cleaning & Transformation History">
             <div className="space-y-2 text-xs">
               <p className="text-slate-600 text-[11px]">
-                {cleaningSteps.length} cleaning transformation(s) were applied sequentially. The original raw data remains intact.
+                {cleaningSteps.length} cleaning transformation(s) were applied sequentially. The
+                original raw data remains intact.
               </p>
               <div className="divide-y divide-slate-100 border border-slate-200 rounded overflow-hidden">
                 {cleaningSteps.map((s, idx) => (
-                  <div key={s.id} className="p-2.5 bg-slate-50/50 flex items-center justify-between">
+                  <div
+                    key={s.id}
+                    className="p-2.5 bg-slate-50/50 flex items-center justify-between"
+                  >
                     <div>
                       <span className="font-semibold text-slate-900 text-xs">
                         {idx + 1}. {s.description}
                       </span>
                       <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                        Rows: {s.effect.rowsBefore.toLocaleString()} → {s.effect.rowsAfter.toLocaleString()} |
-                        Nulls: {s.effect.missingBefore.toLocaleString()} → {s.effect.missingAfter.toLocaleString()}
+                        Rows: {s.effect.rowsBefore.toLocaleString()} →{" "}
+                        {s.effect.rowsAfter.toLocaleString()} | Nulls:{" "}
+                        {s.effect.missingBefore.toLocaleString()} →{" "}
+                        {s.effect.missingAfter.toLocaleString()}
                       </div>
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono">
@@ -312,6 +606,9 @@ function Reports() {
                       </div>
                     </div>
 
+                    {/* Computed Numerical Outputs & Comparison Tables */}
+                    <AnalysisResultsSummary analysis={a} />
+
                     {/* Interpretation Grid */}
                     <div className="grid gap-2.5 sm:grid-cols-2 text-xs">
                       <div className="bg-slate-50 p-2.5 rounded border border-slate-100 space-y-1">
@@ -323,7 +620,9 @@ function Reports() {
                         </ul>
                       </div>
                       <div className="bg-slate-50 p-2.5 rounded border border-slate-100 space-y-1">
-                        <strong className="text-[11px] text-slate-900">Statistical Inference:</strong>
+                        <strong className="text-[11px] text-slate-900">
+                          Statistical Inference:
+                        </strong>
                         <ul className="list-disc pl-4 text-[11px] text-slate-700 space-y-0.5">
                           {a.interpretation.statisticalInference.map((line, i) => (
                             <li key={i}>{line}</li>
@@ -333,9 +632,16 @@ function Reports() {
                     </div>
 
                     <div className="text-[11px] text-slate-500 space-y-1 border-t border-slate-100 pt-2">
-                      <p>• <strong>Assumptions:</strong> {a.interpretation.assumptions.join("; ")}</p>
-                      <p>• <strong>Limitations:</strong> {a.interpretation.limitations.join("; ")}</p>
-                      <p>• <strong>Recommendations:</strong> {a.interpretation.recommendations.join("; ")}</p>
+                      <p>
+                        • <strong>Assumptions:</strong> {a.interpretation.assumptions.join("; ")}
+                      </p>
+                      <p>
+                        • <strong>Limitations:</strong> {a.interpretation.limitations.join("; ")}
+                      </p>
+                      <p>
+                        • <strong>Recommendations:</strong>{" "}
+                        {a.interpretation.recommendations.join("; ")}
+                      </p>
                     </div>
                   </div>
                 );
@@ -345,12 +651,34 @@ function Reports() {
         )}
 
         {/* SECTION 6: BASELINE DESCRIPTIVE RESULTS */}
-        <Section n={cleaningSteps.length > 0 ? (savedAnalyses.length > 0 ? 6 : 5) : (savedAnalyses.length > 0 ? 5 : 4)} title="Descriptive Results">
+        <Section
+          n={
+            cleaningSteps.length > 0
+              ? savedAnalyses.length > 0
+                ? 6
+                : 5
+              : savedAnalyses.length > 0
+                ? 5
+                : 4
+          }
+          title="Descriptive Results"
+        >
           <ResultsView report={report} />
         </Section>
 
         {/* SECTION 7: LIMITATIONS & DATA QUALITY AUDIT */}
-        <Section n={cleaningSteps.length > 0 ? (savedAnalyses.length > 0 ? 7 : 6) : (savedAnalyses.length > 0 ? 6 : 5)} title="Limitations & Data Quality Audit">
+        <Section
+          n={
+            cleaningSteps.length > 0
+              ? savedAnalyses.length > 0
+                ? 7
+                : 6
+              : savedAnalyses.length > 0
+                ? 6
+                : 5
+          }
+          title="Limitations & Data Quality Audit"
+        >
           <ul className="list-disc space-y-1.5 pl-5 text-xs text-slate-600 leading-relaxed">
             {withMissing.length === 0 ? (
               <li>Zero missing values detected; all rows completely observed.</li>
@@ -370,7 +698,8 @@ function Reports() {
             )}
             <li>
               Descriptive statistics summarize this observed sample. They do not infer causal
-              relationships or generalize to broader populations without a randomized sampling design.
+              relationships or generalize to broader populations without a randomized sampling
+              design.
             </li>
             {ds.warnings.map((w) => (
               <li key={w}>{w}</li>

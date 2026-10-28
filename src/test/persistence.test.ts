@@ -37,14 +37,16 @@ describe("project persistence", () => {
         updatedAt: "2026-01-01T00:00:00Z",
         status: "data-loaded",
         dataset: { name: "sales.csv", rows: 10, columns: 3, source: "upload", stored: true },
-        cleaningSteps: [{
-          id: "step1",
-          timestamp: "2026-01-01T00:00:00Z",
-          type: "remove_duplicates",
-          params: {},
-          description: "Removed duplicate rows",
-          effect: { rowsBefore: 12, rowsAfter: 10, missingBefore: 0, missingAfter: 0 },
-        }],
+        cleaningSteps: [
+          {
+            id: "step1",
+            timestamp: "2026-01-01T00:00:00Z",
+            type: "remove_duplicates",
+            params: {},
+            description: "Removed duplicate rows",
+            effect: { rowsBefore: 12, rowsAfter: 10, missingBefore: 0, missingAfter: 0 },
+          },
+        ],
       },
     ]);
     storeCsv("orig", "col1,col2\n1,2");

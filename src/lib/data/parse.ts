@@ -28,6 +28,7 @@ function makeId() {
 export interface ParseCsvOptions {
   delimiter?: string;
   hasHeader?: boolean;
+  encodingWarning?: string;
 }
 
 /** Parse CSV text into a Dataset. Pure: no I/O, never executes content. */
@@ -48,6 +49,9 @@ export function parseCsvText(
   if (body.trim().length === 0) return { ok: false, errors: ["The file is empty."] };
   if (body.includes("\u0000")) {
     return { ok: false, errors: ["The file contains binary data. Is it really a CSV text file?"] };
+  }
+  if (options?.encodingWarning) {
+    warnings.push(options.encodingWarning);
   }
   if (body.includes("\uFFFD")) {
     warnings.push(
@@ -173,6 +177,38 @@ export function parseCsvText(
   };
 }
 
+async function readFileText(file: File): Promise<string> {
+  if (typeof file.text === "function") {
+    try {
+      return await file.text();
+    } catch {
+      // fallback to FileReader
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string) || "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
+async function readFileBuffer(file: File): Promise<ArrayBuffer> {
+  if (typeof file.arrayBuffer === "function") {
+    try {
+      return await file.arrayBuffer();
+    } catch {
+      // fallback to FileReader
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as ArrayBuffer) || new ArrayBuffer(0));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export async function parseCsvFile(
   file: File,
   options?: ParseCsvOptions,
@@ -195,14 +231,38 @@ export async function parseCsvFile(
       `"${file.name}" does not look like a CSV file. Only .csv and .txt files are accepted.`,
     );
   }
-  let text: string;
+  let text = "";
+  let encodingWarning: string | undefined;
   try {
-    text = await file.text();
+    try {
+      const buffer = await readFileBuffer(file);
+      try {
+        const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+        text = utf8Decoder.decode(buffer);
+      } catch {
+        try {
+          const winDecoder = new TextDecoder("windows-1252", { fatal: true });
+          text = winDecoder.decode(buffer);
+          encodingWarning =
+            "Detected non-UTF8 encoding (Windows-1252). Successfully converted for analysis.";
+        } catch {
+          text = new TextDecoder("utf-8").decode(buffer);
+          encodingWarning =
+            "File contained non-standard byte sequences and was decoded with UTF-8 character replacement.";
+        }
+      }
+    } catch {
+      text = await readFileText(file);
+    }
   } catch {
     return fail(`"${file.name}" could not be read.`);
   }
   try {
-    return { result: parseCsvText(text, file.name, "upload", options), text };
+    const effectiveOptions: ParseCsvOptions = {
+      ...options,
+      encodingWarning: options?.encodingWarning ?? encodingWarning,
+    };
+    return { result: parseCsvText(text, file.name, "upload", effectiveOptions), text };
   } catch (e) {
     return fail(
       `The file could not be parsed: ${e instanceof Error ? e.message : "unknown error"}.`,

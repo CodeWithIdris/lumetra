@@ -246,14 +246,10 @@ function EngineerToolkit({
           <div
             key={p.label}
             className={`rounded border p-3 shadow-2xs ${
-              p.highlight
-                ? "border-blue-200 bg-blue-50/50"
-                : "border-slate-200 bg-white"
+              p.highlight ? "border-blue-200 bg-blue-50/50" : "border-slate-200 bg-white"
             }`}
           >
-            <div className="text-[11px] font-medium text-slate-500">
-              {p.label}
-            </div>
+            <div className="text-[11px] font-medium text-slate-500">{p.label}</div>
             <div className="num mt-1 text-base font-bold font-mono text-slate-900">
               {p.val !== null ? p.val.toFixed(1) : "—"}
               <span className="ml-1 text-[11px] font-normal text-slate-500 font-mono">ms</span>
@@ -320,10 +316,10 @@ function EngineerToolkit({
                 sloStats.status === "unavailable"
                   ? "bg-slate-50 text-slate-600 border-slate-200"
                   : sloStats.status === "breached"
-                  ? "bg-red-50 text-red-800 border-red-200"
-                  : sloStats.status === "warning"
-                    ? "bg-amber-50 text-amber-800 border-amber-200"
-                    : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                    ? "bg-red-50 text-red-800 border-red-200"
+                    : sloStats.status === "warning"
+                      ? "bg-amber-50 text-amber-800 border-amber-200"
+                      : "bg-emerald-50 text-emerald-800 border-emerald-200"
               }`}
             >
               {sloStats.status.toUpperCase()}
@@ -358,7 +354,8 @@ function EngineerToolkit({
                   : "—"}
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">
-                {sloStats.breachCount} breaches / {sloStats.budgetTotalAllowedBreaches.toFixed(2)} allowed
+                {sloStats.breachCount} breaches / {sloStats.budgetTotalAllowedBreaches.toFixed(2)}{" "}
+                allowed
               </div>
             </div>
           </div>
@@ -512,7 +509,8 @@ function EconomistToolkit({
               <span>Price Elasticity & Econometric Response</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-            Point elasticity at sample means: OLS level slope × mean price / mean quantity; descriptive, not causal.
+              Point elasticity at sample means: OLS level slope × mean price / mean quantity;
+              descriptive, not causal.
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs">
@@ -576,9 +574,11 @@ function EconomistToolkit({
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
             <div className="text-[11px] font-medium text-slate-500">Sample Pairs (n)</div>
-            <div className="num mt-1 text-xl font-bold font-mono text-slate-900">{elasticity.n}</div>
+            <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+              {elasticity.n}
+            </div>
             <div className="text-[10px] text-slate-500 mt-0.5">
-            Complete pairs; {elasticity.missing} missing, {elasticity.invalid} invalid
+              Complete pairs; {elasticity.missing} missing, {elasticity.invalid} invalid
             </div>
           </div>
         </div>
@@ -597,7 +597,8 @@ function EconomistToolkit({
               <span>Gini Coefficient & Inequality Index</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Non-negative values only; Type-7 empirical population shares with fractional boundary observations.
+              Non-negative values only; Type-7 empirical population shares with fractional boundary
+              observations.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -775,7 +776,8 @@ function ScientistToolkit({
               <span>Feature Moment Diagnostics</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Biased population-moment skewness and excess kurtosis; descriptive checks, not a formal normality test.
+              Biased population-moment skewness and excess kurtosis; descriptive checks, not a
+              formal normality test.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -822,7 +824,9 @@ function ScientistToolkit({
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
             <div className="text-[11px] font-medium text-slate-500">IQR Outliers</div>
-            <div className="num mt-1 text-xl font-bold font-mono text-slate-900">{diag.iqrOutliersCount}</div>
+            <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
+              {diag.iqrOutliersCount}
+            </div>
             <div className="text-[10px] text-slate-500 mt-0.5">Beyond 1.5× IQR fences</div>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 p-3">

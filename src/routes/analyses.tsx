@@ -265,7 +265,7 @@ function Analyses() {
             ? `${personaMeta.shortRole} Toolkit`
             : activeEngine === "history"
               ? "Saved Analyses History"
-              : CATALOGUE.find((c) => c.id === activeEngine)?.name ?? "Statistical Engine"
+              : (CATALOGUE.find((c) => c.id === activeEngine)?.name ?? "Statistical Engine")
         }`}
         actions={
           viewedAnalysis && (
@@ -276,7 +276,10 @@ function Analyses() {
                 className="h-8 text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
                 onClick={() => {
                   const blobText = JSON.stringify(viewedAnalysis, null, 2);
-                  downloadText(`${viewedAnalysis.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`, blobText);
+                  downloadText(
+                    `${viewedAnalysis.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`,
+                    blobText,
+                  );
                 }}
               >
                 <Download className="size-3.5 mr-1.5" />
@@ -293,9 +296,7 @@ function Analyses() {
         <aside className="rounded border border-slate-200 bg-white p-3.5 shadow-2xs space-y-3.5 divide-y divide-slate-100">
           {/* Active Context Section */}
           <div className="space-y-2">
-            <div className="text-[11px] font-medium text-slate-500">
-              Professional Context
-            </div>
+            <div className="text-[11px] font-medium text-slate-500">Professional Context</div>
             <div className="relative">
               <button
                 onClick={() => setPersonaOpen(!personaOpen)}
@@ -345,9 +346,7 @@ function Analyses() {
 
           {/* Analysis Engine Mode Selector */}
           <div className="pt-3 space-y-2">
-            <div className="text-[11px] font-medium text-slate-500">
-              Analysis Engines
-            </div>
+            <div className="text-[11px] font-medium text-slate-500">Analysis Engines</div>
             <div className="space-y-1">
               {CATALOGUE.map((item) => {
                 const isSelected = activeEngine === item.id;
@@ -395,7 +394,10 @@ function Analyses() {
                   >
                     All
                   </button>
-                  <button onClick={() => setSelectedCols([])} className="text-slate-500 hover:underline">
+                  <button
+                    onClick={() => setSelectedCols([])}
+                    className="text-slate-500 hover:underline"
+                  >
                     Clear
                   </button>
                 </div>
@@ -433,7 +435,9 @@ function Analyses() {
           {activeEngine === "correlation" && (
             <div className="pt-3 space-y-3">
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-600">Variable X (Numeric):</label>
+                <label className="text-[11px] font-medium text-slate-600">
+                  Variable X (Numeric):
+                </label>
                 <select
                   value={corrColX}
                   onChange={(e) => setCorrColX(e.target.value)}
@@ -449,7 +453,9 @@ function Analyses() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-600">Variable Y (Numeric):</label>
+                <label className="text-[11px] font-medium text-slate-600">
+                  Variable Y (Numeric):
+                </label>
                 <select
                   value={corrColY}
                   onChange={(e) => setCorrColY(e.target.value)}
@@ -490,7 +496,9 @@ function Analyses() {
           {activeEngine === "ttest" && (
             <div className="pt-3 space-y-3">
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-600">Continuous Variable (Outcome):</label>
+                <label className="text-[11px] font-medium text-slate-600">
+                  Continuous Variable (Outcome):
+                </label>
                 <select
                   value={tTestNumCol}
                   onChange={(e) => setTTestNumCol(e.target.value)}
@@ -506,7 +514,9 @@ function Analyses() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-600">Grouping Column (≥2 Levels):</label>
+                <label className="text-[11px] font-medium text-slate-600">
+                  Grouping Column (≥2 Levels):
+                </label>
                 <select
                   value={tTestGrpCol}
                   onChange={(e) => setTTestGrpCol(e.target.value)}
@@ -535,7 +545,9 @@ function Analyses() {
           {activeEngine === "crosstab" && (
             <div className="pt-3 space-y-3">
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-600">Row Variable (Categorical):</label>
+                <label className="text-[11px] font-medium text-slate-600">
+                  Row Variable (Categorical):
+                </label>
                 <select
                   value={crossRowCol}
                   onChange={(e) => setCrossRowCol(e.target.value)}
@@ -551,7 +563,9 @@ function Analyses() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-600">Column Variable (Categorical):</label>
+                <label className="text-[11px] font-medium text-slate-600">
+                  Column Variable (Categorical):
+                </label>
                 <select
                   value={crossColCol}
                   onChange={(e) => setCrossColCol(e.target.value)}
@@ -694,13 +708,19 @@ function Analyses() {
                 </div>
 
                 <div className="text-right text-xs font-mono text-slate-500">
-                  <div>Effective n: <strong className="text-slate-900">{viewedAnalysis.sampleSize.toLocaleString()}</strong></div>
+                  <div>
+                    Effective n:{" "}
+                    <strong className="text-slate-900">
+                      {viewedAnalysis.sampleSize.toLocaleString()}
+                    </strong>
+                  </div>
                   <div className="text-[10px] text-slate-400">{viewedAnalysis.missingHandling}</div>
                 </div>
               </div>
 
               {/* Numerical outputs specific to analysis type */}
-              {viewedAnalysis.type === "descriptive" && Boolean(viewedAnalysis.results["report"]) ? (
+              {viewedAnalysis.type === "descriptive" &&
+              Boolean(viewedAnalysis.results["report"]) ? (
                 <ResultsView report={viewedAnalysis.results["report"] as DescriptiveReport} />
               ) : null}
 
@@ -718,7 +738,9 @@ function Analyses() {
                     </div>
                   </div>
                   <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-[11px] font-medium text-slate-500">p-Value (Two-Sided)</div>
+                    <div className="text-[11px] font-medium text-slate-500">
+                      p-Value (Two-Sided)
+                    </div>
                     <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
                       {typeof viewedAnalysis.results["pValue"] === "number"
                         ? (viewedAnalysis.results["pValue"] as number) < 0.001
@@ -738,7 +760,9 @@ function Analyses() {
                     <div className="num mt-1 text-2xl font-bold font-mono text-slate-900">
                       {Number(viewedAnalysis.results["n"]).toLocaleString()}
                     </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Complete pairs</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                      Complete pairs
+                    </div>
                   </div>
                   <div className="rounded border border-slate-200 bg-slate-50 p-3">
                     <div className="text-[11px] font-medium text-slate-500">Variables</div>
@@ -767,7 +791,10 @@ function Analyses() {
                           : "—"}
                       </div>
                       <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                        df = {typeof viewedAnalysis.results["df"] === "number" ? (viewedAnalysis.results["df"] as number).toFixed(1) : "—"}
+                        df ={" "}
+                        {typeof viewedAnalysis.results["df"] === "number"
+                          ? (viewedAnalysis.results["df"] as number).toFixed(1)
+                          : "—"}
                       </div>
                     </div>
                     <div className="rounded border border-slate-200 bg-slate-50 p-3">
@@ -781,7 +808,9 @@ function Analyses() {
                       </div>
                     </div>
                     <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-[11px] font-medium text-slate-500">Unequal Variances</div>
+                      <div className="text-[11px] font-medium text-slate-500">
+                        Unequal Variances
+                      </div>
                       <div className="text-xs font-semibold text-emerald-700 mt-1">
                         Satterthwaite df
                       </div>
@@ -800,11 +829,20 @@ function Analyses() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-mono">
-                        {(viewedAnalysis.results["groups"] as Array<{ name: string; n: number; mean: number | null; sd: number | null }>).map((g) => (
+                        {(
+                          viewedAnalysis.results["groups"] as Array<{
+                            name: string;
+                            n: number;
+                            mean: number | null;
+                            sd: number | null;
+                          }>
+                        ).map((g) => (
                           <tr key={g.name}>
                             <td className="px-3 py-2 font-semibold text-slate-900">{g.name}</td>
                             <td className="px-3 py-2 text-right text-slate-700">{g.n}</td>
-                            <td className="px-3 py-2 text-right text-slate-900 font-semibold">{fmt(g.mean)}</td>
+                            <td className="px-3 py-2 text-right text-slate-900 font-semibold">
+                              {fmt(g.mean)}
+                            </td>
                             <td className="px-3 py-2 text-right text-slate-600">{fmt(g.sd)}</td>
                           </tr>
                         ))}
@@ -859,19 +897,28 @@ function Analyses() {
                     <table className="w-full text-xs text-left font-mono">
                       <thead className="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
                         <tr>
-                          <th className="px-3 py-2 bg-slate-100">{viewedAnalysis.variables[0]} \ {viewedAnalysis.variables[1]}</th>
+                          <th className="px-3 py-2 bg-slate-100">
+                            {viewedAnalysis.variables[0]} \ {viewedAnalysis.variables[1]}
+                          </th>
                           {(viewedAnalysis.results["cols"] as string[]).map((c) => (
-                            <th key={c} className="px-3 py-2 text-right">{c}</th>
+                            <th key={c} className="px-3 py-2 text-right">
+                              {c}
+                            </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {(viewedAnalysis.results["rows"] as string[]).map((r, rIdx) => (
                           <tr key={r}>
-                            <td className="px-3 py-2 font-semibold text-slate-900 bg-slate-50/50">{r}</td>
+                            <td className="px-3 py-2 font-semibold text-slate-900 bg-slate-50/50">
+                              {r}
+                            </td>
                             {(viewedAnalysis.results["cols"] as string[]).map((_, cIdx) => (
                               <td key={cIdx} className="px-3 py-2 text-right text-slate-800">
-                                {((viewedAnalysis.results["counts"] as number[][])[rIdx]?.[cIdx] ?? 0).toLocaleString()}
+                                {(
+                                  (viewedAnalysis.results["counts"] as number[][])[rIdx]?.[cIdx] ??
+                                  0
+                                ).toLocaleString()}
                               </td>
                             ))}
                           </tr>
@@ -889,23 +936,35 @@ function Analyses() {
                     {viewedAnalysis.type === "persona_engineer" && (
                       <>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">P50 / P99 Latency</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            P50 / P99 Latency
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
-                            {fmt(viewedAnalysis.results["p50"] as number | null)} / {fmt(viewedAnalysis.results["p99"] as number | null)} ms
+                            {fmt(viewedAnalysis.results["p50"] as number | null)} /{" "}
+                            {fmt(viewedAnalysis.results["p99"] as number | null)} ms
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5">
-                            Tail Ratio: {typeof viewedAnalysis.results["tailRatio"] === "number" ? `${(viewedAnalysis.results["tailRatio"] as number).toFixed(2)}×` : "—"}
+                            Tail Ratio:{" "}
+                            {typeof viewedAnalysis.results["tailRatio"] === "number"
+                              ? `${(viewedAnalysis.results["tailRatio"] as number).toFixed(2)}×`
+                              : "—"}
                           </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Average Jitter</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Average Jitter
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {fmt(viewedAnalysis.results["jitter"] as number | null)} ms
                           </div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">Consecutive reading variance</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Consecutive reading variance
+                          </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">SLO Availability</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            SLO Availability
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-emerald-700">
                             {typeof viewedAnalysis.results["actualAvailabilityPercent"] === "number"
                               ? `${(viewedAnalysis.results["actualAvailabilityPercent"] as number).toFixed(2)}%`
@@ -932,7 +991,9 @@ function Analyses() {
                         {"pointElasticity" in viewedAnalysis.results ? (
                           <>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                              <div className="text-[11px] font-medium text-slate-500">Elasticity (Ep)</div>
+                              <div className="text-[11px] font-medium text-slate-500">
+                                Elasticity (Ep)
+                              </div>
                               <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                                 {typeof viewedAnalysis.results["pointElasticity"] === "number"
                                   ? (viewedAnalysis.results["pointElasticity"] as number).toFixed(3)
@@ -943,11 +1004,15 @@ function Analyses() {
                               </div>
                             </div>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                              <div className="text-[11px] font-medium text-slate-500">Marginal Slope</div>
+                              <div className="text-[11px] font-medium text-slate-500">
+                                Marginal Slope
+                              </div>
                               <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                                 {fmt(viewedAnalysis.results["slope"] as number | null, 4)}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">dQ/dP rate of change</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                dQ/dP rate of change
+                              </div>
                             </div>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
                               <div className="text-[11px] font-medium text-slate-500">R² Fit</div>
@@ -956,44 +1021,63 @@ function Analyses() {
                                   ? `${((viewedAnalysis.results["rSquared"] as number) * 100).toFixed(1)}%`
                                   : "—"}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">Explained volume variance</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                Explained volume variance
+                              </div>
                             </div>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                              <div className="text-[11px] font-medium text-slate-500">Mean Price / Qty</div>
-                              <div className="num mt-1 text-sm font-bold font-mono text-slate-900">
-                                {fmt(viewedAnalysis.results["meanPrice"] as number | null)} / {fmt(viewedAnalysis.results["meanQuantity"] as number | null)}
+                              <div className="text-[11px] font-medium text-slate-500">
+                                Mean Price / Qty
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">Evaluation point</div>
+                              <div className="num mt-1 text-sm font-bold font-mono text-slate-900">
+                                {fmt(viewedAnalysis.results["meanPrice"] as number | null)} /{" "}
+                                {fmt(viewedAnalysis.results["meanQuantity"] as number | null)}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                Evaluation point
+                              </div>
                             </div>
                           </>
                         ) : (
                           <>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                              <div className="text-[11px] font-medium text-slate-500">Gini Coefficient</div>
+                              <div className="text-[11px] font-medium text-slate-500">
+                                Gini Coefficient
+                              </div>
                               <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                                 {typeof viewedAnalysis.results["gini"] === "number"
                                   ? (viewedAnalysis.results["gini"] as number).toFixed(3)
                                   : "—"}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">0 = equality, 1 = inequality</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                0 = equality, 1 = inequality
+                              </div>
                             </div>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                              <div className="text-[11px] font-medium text-slate-500">Top 10% Share</div>
+                              <div className="text-[11px] font-medium text-slate-500">
+                                Top 10% Share
+                              </div>
                               <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                                 {typeof viewedAnalysis.results["top10SharePct"] === "number"
                                   ? `${(viewedAnalysis.results["top10SharePct"] as number).toFixed(1)}%`
                                   : "—"}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">Decile concentration</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                Decile concentration
+                              </div>
                             </div>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                              <div className="text-[11px] font-medium text-slate-500">Palma Ratio</div>
+                              <div className="text-[11px] font-medium text-slate-500">
+                                Palma Ratio
+                              </div>
                               <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                                 {typeof viewedAnalysis.results["palmaRatio"] === "number"
                                   ? (viewedAnalysis.results["palmaRatio"] as number).toFixed(2)
                                   : "—"}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">Top 10% / Bottom 40%</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                Top 10% / Bottom 40%
+                              </div>
                             </div>
                             <div className="rounded border border-slate-200 bg-slate-50 p-3">
                               <div className="text-[11px] font-medium text-slate-500">Rating</div>
@@ -1011,14 +1095,17 @@ function Analyses() {
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
                           <div className="text-[11px] font-medium text-slate-500">Mean (SD)</div>
                           <div className="num mt-1 text-lg font-bold font-mono text-slate-900">
-                            {fmt(viewedAnalysis.results["mean"] as number | null)} ({fmt(viewedAnalysis.results["sd"] as number | null)})
+                            {fmt(viewedAnalysis.results["mean"] as number | null)} (
+                            {fmt(viewedAnalysis.results["sd"] as number | null)})
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5">
                             Median: {fmt(viewedAnalysis.results["median"] as number | null)}
                           </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Skewness (g1)</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Skewness (g1)
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {fmt(viewedAnalysis.results["skewness"] as number | null, 2)}
                           </div>
@@ -1027,7 +1114,9 @@ function Analyses() {
                           </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Excess Kurtosis (g2)</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Excess Kurtosis (g2)
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {fmt(viewedAnalysis.results["kurtosis"] as number | null, 2)}
                           </div>
@@ -1048,22 +1137,31 @@ function Analyses() {
                     {viewedAnalysis.type === "persona_product" && (
                       <>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Relative Lift</div>
-                          <div className={`num mt-1 text-xl font-bold font-mono ${
-                            Number(viewedAnalysis.results["relativeLiftPct"]) > 0 ? "text-emerald-700" : "text-slate-900"
-                          }`}>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Relative Lift
+                          </div>
+                          <div
+                            className={`num mt-1 text-xl font-bold font-mono ${
+                              Number(viewedAnalysis.results["relativeLiftPct"]) > 0
+                                ? "text-emerald-700"
+                                : "text-slate-900"
+                            }`}
+                          >
                             {typeof viewedAnalysis.results["relativeLiftPct"] === "number"
                               ? `${(viewedAnalysis.results["relativeLiftPct"] as number).toFixed(1)}%`
                               : "—"}
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5">
-                            Abs Lift: {typeof viewedAnalysis.results["absoluteLift"] === "number"
+                            Abs Lift:{" "}
+                            {typeof viewedAnalysis.results["absoluteLift"] === "number"
                               ? `${((viewedAnalysis.results["absoluteLift"] as number) * 100).toFixed(2)} pp`
                               : "—"}
                           </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">p-Value (Two-Sided)</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            p-Value (Two-Sided)
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {typeof viewedAnalysis.results["pValue"] === "number"
                               ? (viewedAnalysis.results["pValue"] as number) < 0.001
@@ -1072,22 +1170,39 @@ function Analyses() {
                               : "—"}
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5">
-                            z = {typeof viewedAnalysis.results["zScore"] === "number" ? (viewedAnalysis.results["zScore"] as number).toFixed(2) : "—"}
+                            z ={" "}
+                            {typeof viewedAnalysis.results["zScore"] === "number"
+                              ? (viewedAnalysis.results["zScore"] as number).toFixed(2)
+                              : "—"}
                           </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
                           <div className="text-[11px] font-medium text-slate-500">Significance</div>
                           <div className="text-xs font-bold text-emerald-700 mt-1">
-                            {Boolean(viewedAnalysis.results["isSignificant"]) ? "STATISTICALLY SIGNIFICANT" : "INCONCLUSIVE"}
+                            {viewedAnalysis.results["isSignificant"]
+                              ? "STATISTICALLY SIGNIFICANT"
+                              : "INCONCLUSIVE"}
                           </div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">Threshold α = 0.05</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Threshold α = 0.05
+                          </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Control vs Variant</div>
-                          <div className="num mt-1 text-sm font-bold font-mono text-slate-900">
-                            {typeof viewedAnalysis.results["controlRate"] === "number" ? `${((viewedAnalysis.results["controlRate"] as number) * 100).toFixed(1)}%` : "—"} → {typeof viewedAnalysis.results["testRate"] === "number" ? `${((viewedAnalysis.results["testRate"] as number) * 100).toFixed(1)}%` : "—"}
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Control vs Variant
                           </div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">Conversion proportions</div>
+                          <div className="num mt-1 text-sm font-bold font-mono text-slate-900">
+                            {typeof viewedAnalysis.results["controlRate"] === "number"
+                              ? `${((viewedAnalysis.results["controlRate"] as number) * 100).toFixed(1)}%`
+                              : "—"}{" "}
+                            →{" "}
+                            {typeof viewedAnalysis.results["testRate"] === "number"
+                              ? `${((viewedAnalysis.results["testRate"] as number) * 100).toFixed(1)}%`
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Conversion proportions
+                          </div>
                         </div>
                       </>
                     )}
@@ -1095,27 +1210,43 @@ function Analyses() {
                     {viewedAnalysis.type === "persona_clinical" && (
                       <>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Odds Ratio (OR)</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Odds Ratio (OR)
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {typeof viewedAnalysis.results["oddsRatio"] === "number"
                               ? (viewedAnalysis.results["oddsRatio"] as number).toFixed(2)
                               : "—"}
                           </div>
                           <div className="text-[10px] text-slate-500 mt-0.5">
-                            95% CI: [{typeof viewedAnalysis.results["ci95Lower"] === "number" ? (viewedAnalysis.results["ci95Lower"] as number).toFixed(2) : "—"}, {typeof viewedAnalysis.results["ci95Upper"] === "number" ? (viewedAnalysis.results["ci95Upper"] as number).toFixed(2) : "—"}]
+                            95% CI: [
+                            {typeof viewedAnalysis.results["ci95Lower"] === "number"
+                              ? (viewedAnalysis.results["ci95Lower"] as number).toFixed(2)
+                              : "—"}
+                            ,{" "}
+                            {typeof viewedAnalysis.results["ci95Upper"] === "number"
+                              ? (viewedAnalysis.results["ci95Upper"] as number).toFixed(2)
+                              : "—"}
+                            ]
                           </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Relative Risk (RR)</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Relative Risk (RR)
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {typeof viewedAnalysis.results["relativeRisk"] === "number"
                               ? (viewedAnalysis.results["relativeRisk"] as number).toFixed(2)
                               : "—"}
                           </div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">Exposed risk / Unexposed risk</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Exposed risk / Unexposed risk
+                          </div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">Chi-Square p-value</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            Chi-Square p-value
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {typeof viewedAnalysis.results["chiSquareP"] === "number"
                               ? (viewedAnalysis.results["chiSquareP"] as number) < 0.001
@@ -1126,7 +1257,9 @@ function Analyses() {
                           <div className="text-[10px] text-slate-500 mt-0.5">Independence test</div>
                         </div>
                         <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-medium text-slate-500">2×2 Observations</div>
+                          <div className="text-[11px] font-medium text-slate-500">
+                            2×2 Observations
+                          </div>
                           <div className="num mt-1 text-xl font-bold font-mono text-slate-900">
                             {Number(viewedAnalysis.results["n"] ?? 0).toLocaleString()}
                           </div>
@@ -1209,8 +1342,9 @@ function Analyses() {
             </div>
           ) : (
             <EmptyState title="Select and configure an analytical method">
-              Choose an analysis from the left panel (Descriptive Statistics, Correlation, Two-Sample
-              Comparison, Cross-Tabulation, or the active {personaMeta.shortRole} Toolkit), configure the variables, and click Execute.
+              Choose an analysis from the left panel (Descriptive Statistics, Correlation,
+              Two-Sample Comparison, Cross-Tabulation, or the active {personaMeta.shortRole}{" "}
+              Toolkit), configure the variables, and click Execute.
             </EmptyState>
           )}
         </main>

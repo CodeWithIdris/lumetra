@@ -175,7 +175,9 @@ function Settings() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs font-medium text-slate-700">Supabase Anon Public API Key</Label>
+              <Label className="text-xs font-medium text-slate-700">
+                Supabase Anon Public API Key
+              </Label>
               <Input
                 type="password"
                 placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."

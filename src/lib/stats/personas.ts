@@ -385,7 +385,8 @@ export function calculateElasticity(
       pointElasticity: null,
       arcElasticity: null,
       classification: "Undefined",
-      interpretation: "Point elasticity requires strictly positive price and quantity observations.",
+      interpretation:
+        "Point elasticity requires strictly positive price and quantity observations.",
     };
   }
   const meanPrice = mean(validPairs.map(([p]) => p));
@@ -504,7 +505,8 @@ export function calculateGini(raw: (number | string | null | undefined)[]): Gini
       quintiles: [],
       top10SharePct: null,
       palmaRatio: null,
-      rating: "At least 5 complete non-negative observations are required for these grouped inequality summaries.",
+      rating:
+        "At least 5 complete non-negative observations are required for these grouped inequality summaries.",
     };
   }
 

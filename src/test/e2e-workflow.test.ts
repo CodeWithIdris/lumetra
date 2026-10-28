@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { parseCsvText, MAX_FILE_BYTES } from "@/lib/data/parse";
+import { parseCsvText, parseCsvFile, MAX_FILE_BYTES } from "@/lib/data/parse";
+import { generateReportMarkdown } from "@/lib/data/export";
 import { profileDataset, columnValues } from "@/lib/data/infer";
 import {
   applyCleaningStep,
@@ -89,7 +90,7 @@ describe("End-to-End Data Analysis Workflow", () => {
   });
 
   // 2. CSV import
-  it("2. imports a valid CSV with correct rows, columns, and types without silently coercing nulls", () => {
+  it("2. imports a valid CSV with correct rows, columns, and types without silently coercing nulls", async () => {
     const parsed = parseCsvText(FIXTURE_CSV, "workforce.csv");
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -113,6 +114,24 @@ describe("End-to-End Data Analysis Workflow", () => {
     expect(deptProfile?.type).toBe("categorical");
     expect(perfProfile?.type).toBe("numeric");
     expect(perfProfile?.missing).toBe(1);
+
+    // Verify file parsing with File object and delimiter detection
+    const file = new File([FIXTURE_CSV], "workforce.csv", { type: "text/csv" });
+    const fileRes = await parseCsvFile(file);
+    expect(fileRes.result.ok).toBe(true);
+    if (fileRes.result.ok) {
+      expect(fileRes.result.dataset.rows).toHaveLength(8);
+      expect(fileRes.result.dataset.delimiter).toBe(",");
+    }
+
+    // Verify semicolon-delimited CSV with custom delimiter option
+    const semiCsv = "a;b;c\n1;2;3\n4;5;6";
+    const semiParsed = parseCsvText(semiCsv, "semi.csv", "upload", { delimiter: ";" });
+    expect(semiParsed.ok).toBe(true);
+    if (semiParsed.ok) {
+      expect(semiParsed.dataset.columns).toEqual(["a", "b", "c"]);
+      expect(semiParsed.dataset.rows).toHaveLength(2);
+    }
   });
 
   // 3. Invalid file handling
@@ -164,11 +183,10 @@ describe("End-to-End Data Analysis Workflow", () => {
     expect(step1.effect.rowsAfter).toBe(7);
 
     // Step 2: Handle missing in performance by median imputation
-    const { dataset: afterImpute, step: step2 } = applyCleaningStep(
-      afterDedupe,
-      "handle_missing",
-      { column: "performance", strategy: "fill_median" },
-    );
+    const { dataset: afterImpute, step: step2 } = applyCleaningStep(afterDedupe, "handle_missing", {
+      column: "performance",
+      strategy: "fill_median",
+    });
     // Non-missing performances: 4.5, 3.8, 4.9, 4.0, 4.2, 4.1 -> sorted: [3.8, 4.0, 4.1, 4.2, 4.5, 4.9]
     // Median is (4.1 + 4.2) / 2 = 4.15
     const missingRow = afterImpute.rows.find((r) => r[0] === "5");
@@ -317,7 +335,9 @@ describe("End-to-End Data Analysis Workflow", () => {
     const restoredAnalysis = reloaded!.savedAnalyses![0]!;
     expect(restoredAnalysis.name).toContain("salary vs performance");
     expect(restoredAnalysis.results["r"]).toBeCloseTo(analysis.results["r"] as number, 5);
-    expect(restoredAnalysis.interpretation.assumptions).toEqual(analysis.interpretation.assumptions);
+    expect(restoredAnalysis.interpretation.assumptions).toEqual(
+      analysis.interpretation.assumptions,
+    );
 
     const restoredPersona = reloaded!.savedAnalyses![1]!;
     expect(restoredPersona.type).toBe("persona_engineer");
@@ -362,6 +382,35 @@ describe("End-to-End Data Analysis Workflow", () => {
 
     // Disclosures in narrative
     expect(report.summary.some((s) => s.includes("Missing values were excluded"))).toBe(true);
+
+    // Generate full markdown report with saved analyses and cleaning steps
+    const corrAnalysis = createCorrelationSavedAnalysis(parsed.dataset, "salary", "performance");
+    const tTestAnalysis = createTTestSavedAnalysis(parsed.dataset, "salary", "department");
+    const md = generateReportMarkdown({
+      projectName: "Q4 Workforce Compensation",
+      objective: "Evaluate department salary disparities",
+      datasetName: "workforce.csv",
+      rawRowCount: 8,
+      cleanRowCount: 8,
+      columnCount: 5,
+      columnsList: parsed.dataset.columns,
+      cleaningSteps: [
+        {
+          description: "Removed duplicate rows",
+          effect: { rowsBefore: 8, rowsAfter: 7 },
+        },
+      ],
+      savedAnalyses: [corrAnalysis, tTestAnalysis],
+      descriptiveReport: report,
+    });
+
+    expect(md).toContain("# Statistical Analysis Report: Q4 Workforce Compensation");
+    expect(md).toContain("Evaluate department salary disparities");
+    expect(md).toContain("Removed duplicate rows");
+    expect(md).toContain("Correlation Coefficient (r)");
+    expect(md).toContain("Welch's t-Statistic");
+    expect(md).toContain("Group Comparison Table:");
+    expect(md).toContain("Missing values are excluded pairwise and never coerced to zero.");
   });
 
   // 10. Persistence failures, duplication, and clean deletion
@@ -453,7 +502,11 @@ u1,enterprise,$120.50,1,0`; // Row 7 is an exact duplicate of Row 1
 
     // 4. Apply cleaning pipeline
     // Step 1: Remove duplicate rows
-    const { dataset: clean1, step: s1 } = applyCleaningStep(parsed.dataset, "remove_duplicates", {});
+    const { dataset: clean1, step: s1 } = applyCleaningStep(
+      parsed.dataset,
+      "remove_duplicates",
+      {},
+    );
     expect(clean1.rows).toHaveLength(6);
 
     // Step 2: Change latency_ms type from currency text to numeric
@@ -482,7 +535,11 @@ u1,enterprise,$120.50,1,0`; // Row 7 is an exact duplicate of Row 1
     const corrAnalysis = createCorrelationSavedAnalysis(clean3, "latency_ms", "tickets", "pearson");
     expect(corrAnalysis.interpretation.observedResults.length).toBeGreaterThan(0);
     expect(corrAnalysis.interpretation.statisticalInference.length).toBeGreaterThan(0);
-    expect(corrAnalysis.interpretation.limitations.some((l) => l.toLowerCase().includes("prove or imply causation"))).toBe(true);
+    expect(
+      corrAnalysis.interpretation.limitations.some((l) =>
+        l.toLowerCase().includes("prove or imply causation"),
+      ),
+    ).toBe(true);
 
     // Analysis B: Persona Engineering Tail Latency & SLO
     const latencyValues = columnValues(clean3, clean3.columns.indexOf("latency_ms"));

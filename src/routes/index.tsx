@@ -49,10 +49,7 @@ const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
 };
 
 // Persona-tailored analytical tool shortcuts
-const PERSONA_ROUTINES: Record<
-  PersonaId,
-  { name: string; desc: string; metric: string }[]
-> = {
+const PERSONA_ROUTINES: Record<PersonaId, { name: string; desc: string; metric: string }[]> = {
   engineer: [
     {
       name: "Tail Latency & Percentiles",
@@ -215,8 +212,8 @@ function Overview() {
             <div>
               <h3 className="text-sm font-semibold text-slate-900">Getting Started with Lumetra</h3>
               <p className="mt-1 text-xs text-slate-600 max-w-xl leading-relaxed">
-                Lumetra is an in-browser statistical workspace. All computations run deterministically
-                on client-side engines. Missing values are never coerced to zero.
+                Lumetra is an in-browser statistical workspace. All computations run
+                deterministically on client-side engines. Missing values are never coerced to zero.
               </p>
             </div>
 
@@ -447,9 +444,12 @@ function Overview() {
               <div className="flex items-center gap-2.5 min-w-0">
                 <FileText className="size-4 text-slate-500 shrink-0 group-hover:text-blue-600" />
                 <div className="min-w-0">
-                  <div className="text-xs font-medium text-slate-900">Publication Report Preview</div>
+                  <div className="text-xs font-medium text-slate-900">
+                    Publication Report Preview
+                  </div>
                   <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                    Structured findings with methodology notes, results tables, and PDF print controls.
+                    Structured findings with methodology notes, results tables, and PDF print
+                    controls.
                   </div>
                 </div>
               </div>
@@ -463,7 +463,9 @@ function Overview() {
               <div className="flex items-center gap-2.5 min-w-0">
                 <MessageSquareCode className="size-4 text-slate-500 shrink-0 group-hover:text-blue-600" />
                 <div className="min-w-0">
-                  <div className="text-xs font-medium text-slate-900">Ask Analyst (Client-Side)</div>
+                  <div className="text-xs font-medium text-slate-900">
+                    Ask Analyst (Client-Side)
+                  </div>
                   <div className="text-[11px] text-slate-500 truncate mt-0.5">
                     Natural-language query routing backed by deterministic mathematical code.
                   </div>

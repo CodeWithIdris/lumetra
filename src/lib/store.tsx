@@ -72,7 +72,7 @@ export interface Store {
   lastSaveError: string | null;
 
   // Project lifecycle
-  createProject: (name: string, description?: string) => ProjectMeta | null;
+  createProject: (name: string, description?: string, attachActive?: boolean) => ProjectMeta | null;
   saveAsProject: (name: string, description?: string) => ProjectMeta | null;
   openProject: (id: string) => { error?: string; notice?: string };
   renameProject: (id: string, name: string) => void;
@@ -92,7 +92,10 @@ export interface Store {
   clearDataset: () => void;
 
   // Data Cleaning
-  applyCleaning: (type: CleaningStepType, params: Record<string, unknown>) => { success: boolean; error?: string };
+  applyCleaning: (
+    type: CleaningStepType,
+    params: Record<string, unknown>,
+  ) => { success: boolean; error?: string };
   undoCleaning: () => void;
   resetCleaning: () => void;
 
@@ -289,7 +292,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setActive]);
 
   const createProject = useCallback(
-    (name: string, description?: string): ProjectMeta | null => {
+    (name: string, description?: string, attachActive: boolean = false): ProjectMeta | null => {
       const trimmedName = name.trim();
       if (!trimmedName) return null;
 
@@ -297,7 +300,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeProjectIdRef.current = id;
       setActiveProjectId(id);
 
-      const cur = activeRef.current;
+      const cur = attachActive ? activeRef.current : null;
       let stored = false;
 
       if (cur?.csv) {
@@ -330,6 +333,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       if (cur) {
         setActive({ ...cur, projectId: id });
+      } else {
+        setActive(null);
+        setCleaningSteps([]);
+        cleaningStepsRef.current = [];
+        setSavedAnalyses([]);
+        savedAnalysesRef.current = [];
       }
 
       getSupabaseClient()
@@ -344,7 +353,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const saveAsProject = useCallback(
     (name: string, description?: string) => {
       if (!active) return null;
-      return createProject(name.trim() || active.dataset.name, description);
+      return createProject(name.trim() || active.dataset.name, description, true);
     },
     [active, createProject],
   );
@@ -401,16 +410,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [update],
   );
 
-  const duplicateProject = useCallback(
-    (id: string): ProjectMeta | null => {
-      const copy = duplicateProjectPersistence(id);
-      if (copy) {
-        setProjects(loadProjects());
-      }
-      return copy;
-    },
-    [],
-  );
+  const duplicateProject = useCallback((id: string): ProjectMeta | null => {
+    const copy = duplicateProjectPersistence(id);
+    if (copy) {
+      setProjects(loadProjects());
+    }
+    return copy;
+  }, []);
 
   const deleteProject = useCallback(
     (id: string) => {

@@ -144,7 +144,10 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
                 <div className="flex items-center gap-1.5">
                   <Database className="size-3.5 text-blue-600" />
                   <span>
-                    Storage: <strong>{cloudSyncStatus.isConfigured ? "Supabase Cloud" : "Local Browser"}</strong>
+                    Storage:{" "}
+                    <strong>
+                      {cloudSyncStatus.isConfigured ? "Supabase Cloud" : "Local Browser"}
+                    </strong>
                   </span>
                 </div>
                 <span className="font-mono text-slate-400">
@@ -161,7 +164,9 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
                 disabled={syncing}
                 onClick={handleSyncProjects}
               >
-                <RefreshCw className={`mr-1.5 size-3 text-slate-400 ${syncing ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`mr-1.5 size-3 text-slate-400 ${syncing ? "animate-spin" : ""}`}
+                />
                 {syncing ? "Syncing..." : "Sync Projects to Cloud"}
               </Button>
               <Button
@@ -244,10 +249,14 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
                     className="h-8 w-full rounded border border-slate-300 bg-white px-2.5 text-xs text-slate-900"
                   >
                     <option value="engineer">Software Engineer & SRE (Latencies, SLOs)</option>
-                    <option value="economist">Economist & Financial Analyst (Elasticity, Gini)</option>
+                    <option value="economist">
+                      Economist & Financial Analyst (Elasticity, Gini)
+                    </option>
                     <option value="scientist">Data Scientist & ML (Distributions, Outliers)</option>
                     <option value="product">Product Manager (A/B Test Lift, Conversions)</option>
-                    <option value="clinical">Clinical Researcher (Odds Ratios, Relative Risk)</option>
+                    <option value="clinical">
+                      Clinical Researcher (Odds Ratios, Relative Risk)
+                    </option>
                   </select>
                 </div>
 
@@ -378,8 +387,8 @@ export function AuthModal({ open, onOpenChange, defaultTab = "signup" }: AuthMod
               </div>
 
               <div className="rounded border border-slate-200 bg-slate-50/70 p-2.5 text-[11px] text-slate-500 leading-relaxed">
-                By default, Lumetra stores projects locally on this browser. Connecting your Supabase
-                account provides remote backup and cross-device synchronization.
+                By default, Lumetra stores projects locally on this browser. Connecting your
+                Supabase account provides remote backup and cross-device synchronization.
               </div>
             </TabsContent>
           </Tabs>

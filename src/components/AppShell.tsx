@@ -51,7 +51,12 @@ const PERSONA_ICONS: Record<PersonaId, typeof Cpu> = {
 function LumetraMark() {
   return (
     <div className="flex size-6 items-center justify-center rounded bg-slate-900 text-white shadow-2xs">
-      <svg viewBox="0 0 24 24" className="size-3.5 text-white" aria-hidden="true" fill="currentColor">
+      <svg
+        viewBox="0 0 24 24"
+        className="size-3.5 text-white"
+        aria-hidden="true"
+        fill="currentColor"
+      >
         <rect x="3" y="14" width="3.5" height="7" rx="0.5" />
         <rect x="10.25" y="8" width="3.5" height="13" rx="0.5" opacity=".9" />
         <rect x="17.5" y="3" width="3.5" height="18" rx="0.5" opacity="1" />
@@ -126,12 +131,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <LumetraMark />
             <div className="leading-tight">
-              <div className="text-[13px] font-semibold tracking-tight text-slate-900">
-                Lumetra
-              </div>
-              <div className="text-[11px] text-slate-500 font-normal">
-                Analytical Workspace
-              </div>
+              <div className="text-[13px] font-semibold tracking-tight text-slate-900">Lumetra</div>
+              <div className="text-[11px] text-slate-500 font-normal">Analytical Workspace</div>
             </div>
           </Link>
           <button
@@ -144,10 +145,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         {/* Primary Navigation Links */}
-        <nav aria-label="Main Navigation" className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2.5">
-          <div className="px-2 pb-1.5 text-[11px] font-medium text-slate-400">
-            Workspace
-          </div>
+        <nav
+          aria-label="Main Navigation"
+          className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2.5"
+        >
+          <div className="px-2 pb-1.5 text-[11px] font-medium text-slate-400">Workspace</div>
           {NAV.map((n) => {
             const Icon = n.icon;
             const activeLink = isActive(n.to);
@@ -193,7 +195,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           {/* Engine & Persistence Status */}
           <div className="flex items-center justify-between border-t border-slate-200/70 pt-1.5 text-[11px] text-slate-500">
             <span className="flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-emerald-500" title="Deterministic client-side engine active" />
+              <span
+                className="size-1.5 rounded-full bg-emerald-500"
+                title="Deterministic client-side engine active"
+              />
               <span>Local Engine</span>
             </span>
             <button
@@ -409,7 +414,9 @@ export function PageHeader({
           </>
         )}
       </div>
-      {actions && <div className="no-print flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
+      {actions && (
+        <div className="no-print flex flex-wrap items-center gap-2 shrink-0">{actions}</div>
+      )}
     </header>
   );
 }
@@ -426,7 +433,9 @@ export function EmptyState({
   return (
     <div className="rounded border border-slate-200 bg-white p-5 shadow-2xs">
       <div className="text-sm font-semibold text-slate-900">{title}</div>
-      {children && <div className="mt-1 max-w-xl text-xs text-slate-600 leading-relaxed">{children}</div>}
+      {children && (
+        <div className="mt-1 max-w-xl text-xs text-slate-600 leading-relaxed">{children}</div>
+      )}
       {action && <div className="mt-3.5 flex flex-wrap gap-2">{action}</div>}
     </div>
   );

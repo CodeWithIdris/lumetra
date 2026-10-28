@@ -15,9 +15,11 @@ export interface NumericSummary {
   sd: number | null;
 }
 
-export function toNumbers(
-  values: (number | string | null | undefined)[],
-): { nums: number[]; missing: number; invalid: number } {
+export function toNumbers(values: (number | string | null | undefined)[]): {
+  nums: number[];
+  missing: number;
+  invalid: number;
+} {
   const nums: number[] = [];
   let missing = 0;
   let invalid = 0;

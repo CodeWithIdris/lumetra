@@ -112,4 +112,3 @@ describe("Supabase Persistence Client", () => {
     expect(loaded?.csv_content).toBe("latency,qps\n10,100");
   });
 });
-
