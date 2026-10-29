@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadStoredUser,
   saveStoredUser,
@@ -51,6 +51,22 @@ describe("User Authentication & Profile Persistence", () => {
   });
 
   it("registers a new user and switches active persona", async () => {
+    vi.spyOn(supabase.auth, "signUp").mockResolvedValueOnce({
+      data: {
+        user: {
+          id: "usr_mock",
+          email: "sre.lead@company.internal",
+          user_metadata: { name: "Alex SRE", persona: "engineer" },
+          created_at: new Date().toISOString(),
+          confirmed_at: new Date().toISOString(),
+          app_metadata: {},
+          aud: "authenticated",
+        } as any,
+        session: null,
+      },
+      error: null,
+    });
+
     const res = await registerUser(
       "sre.lead@company.internal",
       "secretPassword123",
@@ -101,6 +117,21 @@ describe("Supabase Persistence Client", () => {
   });
 
   it("safeguards projects into the persistent cloud vault", async () => {
+    const sampleRecord = {
+      id: "proj_99",
+      name: "Latency Analysis",
+      csv_content: "latency,qps\n10,100",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      status: "data-loaded",
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify([sampleRecord]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
     const supabase = getSupabaseClient();
     const project = {
       id: "proj_99",

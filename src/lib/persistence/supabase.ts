@@ -142,6 +142,8 @@ class SupabaseService {
 
   /**
    * Test connection to a Supabase project URL.
+   * Checks Supabase Auth settings and health to verify remote connectivity and credentials
+   * without requiring elevated secret keys or OpenAPI root access.
    */
   public async testConnection(
     url: string,
@@ -152,17 +154,56 @@ class SupabaseService {
       return { ok: false, message: "URL and Anon Key are required." };
     }
     try {
-      const res = await fetch(`${cleanUrl}/rest/v1/`, {
+      // 1. Authenticate with /auth/v1/settings using the publishable key
+      const authRes = await fetch(`${cleanUrl}/auth/v1/settings`, {
         method: "GET",
         headers: {
           apikey: anonKey,
           Authorization: `Bearer ${anonKey}`,
         },
       });
-      if (res.ok || res.status === 200 || res.status === 404) {
+      if (authRes.ok || authRes.status === 200) {
         return { ok: true, message: "Successfully connected to Supabase project!" };
       }
-      return { ok: false, message: `Supabase returned status: ${res.status} ${res.statusText}` };
+
+      // Check if project returned invalid key
+      if (authRes.status === 401) {
+        try {
+          const body = (await authRes.json()) as { message?: string };
+          if (body?.message === "Invalid API key") {
+            return {
+              ok: false,
+              message: "Supabase returned: Invalid API key. Please check your publishable key.",
+            };
+          }
+        } catch {
+          // ignore parsing error
+        }
+      }
+
+      // 2. Fallback: check Auth health
+      const healthRes = await fetch(`${cleanUrl}/auth/v1/health`, {
+        method: "GET",
+        headers: {
+          apikey: anonKey,
+        },
+      });
+      if (healthRes.ok || healthRes.status === 200) {
+        return { ok: true, message: "Successfully connected to Supabase project!" };
+      }
+
+      // 3. Fallback: PostgREST endpoint
+      const restRes = await fetch(`${cleanUrl}/rest/v1/`, {
+        method: "GET",
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+        },
+      });
+      if (restRes.ok || restRes.status === 200 || restRes.status === 404) {
+        return { ok: true, message: "Successfully connected to Supabase project!" };
+      }
+      return { ok: false, message: `Supabase returned status: ${authRes.status} ${authRes.statusText}` };
     } catch (e) {
       return {
         ok: false,

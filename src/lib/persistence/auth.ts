@@ -428,6 +428,7 @@ export async function signInWithGoogleOAuth(): Promise<{ error?: string }> {
  * Signs the user out from Supabase and purges the active session.
  */
 export async function signOutUser(): Promise<void> {
+  saveStoredUser(null);
   if (isSupabaseConfigured()) {
     try {
       await supabase.auth.signOut();
@@ -435,7 +436,6 @@ export async function signOutUser(): Promise<void> {
       // Ignore network errors on signout
     }
   }
-  saveStoredUser(null);
 }
 
 // --- Backward-Compatible Helpers & Offline Vault Cache ---
