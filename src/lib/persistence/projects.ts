@@ -1,6 +1,7 @@
 /** Local-only persistence (browser localStorage). Nothing leaves the device. */
 import type { CleaningStep } from "../data/clean";
 import type { SavedAnalysis } from "../stats/analysis";
+import { generateUuid } from "./supabase";
 
 export type ProjectStatus = "no-data" | "data-loaded" | "analysed";
 
@@ -132,11 +133,9 @@ export function duplicateProject(projectId: string): ProjectMeta | null {
   const source = projects.find((p) => p.id === projectId);
   if (!source) return null;
 
-  const newId = "proj_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+  const newId = generateUuid();
   const now = new Date().toISOString();
-  const newDatasetId = source.dataset
-    ? "ds_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36)
-    : undefined;
+  const newDatasetId = source.dataset ? generateUuid() : undefined;
 
   // Deep clone metadata, cleaning steps, and saved analyses
   const copy: ProjectMeta = {

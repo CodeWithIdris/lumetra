@@ -251,3 +251,4 @@ DROP TRIGGER IF EXISTS trigger_reports_updated_at ON public.reports;
 CREATE TRIGGER trigger_reports_updated_at
     BEFORE UPDATE ON public.reports
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+

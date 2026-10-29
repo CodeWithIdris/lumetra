@@ -36,6 +36,7 @@ import {
   Target,
   HeartPulse,
   RefreshCw,
+  UploadCloud,
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
@@ -56,9 +57,18 @@ const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
 };
 
 function Settings() {
-  const { resetAll, projects, persona, setPersona, user, syncWithCloud, cloudSyncStatus } =
-    useStore();
+  const {
+    resetAll,
+    projects,
+    persona,
+    setPersona,
+    user,
+    syncWithCloud,
+    importLocalProjects,
+    cloudSyncStatus,
+  } = useStore();
   const [confirm, setConfirm] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimateInfo | null>(null);
 
   useEffect(() => {
@@ -93,6 +103,32 @@ function Settings() {
   const handleSaveConfig = () => {
     saveSupabaseConfig({ url: supaUrl, anonKey: supaKey });
     toast.success("Supabase database configuration saved.");
+  };
+
+  const handleImportLocalProjects = async () => {
+    if (!user) {
+      toast.error("Please sign in to an authenticated account before importing local projects.");
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await importLocalProjects();
+      if (res.success && res.imported > 0) {
+        toast.success(
+          `Successfully imported and verified ${res.imported} project(s) to PostgreSQL cloud storage.`,
+        );
+      } else if (res.skipped > 0 && res.imported === 0) {
+        toast.info(
+          `All ${res.skipped} local project(s) are already synchronized with your cloud database.`,
+        );
+      } else if (!res.success) {
+        toast.error(res.errors[0] || "Import encountered an error.");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to import local projects.");
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -249,6 +285,17 @@ function Settings() {
               className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
             >
               Save Configuration
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={importing}
+              onClick={handleImportLocalProjects}
+              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
+            >
+              <UploadCloud className="mr-1.5 size-3.5 text-blue-500" />
+              {importing ? "Importing..." : "Import Local Projects to Cloud"}
             </Button>
             <Button
               type="button"

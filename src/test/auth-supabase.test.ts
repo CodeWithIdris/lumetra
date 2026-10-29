@@ -1,3 +1,4 @@
+import type { User } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadStoredUser,
@@ -61,7 +62,7 @@ describe("User Authentication & Profile Persistence", () => {
           confirmed_at: new Date().toISOString(),
           app_metadata: {},
           aud: "authenticated",
-        } as any,
+        } as unknown as User,
         session: null,
       },
       error: null,

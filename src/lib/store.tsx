@@ -61,7 +61,13 @@ import {
   updateUserPassword,
   signInWithGoogleOAuth,
 } from "./persistence/auth";
-import { getSupabaseClient } from "./persistence/supabase";
+import {
+  getSupabaseClient,
+  generateUuid,
+  toValidUuid,
+  isSupabaseConfigured,
+  type CloudImportResult,
+} from "./persistence/supabase";
 
 interface Active {
   dataset: Dataset;
@@ -143,6 +149,7 @@ export interface Store {
   loginWithGoogle: () => Promise<{ error?: string }>;
   cloudSyncStatus: CloudSyncStatus;
   syncWithCloud: () => Promise<{ success: boolean; count?: number; error?: string }>;
+  importLocalProjects: () => Promise<CloudImportResult>;
 }
 
 const CTX_KEY = "__lumetraStoreContext__";
@@ -404,7 +411,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const trimmedName = name.trim();
       if (!trimmedName) return null;
 
-      const id = "proj_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+      const id = generateUuid();
       activeProjectIdRef.current = id;
       setActiveProjectId(id);
 
@@ -547,13 +554,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         console.warn("Failed to load dataset from IndexedDB:", err);
       }
 
-      // 2. Fallback to legacy localStorage CSV
-      const csv = loadCsv(id);
+      // 2. Fallback to legacy localStorage CSV or Cloud storage
+      let csv = loadCsv(id);
+      if (!csv && isSupabaseConfigured()) {
+        try {
+          const cloudRecord = await getSupabaseClient().loadProject(id);
+          if (cloudRecord?.csv_content) {
+            csv = cloudRecord.csv_content;
+          }
+        } catch (e) {
+          console.warn("Cloud project fallback error:", e);
+        }
+      }
+
       if (!csv) {
         setActive(null);
         return {
           error:
-            "The data for this project was not stored locally. Please upload the CSV file again to continue.",
+            "The data for this project was not found in local storage or cloud. Please upload the CSV file again to continue.",
         };
       }
 
@@ -877,6 +895,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  const importLocalProjects = useCallback(async (): Promise<CloudImportResult> => {
+    setCloudSyncStatus((prev) => ({ ...prev, isSyncing: true }));
+    const supabase = getSupabaseClient();
+    try {
+      const currentProjects = loadProjects();
+      const result = await supabase.importLocalProjects(currentProjects, async (p) => {
+        let csv: string | null = null;
+        if (p.dataset?.id) {
+          const stored = await loadDataset(p.dataset.id).catch(() => null);
+          csv = stored?.csv || null;
+        }
+        if (!csv) {
+          const stored = await loadDatasetByProject(p.id).catch(() => null);
+          csv = stored?.csv || null;
+        }
+        if (!csv) {
+          csv = loadCsv(p.id);
+        }
+        return csv;
+      });
+
+      setCloudSyncStatus({
+        isConfigured: supabase.isConfigured(),
+        isSyncing: false,
+        lastSyncedAt: nowIso(),
+      });
+      return result;
+    } catch (e) {
+      setCloudSyncStatus((prev) => ({ ...prev, isSyncing: false }));
+      return {
+        success: false,
+        imported: 0,
+        skipped: 0,
+        errors: [e instanceof Error ? e.message : "Import failed"],
+        projects: [],
+      };
+    }
+  }, []);
+
   const activeProject = useMemo(
     () => projects.find((p) => p.id === (active?.projectId ?? activeProjectId)) ?? null,
     [projects, active, activeProjectId],
@@ -927,6 +984,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loginWithGoogle: handleGoogleLogin,
     cloudSyncStatus,
     syncWithCloud,
+    importLocalProjects,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
