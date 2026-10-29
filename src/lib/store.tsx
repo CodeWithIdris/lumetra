@@ -25,6 +25,7 @@ import {
   deleteCsv,
   loadCsv,
   loadProjects,
+  loadProjectsForUser,
   saveProjects,
   storeCsv,
   replaceCsv,
@@ -52,6 +53,13 @@ import {
   registerUser,
   loginUser,
   logoutUser,
+  restoreUserSession,
+  subscribeToAuthChanges,
+  signOutUser,
+  sendMagicLink,
+  sendPasswordReset,
+  updateUserPassword,
+  signInWithGoogleOAuth,
 } from "./persistence/auth";
 import { getSupabaseClient } from "./persistence/supabase";
 
@@ -120,6 +128,7 @@ export interface Store {
 
   // Auth & Cloud
   user: UserProfile | null;
+  authLoading: boolean;
   login: (email: string, pass: string) => Promise<{ user: UserProfile | null; error?: string }>;
   register: (
     email: string,
@@ -128,6 +137,10 @@ export interface Store {
     persona: PersonaId,
   ) => Promise<{ user: UserProfile | null; error?: string }>;
   logout: () => void;
+  magicLink: (email: string) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  updatePassword: (newPass: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: () => Promise<{ error?: string }>;
   cloudSyncStatus: CloudSyncStatus;
   syncWithCloud: () => Promise<{ success: boolean; count?: number; error?: string }>;
 }

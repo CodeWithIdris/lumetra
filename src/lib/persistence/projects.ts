@@ -6,6 +6,7 @@ export type ProjectStatus = "no-data" | "data-loaded" | "analysed";
 
 export interface ProjectMeta {
   id: string;
+  userId?: string;
   name: string;
   description?: string;
   createdAt: string;
@@ -63,6 +64,29 @@ export function saveProjects(list: ProjectMeta[]): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Loads projects filtered for a specific user ID.
+ * Prevents one signed-in user from seeing another user's cached projects.
+ * - If userId is a string, returns projects belonging to that user.
+ * - If userId is null, returns only unauthenticated guest projects.
+ */
+export function loadProjectsForUser(userId: string | null): ProjectMeta[] {
+  const all = loadProjects();
+  if (userId) {
+    return all.filter((p) => p.userId === userId);
+  }
+  return all.filter((p) => !p.userId);
+}
+
+/**
+ * Removes cached projects for a specific user upon sign-out or account deletion.
+ */
+export function clearUserProjectCache(userId: string): void {
+  const all = loadProjects();
+  const filtered = all.filter((p) => p.userId !== userId);
+  saveProjects(filtered);
 }
 
 /** Store raw CSV for a project if small enough. Returns whether it was stored. */
