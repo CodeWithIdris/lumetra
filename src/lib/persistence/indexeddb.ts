@@ -16,7 +16,7 @@ export const DB_NAME = "lumetra_storage";
 export const DB_VERSION = 1;
 export const DATASETS_STORE = "datasets";
 export const METADATA_STORE = "dataset_meta";
-export const MAX_INDEXEDDB_DATASET_BYTES = 20 * 1024 * 1024; // 20 MB limit
+export const MAX_INDEXEDDB_DATASET_BYTES = 20 * 1024 * 1024; // 20 MB limit? why 20mb limit?
 
 export interface StoredDataset {
   id: string;

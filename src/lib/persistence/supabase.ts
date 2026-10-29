@@ -34,19 +34,68 @@ export interface CloudRecord {
 const CONFIG_STORAGE_KEY = "lumetra.supabase.config.v1";
 const CLOUD_CACHE_KEY = "lumetra.supabase.cloud_cache.v1";
 
+const envUrl =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) ||
+  (typeof process !== "undefined" && process.env?.VITE_SUPABASE_URL) ||
+  "";
+
+const envKey =
+  (typeof import.meta !== "undefined" &&
+    (import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+      import.meta.env?.VITE_SUPABASE_ANON_KEY)) ||
+  (typeof process !== "undefined" &&
+    (process.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+      process.env?.VITE_SUPABASE_ANON_KEY)) ||
+  "";
+
 const DEFAULT_CONFIG: SupabaseConfig = {
-  url: "",
-  anonKey: "",
+  url: envUrl,
+  anonKey: envKey,
   tableName: "lumetra_projects",
   autoSync: false,
 };
+
+export function getSupabaseEnvConfig() {
+  return { url: envUrl, anonKey: envKey };
+}
+
+export function validateSupabaseCredentials(url?: string, key?: string): {
+  isConfigured: boolean;
+  missing: string[];
+  error: string | null;
+} {
+  const checkUrl = (url !== undefined ? url : loadSupabaseConfig().url).trim();
+  const checkKey = (key !== undefined ? key : loadSupabaseConfig().anonKey).trim();
+  const missing: string[] = [];
+  if (!checkUrl) missing.push("VITE_SUPABASE_URL (Project URL)");
+  if (!checkKey) missing.push("VITE_SUPABASE_PUBLISHABLE_KEY (Anon / Publishable API Key)");
+
+  if (missing.length > 0) {
+    return {
+      isConfigured: false,
+      missing,
+      error: `Missing required Supabase credentials: ${missing.join(", ")}. Please configure them in .env.local or your environment settings.`,
+    };
+  }
+  return {
+    isConfigured: true,
+    missing: [],
+    error: null,
+  };
+}
 
 export function loadSupabaseConfig(): SupabaseConfig {
   if (typeof window === "undefined") return DEFAULT_CONFIG;
   try {
     const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
     if (!raw) return DEFAULT_CONFIG;
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_CONFIG,
+      ...parsed,
+      url: parsed.url || envUrl,
+      anonKey: parsed.anonKey || envKey,
+    };
   } catch {
     return DEFAULT_CONFIG;
   }

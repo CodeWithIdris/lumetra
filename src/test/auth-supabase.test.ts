@@ -12,7 +12,13 @@ import {
   loadSupabaseConfig,
   saveSupabaseConfig,
   getSupabaseClient,
+  validateSupabaseCredentials,
 } from "@/lib/persistence/supabase";
+import {
+  supabase,
+  validateSupabaseConfig,
+  getSupabase,
+} from "@/integrations/supabase/client";
 
 describe("User Authentication & Profile Persistence", () => {
   beforeEach(() => {
@@ -112,3 +118,31 @@ describe("Supabase Persistence Client", () => {
     expect(loaded?.csv_content).toBe("latency,qps\n10,100");
   });
 });
+
+describe("Supabase Integration & Environment Validation", () => {
+  it("detects missing environment variables and provides actionable error instructions", () => {
+    const status = validateSupabaseConfig();
+    expect(status.isConfigured).toBe(false);
+    expect(status.missing).toContain("VITE_SUPABASE_URL");
+    expect(status.missing).toContain("VITE_SUPABASE_PUBLISHABLE_KEY");
+    expect(status.error).toContain("VITE_SUPABASE_URL");
+    expect(status.error).toContain("VITE_SUPABASE_PUBLISHABLE_KEY");
+    expect(status.error).toContain(".env.local");
+  });
+
+  it("throws clear configuration error when unconfigured client is accessed", () => {
+    expect(() => supabase.auth).toThrowError(/Supabase configuration error/);
+    expect(() => getSupabase()).toThrowError(/Supabase configuration error/);
+  });
+
+  it("validates credentials accurately in persistence module", () => {
+    const emptyCheck = validateSupabaseCredentials("", "");
+    expect(emptyCheck.isConfigured).toBe(false);
+    expect(emptyCheck.missing.length).toBe(2);
+
+    const validCheck = validateSupabaseCredentials("https://example.supabase.co", "anon-key-123");
+    expect(validCheck.isConfigured).toBe(true);
+    expect(validCheck.error).toBeNull();
+  });
+});
+
