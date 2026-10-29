@@ -36,8 +36,7 @@ export function getEffectiveCredentials(): {
       (import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
         import.meta.env?.VITE_SUPABASE_ANON_KEY)) ||
     (typeof process !== "undefined" &&
-      (process.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-        process.env?.VITE_SUPABASE_ANON_KEY)) ||
+      (process.env?.VITE_SUPABASE_PUBLISHABLE_KEY || process.env?.VITE_SUPABASE_ANON_KEY)) ||
     "";
 
   if (envUrl.trim() && envKey.trim()) {
@@ -159,11 +158,11 @@ export const supabase: SupabaseClient<Database> = new Proxy({} as SupabaseClient
     const client = getSupabaseClientInstance();
     if (client) {
       const val = (client as unknown as Record<string, unknown>)[prop as string];
-      return typeof val === "function" ? (val as (...args: unknown[]) => unknown).bind(client) : val;
+      return typeof val === "function"
+        ? (val as (...args: unknown[]) => unknown).bind(client)
+        : val;
     }
     const status = validateSupabaseConfig();
-    throw new Error(
-      `Cannot execute Supabase operation "${String(prop)}": ${status.error}`
-    );
+    throw new Error(`Cannot execute Supabase operation "${String(prop)}": ${status.error}`);
   },
 });

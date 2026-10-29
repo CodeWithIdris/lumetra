@@ -22,6 +22,7 @@ import {
   saveSupabaseConfig,
   getSupabaseClient,
 } from "@/lib/persistence/supabase";
+import { validateSupabaseConfig } from "@/integrations/supabase/client";
 import { getStorageEstimate, type StorageEstimateInfo } from "@/lib/persistence/indexeddb";
 import { toast } from "sonner";
 import {
@@ -68,6 +69,7 @@ function Settings() {
 
   // Supabase connection state
   const config = loadSupabaseConfig();
+  const configStatus = validateSupabaseConfig();
   const [supaUrl, setSupaUrl] = useState(config.url);
   const [supaKey, setSupaKey] = useState(config.anonKey);
   const [testing, setTesting] = useState(false);
@@ -167,10 +169,31 @@ function Settings() {
                 cached results.
               </p>
             </div>
-            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-mono text-slate-600">
-              {cloudSyncStatus.lastSyncedAt ? "Synced" : "Local Vault"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`rounded border px-2 py-0.5 text-[10px] font-mono ${
+                  configStatus.isConfigured
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-amber-200 bg-amber-50 text-amber-800"
+                }`}
+              >
+                {configStatus.isConfigured ? "Connected" : "Unconfigured"}
+              </span>
+              <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-mono text-slate-600">
+                {cloudSyncStatus.lastSyncedAt ? "Synced" : "Local Vault"}
+              </span>
+            </div>
           </div>
+
+          {!configStatus.isConfigured && (
+            <div className="rounded border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 leading-relaxed">
+              <strong>Configuration Notice:</strong> <code>VITE_SUPABASE_URL</code> and{" "}
+              <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> are not detected in the environment. Set
+              them in <code>.env.local</code> or Lovable Settings to enable Supabase Cloud
+              authentication and cloud database persistence. Never expose secret or service_role
+              keys.
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2 pt-1">
             <div className="space-y-1">

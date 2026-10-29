@@ -165,6 +165,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [lastSaveError, setLastSaveError] = useState<string | null>(null);
   const [persona, setPersonaState] = useState<PersonaId>("engineer");
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({
     isConfigured: false,
     isSyncing: false,
@@ -200,31 +201,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       if (!mounted) return;
 
-      const loadedProjects = loadProjects();
+      const sessionUser = await restoreUserSession();
+      if (!mounted) return;
+      setUser(sessionUser);
+      setAuthLoading(false);
+
+      const loadedProjects = loadProjectsForUser(sessionUser?.id ?? null);
       setProjects(loadedProjects);
 
-      const initialPersona = loadActivePersona();
+      const initialPersona = sessionUser?.persona ?? loadActivePersona();
       setPersonaState(initialPersona);
       personaRef.current = initialPersona;
-
-      const initialUser = loadStoredUser();
-      setUser(initialUser);
 
       const supabase = getSupabaseClient();
       setCloudSyncStatus({
         isConfigured: supabase.isConfigured(),
         isSyncing: false,
-        lastSyncedAt: initialUser ? nowIso() : null,
+        lastSyncedAt: sessionUser ? nowIso() : null,
       });
 
       setReady(true);
     }
 
     init();
+
+    const unsubscribe = subscribeToAuthChanges((changedUser) => {
+      if (!mounted) return;
+      setUser(changedUser);
+      setAuthLoading(false);
+      if (changedUser) {
+        setPersona(changedUser.persona);
+        setProjects(loadProjectsForUser(changedUser.id));
+      } else {
+        // Prevent data leaks on signout
+        setActive(null);
+        setActiveProjectId(null);
+        setCleaningSteps([]);
+        cleaningStepsRef.current = [];
+        setSavedAnalyses([]);
+        savedAnalysesRef.current = [];
+        setProjects(loadProjectsForUser(null));
+      }
+    });
+
     return () => {
       mounted = false;
+      unsubscribe();
     };
-  }, []);
+  }, [setActive, setPersona]);
 
   const commit = useCallback((next: ProjectMeta[]): boolean => {
     setSaveState("saving");
@@ -413,6 +437,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const p: ProjectMeta = {
         id,
+        userId: user?.id,
         name: trimmedName,
         description: description?.trim() || "",
         objective: description?.trim() || "",
@@ -791,8 +816,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const handleLogout = useCallback(() => {
-    logoutUser();
+    signOutUser().catch(() => {});
     setUser(null);
+    setActive(null);
+    setActiveProjectId(null);
+    setCleaningSteps([]);
+    cleaningStepsRef.current = [];
+    setSavedAnalyses([]);
+    savedAnalysesRef.current = [];
+    setProjects(loadProjectsForUser(null));
+  }, [setActive]);
+
+  const handleMagicLink = useCallback(async (email: string) => {
+    return sendMagicLink(email);
+  }, []);
+
+  const handleResetPassword = useCallback(async (email: string) => {
+    return sendPasswordReset(email);
+  }, []);
+
+  const handleUpdatePassword = useCallback(async (newPass: string) => {
+    return updateUserPassword(newPass);
+  }, []);
+
+  const handleGoogleLogin = useCallback(async () => {
+    return signInWithGoogleOAuth();
   }, []);
 
   const syncWithCloud = useCallback(async () => {
@@ -869,9 +917,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persona,
     setPersona,
     user,
+    authLoading,
     login: handleLogin,
     register: handleRegister,
     logout: handleLogout,
+    magicLink: handleMagicLink,
+    resetPassword: handleResetPassword,
+    updatePassword: handleUpdatePassword,
+    loginWithGoogle: handleGoogleLogin,
     cloudSyncStatus,
     syncWithCloud,
   };

@@ -10,7 +10,11 @@
  */
 import type { User } from "@supabase/supabase-js";
 import type { PersonaId } from "../stats/personas";
-import { supabase, isSupabaseConfigured, validateSupabaseConfig } from "@/integrations/supabase/client";
+import {
+  supabase,
+  isSupabaseConfigured,
+  validateSupabaseConfig,
+} from "@/integrations/supabase/client";
 import { getSupabaseClient } from "./supabase";
 
 export interface UserProfile {
@@ -40,10 +44,7 @@ export function mapSupabaseUser(user: User): UserProfile {
     (metadata.full_name as string) ||
     email.split("@")[0] ||
     "Researcher";
-  const persona: PersonaId =
-    (metadata.persona as PersonaId) ||
-    loadActivePersona() ||
-    "engineer";
+  const persona: PersonaId = (metadata.persona as PersonaId) || loadActivePersona() || "engineer";
 
   return {
     id: user.id,
@@ -145,7 +146,9 @@ export function subscribeToAuthChanges(
   }
 
   try {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         callback(mapSupabaseUser(session.user), event);
       } else {
@@ -288,9 +291,7 @@ export async function loginWithEmailPassword(
 /**
  * Sends a passwordless Magic Link to the user's email.
  */
-export async function sendMagicLink(
-  email: string,
-): Promise<{ success: boolean; error?: string }> {
+export async function sendMagicLink(email: string): Promise<{ success: boolean; error?: string }> {
   const trimmedEmail = email.trim().toLowerCase();
   if (!trimmedEmail || !trimmedEmail.includes("@")) {
     return { success: false, error: "Please enter a valid email address." };
@@ -343,9 +344,7 @@ export async function sendPasswordReset(
 
   try {
     const redirectTo =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/settings?auth=reset`
-        : undefined;
+      typeof window !== "undefined" ? `${window.location.origin}/settings?auth=reset` : undefined;
 
     const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
       redirectTo,
@@ -357,7 +356,10 @@ export async function sendPasswordReset(
 
     return { success: true };
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "Password recovery request failed." };
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "Password recovery request failed.",
+    };
   }
 }
 
