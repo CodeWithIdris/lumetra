@@ -13,14 +13,7 @@ import { Label } from "@/components/ui/label";
 import { useStore } from "@/lib/store";
 import { PERSONAS, type PersonaId } from "@/lib/stats/personas";
 import { toast } from "sonner";
-import {
-  User,
-  KeyRound,
-  ArrowLeft,
-  CheckCircle2,
-  Loader2,
-  LogOut,
-} from "lucide-react";
+import { User, KeyRound, ArrowLeft, CheckCircle2, Loader2, LogOut } from "lucide-react";
 
 interface AuthModalProps {
   open: boolean;

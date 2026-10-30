@@ -552,7 +552,7 @@ function Workspace() {
                     </span>
                     <span className="text-slate-500">
                       Original raw dataset ({rawDataset?.rows.length ?? ds.rows.length} rows) is
-                      preserved in vault.
+                      preserved.
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1592,8 +1592,8 @@ function Workspace() {
           <AlertDialogHeader>
             <AlertDialogTitle>Replace dataset in “{activeProject?.name}”?</AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600">
-              The replacement file will be updated in your project session and synced to Supabase
-              Cloud. Previous analysis caches will be recomputed.
+              The replacement file will be updated in your project session and saved automatically.
+              Previous analysis caches will be recomputed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1616,7 +1616,7 @@ function Workspace() {
             <AlertDialogTitle>Clear active dataset?</AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600">
               {activeProject
-                ? `Data will be cleared from “${activeProject.name}”. The project definition remains saved in Supabase.`
+                ? `Data will be cleared from “${activeProject.name}”. The project definition remains saved.`
                 : "This unsaved session will be cleared from memory."}
             </AlertDialogDescription>
           </AlertDialogHeader>

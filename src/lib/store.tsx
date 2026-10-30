@@ -68,10 +68,7 @@ import {
   type CloudImportResult,
   type CloudReport,
 } from "./persistence/supabase";
-import {
-  getPersistenceCoordinator,
-  type PersistenceState,
-} from "./persistence/coordinator";
+import { getPersistenceCoordinator, type PersistenceState } from "./persistence/coordinator";
 
 interface Active {
   dataset: Dataset;
@@ -265,7 +262,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [lastSaveError, setLastSaveError] = useState<string | null>(null);
-  const [persistenceState, setPersistenceState] = useState<PersistenceState>(coordinator.getState());
+  const [persistenceState, setPersistenceState] = useState<PersistenceState>(
+    coordinator.getState(),
+  );
   const [persona, setPersonaState] = useState<PersonaId>("engineer");
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);

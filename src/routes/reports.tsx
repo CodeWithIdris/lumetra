@@ -16,15 +16,7 @@ import {
 import { fmt } from "@/lib/stats/descriptive";
 import { descriptiveToCsv, downloadText, generateReportMarkdown } from "@/lib/data/export";
 import { pageMeta } from "@/lib/meta";
-import {
-  Printer,
-  Download,
-  FileText,
-  Wand2,
-  Layers,
-  AlertTriangle,
-  FileCode,
-} from "lucide-react";
+import { Printer, Download, FileText, Wand2, Layers, AlertTriangle, FileCode } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/reports")({
@@ -411,7 +403,9 @@ function Reports() {
   const ds = active?.dataset;
   const report = useMemo(() => (ds ? runDescriptive(ds) : null), [ds]);
   const [objective, setObj] = useState("");
-  const [savedReportsList, setSavedReportsList] = useState<Array<{ id: string; title: string; created_at: string }>>([]);
+  const [savedReportsList, setSavedReportsList] = useState<
+    Array<{ id: string; title: string; created_at: string }>
+  >([]);
 
   useEffect(() => {
     setObj(activeProject?.objective || activeProject?.description || "");
@@ -422,7 +416,9 @@ function Reports() {
     if (activeProject?.id) {
       loadProjectReports(activeProject.id)
         .then((reps) => {
-          setSavedReportsList(reps.map((r) => ({ id: r.id, title: r.title, created_at: r.created_at })));
+          setSavedReportsList(
+            reps.map((r) => ({ id: r.id, title: r.title, created_at: r.created_at })),
+          );
         })
         .catch(() => {});
     }
@@ -530,33 +526,6 @@ function Reports() {
             >
               <FileCode className="mr-1.5 size-3.5 text-slate-500" />
               Export Markdown
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
-              onClick={() =>
-                downloadText(
-                  `${ds.name.replace(/\.[^.]+$/, "")}-report.csv`,
-                  descriptiveToCsv(report),
-                )
-              }
-            >
-              <Download className="mr-1.5 size-3.5 text-slate-500" />
-              Export Descriptives CSV
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
-              onClick={() => window.print()}
-            >
-              <Printer className="mr-1.5 size-3.5 text-slate-500" />
-              Print / Save as PDF
-            </Button>
-          </div>
-        }
-      />
             </Button>
             <Button
               variant="outline"

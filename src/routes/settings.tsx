@@ -31,11 +31,7 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
-  head: () =>
-    pageMeta(
-      "Settings",
-      "Account, persistence, and analytical preferences for Lumetra.",
-    ),
+  head: () => pageMeta("Settings", "Account, persistence, and analytical preferences for Lumetra."),
   component: Settings,
 });
 
@@ -48,15 +44,8 @@ const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
 };
 
 function Settings() {
-  const {
-    resetAll,
-    projects,
-    persona,
-    setPersona,
-    user,
-    persistenceState,
-    importLocalProjects,
-  } = useStore();
+  const { resetAll, projects, persona, setPersona, user, persistenceState, importLocalProjects } =
+    useStore();
   const [confirm, setConfirm] = useState(false);
   const [associating, setAssociating] = useState(false);
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimateInfo | null>(null);
@@ -157,12 +146,11 @@ function Settings() {
             <div>
               <div className="flex items-center gap-2">
                 <HardDrive className="size-4 text-blue-600" />
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Workspace Storage & Cache
-                </h2>
+                <h2 className="text-sm font-semibold text-slate-900">Workspace Storage & Cache</h2>
               </div>
               <p className="mt-0.5 text-xs text-slate-600">
-                All projects and analyses are automatically persisted as you work. Local browser cache provides instant offline capability.
+                All projects and analyses are automatically persisted as you work. Local browser
+                cache provides instant offline capability.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -179,15 +167,15 @@ function Settings() {
                 {storageEstimate ? formatBytes(storageEstimate.usage) : "—"}
               </div>
               <div className="text-[10px] text-slate-400 font-mono">
-                {storageEstimate ? `${storageEstimate.percentUsed.toFixed(2)}% of browser quota` : "Calculating..."}
+                {storageEstimate
+                  ? `${storageEstimate.percentUsed.toFixed(2)}% of browser quota`
+                  : "Calculating..."}
               </div>
             </div>
 
             <div className="rounded border border-slate-200 bg-slate-50/70 p-3 space-y-1">
               <div className="text-[11px] text-slate-500 font-sans">Active Projects</div>
-              <div className="text-base font-bold text-slate-900 font-mono">
-                {projects.length}
-              </div>
+              <div className="text-base font-bold text-slate-900 font-mono">{projects.length}</div>
               <div className="text-[10px] text-slate-400 font-mono">
                 {persistenceState.statusText}
               </div>
@@ -251,8 +239,9 @@ function Settings() {
               excluded from calculations. They are never coerced to zero.
             </p>
             <p>
-              • <strong>Seamless Persistence:</strong> Your projects, datasets, and analysis configurations
-              are automatically persisted to your account with PostgreSQL Row Level Security. All computation remains client-side.
+              • <strong>Seamless Persistence:</strong> Your projects, datasets, and analysis
+              configurations are automatically persisted to your account with PostgreSQL Row Level
+              Security. All computation remains client-side.
             </p>
           </div>
         </section>
@@ -264,7 +253,8 @@ function Settings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Reset local working storage?</AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600">
-              This will clear cached datasets and projects stored in this browser session. Verified account records remain intact.
+              This will clear cached datasets and projects stored in this browser session. Verified
+              account records remain intact.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

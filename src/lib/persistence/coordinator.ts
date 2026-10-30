@@ -15,20 +15,9 @@
 import type { CleaningStep } from "../data/clean";
 import type { SavedAnalysis } from "../stats/analysis";
 import type { ProjectMeta } from "./projects";
-import {
-  getSupabaseClient,
-  isValidUuid,
-  toValidUuid,
-  generateUuid,
-} from "./supabase";
+import { getSupabaseClient, isValidUuid, toValidUuid, generateUuid } from "./supabase";
 
-export type PersistenceStatus =
-  | "saved"
-  | "saving"
-  | "pending"
-  | "offline"
-  | "retrying"
-  | "error";
+export type PersistenceStatus = "saved" | "saving" | "pending" | "offline" | "retrying" | "error";
 
 export interface PersistenceState {
   status: PersistenceStatus;
@@ -291,11 +280,7 @@ class PersistenceCoordinator {
   /**
    * Queue a saved analysis write operation.
    */
-  public queueAnalysisSave(
-    projectId: string,
-    analysis: SavedAnalysis,
-    userId: string | undefined,
-  ) {
+  public queueAnalysisSave(projectId: string, analysis: SavedAnalysis, userId: string | undefined) {
     const targetUserId = userId || this.currentUserId || "";
     this.enqueue(
       {
@@ -312,11 +297,7 @@ class PersistenceCoordinator {
   /**
    * Queue analysis removal.
    */
-  public queueAnalysisDelete(
-    projectId: string,
-    analysisId: string,
-    userId: string | undefined,
-  ) {
+  public queueAnalysisDelete(projectId: string, analysisId: string, userId: string | undefined) {
     const targetUserId = userId || this.currentUserId || "";
     this.enqueue(
       {
@@ -513,14 +494,19 @@ class PersistenceCoordinator {
           // Failure handling: check if retryable
           item.retryCount++;
           if (item.retryCount > MAX_RETRIES) {
-            console.warn(`Write item ${item.entityType}:${item.entityId} exceeded max retries. Pausing item.`);
+            console.warn(
+              `Write item ${item.entityType}:${item.entityId} exceeded max retries. Pausing item.`,
+            );
             this.queue.shift();
             this.saveQueueToStorage();
             this.lastError = `Failed to sync ${item.entityType}.`;
             this.status = "error";
             this.notify();
           } else {
-            const backoff = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * Math.pow(2, item.retryCount));
+            const backoff = Math.min(
+              MAX_BACKOFF_MS,
+              BASE_BACKOFF_MS * Math.pow(2, item.retryCount),
+            );
             this.status = "retrying";
             this.notify();
             this.scheduleRetry(backoff);

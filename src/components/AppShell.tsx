@@ -67,14 +67,7 @@ function LumetraMark() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const {
-    active,
-    activeProject,
-    persona,
-    setPersona,
-    user,
-    persistenceState,
-  } = useStore();
+  const { active, activeProject, persona, setPersona, user, persistenceState } = useStore();
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState<"signup" | "login" | "magic" | "reset">("signup");
   const [personaOpen, setPersonaOpen] = useState(false);
@@ -201,7 +194,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
             <div className="flex items-center gap-1 font-mono text-[10px] text-slate-500">
               <span className="size-1.5 rounded-full bg-emerald-500" />
-              <span>{persistenceState.status === "saved" ? "Saved" : persistenceState.statusText}</span>
+              <span>
+                {persistenceState.status === "saved" ? "Saved" : persistenceState.statusText}
+              </span>
             </div>
           </div>
         </div>
@@ -295,7 +290,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               {persistenceState.status === "retrying" && (
                 <>
                   <Loader2 className="size-3 animate-spin text-amber-600" />
-                  <span className="text-amber-700 hidden sm:inline">Couldn't save changes. Retrying...</span>
+                  <span className="text-amber-700 hidden sm:inline">
+                    Couldn't save changes. Retrying...
+                  </span>
                 </>
               )}
               {persistenceState.status === "error" && (

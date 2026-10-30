@@ -35,7 +35,7 @@ export const Route = createFileRoute("/")({
   head: () =>
     pageMeta(
       "Overview",
-      "Production-grade analytical workspace with client-side computation and cloud persistence.",
+      "Production-grade analytical workspace with client-side computation and automatic persistence.",
     ),
   component: Overview,
 });
@@ -236,8 +236,8 @@ function Overview() {
                 },
                 {
                   step: "04",
-                  title: "Reports & Persistence",
-                  desc: "Generate structured reports and optionally sync to Supabase Cloud.",
+                  title: "Reports & Findings",
+                  desc: "Generate structured reports with automatic persistence and seamless export.",
                 },
               ].map((s) => (
                 <div key={s.step} className="rounded border border-slate-200 bg-slate-50/70 p-3">

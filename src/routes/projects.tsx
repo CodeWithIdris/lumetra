@@ -41,11 +41,7 @@ import { toast } from "sonner";
 import { AuthModal } from "@/components/AuthModal";
 
 export const Route = createFileRoute("/projects")({
-  head: () =>
-    pageMeta(
-      "My Projects",
-      "Manage analysis projects and datasets in Lumetra.",
-    ),
+  head: () => pageMeta("My Projects", "Manage analysis projects and datasets in Lumetra."),
   component: Projects,
 });
 
@@ -188,7 +184,8 @@ function Projects() {
           <div className="flex items-center gap-2">
             <HardDrive className="size-4 text-slate-500 shrink-0" />
             <span>
-              Your work is currently saved on this device. Sign in to enable automatic cloud backup and access across devices.
+              Your work is currently saved on this device. Sign in to enable automatic cloud backup
+              and access across devices.
             </span>
           </div>
           <Button
@@ -214,7 +211,8 @@ function Projects() {
       {active && !activeProject && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 flex items-center justify-between gap-3">
           <span>
-            You have an active session with <strong>{active.dataset.name}</strong>. Save it as a project to record it permanently.
+            You have an active session with <strong>{active.dataset.name}</strong>. Save it as a
+            project to record it permanently.
           </span>
           <div className="flex items-center gap-2 shrink-0">
             <Button
@@ -587,8 +585,8 @@ function Projects() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete project “{toDelete?.name}”?</AlertDialogTitle>
             <AlertDialogDescription className="text-slate-600 text-xs">
-              This will remove the project metadata, dataset, and saved analysis sessions.
-              This action cannot be undone.
+              This will remove the project metadata, dataset, and saved analysis sessions. This
+              action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -620,8 +618,8 @@ function Projects() {
             </AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600 leading-relaxed">
               You have an active dataset session for{" "}
-              <strong>{active?.dataset.name || "dataset.csv"}</strong>. Would you like to
-              save it as a project now to keep your work organized?
+              <strong>{active?.dataset.name || "dataset.csv"}</strong>. Would you like to save it as
+              a project now to keep your work organized?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-end">
