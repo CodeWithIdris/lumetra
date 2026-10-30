@@ -24,6 +24,9 @@ export interface ProjectMeta {
   objective?: string;
   cleaningSteps?: CleaningStep[];
   savedAnalyses?: SavedAnalysis[];
+  isCloudSynced?: boolean;
+  cloudSyncedAt?: string;
+  cloudSyncError?: string;
 }
 
 const KEY = "lumetra.projects.v1";

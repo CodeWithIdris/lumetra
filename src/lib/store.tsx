@@ -65,6 +65,7 @@ import {
   getSupabaseClient,
   generateUuid,
   toValidUuid,
+  isValidUuid,
   isSupabaseConfigured,
   type CloudImportResult,
 } from "./persistence/supabase";
@@ -78,10 +79,23 @@ interface Active {
 
 export type SaveState = "saved" | "pending" | "saving" | "error";
 
+export type CloudSyncState =
+  | "not_configured"
+  | "not_authenticated"
+  | "ready"
+  | "syncing"
+  | "synced"
+  | "partially_synced"
+  | "failed";
+
 export interface CloudSyncStatus {
+  state: CloudSyncState;
   isConfigured: boolean;
   isSyncing: boolean;
   lastSyncedAt: string | null;
+  errorMessage: string | null;
+  syncedCount: number;
+  totalCount: number;
 }
 
 export interface Store {
@@ -148,7 +162,13 @@ export interface Store {
   updatePassword: (newPass: string) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: () => Promise<{ error?: string }>;
   cloudSyncStatus: CloudSyncStatus;
-  syncWithCloud: () => Promise<{ success: boolean; count?: number; error?: string }>;
+  syncWithCloud: () => Promise<{
+    success: boolean;
+    state?: CloudSyncState;
+    count?: number;
+    total?: number;
+    error?: string;
+  }>;
   importLocalProjects: () => Promise<CloudImportResult>;
 }
 

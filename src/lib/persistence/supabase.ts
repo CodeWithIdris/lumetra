@@ -360,13 +360,15 @@ class SupabaseService {
   /**
    * Save a project, dataset, and analyses into Supabase PostgreSQL Cloud Database.
    * Enforces Row Level Security using the active authenticated session.
+   * Requires remote writes and read-back verification before returning success.
    */
   public async saveProject(
     project: ProjectMeta,
     csvContent: string | null,
     userId?: string,
-  ): Promise<{ ok: boolean; error?: string; remoteId?: string }> {
-    // 1. Maintain local persistent cloud vault cache always
+    options?: { columns?: string[] },
+  ): Promise<{ ok: boolean; error?: string; remoteId?: string; datasetId?: string }> {
+    // 1. Maintain local persistent cloud vault cache as offline safeguard
     const record: CloudRecord = {
       id: project.id,
       user_id: userId,
@@ -392,7 +394,10 @@ class SupabaseService {
     this.saveToLocalCloudVault(record);
 
     if (!this.isConfigured()) {
-      return { ok: true, remoteId: project.id };
+      return {
+        ok: false,
+        error: "Supabase database credentials are not configured. Please configure them in Settings.",
+      };
     }
 
     const client = getSupabaseClientInstance();
@@ -400,20 +405,28 @@ class SupabaseService {
       return { ok: false, error: "Supabase client not initialized." };
     }
 
-    // Determine authenticated user identity
+    // Determine authenticated user identity from verified Supabase session
     let sessionUserId = userId;
     try {
-      const { data: sessionData } = await client.auth.getSession();
-      if (sessionData?.session?.user?.id) {
-        sessionUserId = sessionData.session.user.id;
+      const { data: userData, error: userErr } = await client.auth.getUser();
+      if (!userErr && userData?.user?.id) {
+        sessionUserId = userData.user.id;
+      } else {
+        const { data: sessionData } = await client.auth.getSession();
+        if (sessionData?.session?.user?.id) {
+          sessionUserId = sessionData.session.user.id;
+        }
       }
     } catch {
       // Fallback to supplied userId
     }
 
-    if (!sessionUserId) {
-      // Local persistent vault was saved; return ok for local/unauthenticated operation
-      return { ok: true, remoteId: project.id };
+    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+      return {
+        ok: false,
+        error:
+          "Authentication required. You must be signed in to a verified Supabase account to sync projects to cloud storage.",
+      };
     }
 
     const projectUuid = toValidUuid(project.id);
@@ -442,26 +455,26 @@ class SupabaseService {
               "PostgreSQL tables not found (PGRST205). Migration 'supabase/migrations/20261029101800_create_lumetra_schema_and_rls.sql' needs to be applied in Supabase.",
           };
         }
-        return { ok: false, error: `Failed to save project: ${projectError.message}` };
+        return { ok: false, error: `Failed to save project record: ${projectError.message}` };
       }
 
-      // 2. Upsert dataset if present
+      // 2. Upsert dataset if present (using deterministic stable UUID)
+      let datasetUuid: string | null = null;
       if (project.dataset || csvContent) {
-        const datasetId =
-          project.dataset?.id && isValidUuid(project.dataset.id)
-            ? project.dataset.id
-            : generateUuid();
+        datasetUuid = toValidUuid(project.dataset?.id || `${projectUuid}_dataset`);
+        const columnsList = options?.columns || [];
 
         const { error: datasetError } = await client.from("datasets").upsert(
           {
-            id: datasetId,
+            id: datasetUuid,
             project_id: projectUuid,
             user_id: sessionUserId,
             name: project.dataset?.name || `${project.name}.csv`,
             source: project.dataset?.source || "upload",
             row_count: project.dataset?.rows || 0,
-            column_count: project.dataset?.columns || 0,
-            columns: [],
+            column_count: project.dataset?.columns || (columnsList.length > 0 ? columnsList.length : 0),
+            columns: (columnsList as unknown) || [],
+            delimiter: ",",
             cleaning_steps: (project.cleaningSteps as unknown) || [],
             csv_content: csvContent || null,
             updated_at: now,
@@ -470,24 +483,27 @@ class SupabaseService {
         );
 
         if (datasetError) {
-          console.warn("Dataset persistence warning:", datasetError.message);
+          return {
+            ok: false,
+            error: `Project metadata was saved, but dataset persistence failed: ${datasetError.message}`,
+          };
         }
       }
 
-      // 3. Upsert saved analyses if present
+      // 3. Upsert saved analyses if present (using deterministic stable UUIDs)
       if (project.savedAnalyses && project.savedAnalyses.length > 0) {
         for (const analysis of project.savedAnalyses) {
-          const analysisId = isValidUuid(analysis.id) ? analysis.id : generateUuid();
+          const analysisUuid = toValidUuid(analysis.id);
           const { error: analysisError } = await client.from("saved_analyses").upsert(
             {
-              id: analysisId,
+              id: analysisUuid,
               project_id: projectUuid,
               user_id: sessionUserId,
               name: analysis.name,
               type: analysis.type,
-              dataset_id: analysis.datasetId || null,
+              dataset_id: analysis.datasetId ? toValidUuid(analysis.datasetId) : null,
               dataset_name: analysis.datasetName || null,
-              dataset_signature: analysis.datasetSignature,
+              dataset_signature: analysis.datasetSignature || `${analysis.name}:${now}`,
               variables: (analysis.variables as unknown) || [],
               configuration: (analysis.configuration as unknown) || {},
               sample_size: analysis.sampleSize || 0,
@@ -502,14 +518,130 @@ class SupabaseService {
           );
 
           if (analysisError) {
-            console.warn("Analysis persistence warning:", analysisError.message);
+            return {
+              ok: false,
+              error: `Project and dataset were saved, but analysis "${analysis.name}" failed to persist: ${analysisError.message}`,
+            };
           }
         }
       }
 
-      return { ok: true, remoteId: projectUuid };
+      // 4. Strict Remote Verification Read-Back
+      const verification = await this.verifyRemoteProject(projectUuid, sessionUserId, {
+        hasDataset: Boolean(project.dataset || csvContent),
+        datasetUuid: datasetUuid ?? undefined,
+        expectedAnalysesCount: project.savedAnalyses?.length ?? 0,
+      });
+
+      if (!verification.ok) {
+        return { ok: false, error: verification.error };
+      }
+
+      return {
+        ok: true,
+        remoteId: projectUuid,
+        datasetId: datasetUuid ?? undefined,
+      };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  }
+
+  /**
+   * Strictly verifies that remote records exist in PostgreSQL via authenticated SELECT queries.
+   * Does NOT fall back to local storage.
+   */
+  public async verifyRemoteProject(
+    projectUuid: string,
+    userId: string,
+    expected: {
+      hasDataset: boolean;
+      datasetUuid?: string;
+      expectedAnalysesCount: number;
+    },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const client = getSupabaseClientInstance();
+    if (!client) {
+      return { ok: false, error: "Supabase client unavailable for verification." };
+    }
+
+    try {
+      // 1. Verify project row exists for this user
+      const { data: projectRow, error: pErr } = await client
+        .from("lumetra_projects")
+        .select("id, name, user_id")
+        .eq("id", projectUuid)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (pErr) {
+        return {
+          ok: false,
+          error: `Remote verification read-back failed for project: ${pErr.message}`,
+        };
+      }
+      if (!projectRow) {
+        return {
+          ok: false,
+          error: "Remote verification read-back failed: Project was not found in Supabase.",
+        };
+      }
+
+      // 2. Verify dataset row exists if expected
+      if (expected.hasDataset) {
+        let query = client
+          .from("datasets")
+          .select("id, project_id, user_id")
+          .eq("project_id", projectUuid)
+          .eq("user_id", userId);
+
+        if (expected.datasetUuid) {
+          query = query.eq("id", expected.datasetUuid);
+        }
+
+        const { data: datasetRow, error: dErr } = await query.maybeSingle();
+        if (dErr) {
+          return {
+            ok: false,
+            error: `Remote verification read-back failed for dataset: ${dErr.message}`,
+          };
+        }
+        if (!datasetRow) {
+          return {
+            ok: false,
+            error: "Remote verification read-back failed: Dataset was not found in Supabase.",
+          };
+        }
+      }
+
+      // 3. Verify analyses rows count if expected
+      if (expected.expectedAnalysesCount > 0) {
+        const { data: analysesRows, error: aErr } = await client
+          .from("saved_analyses")
+          .select("id")
+          .eq("project_id", projectUuid)
+          .eq("user_id", userId);
+
+        if (aErr) {
+          return {
+            ok: false,
+            error: `Remote verification read-back failed for analyses: ${aErr.message}`,
+          };
+        }
+        if (!analysesRows || analysesRows.length < expected.expectedAnalysesCount) {
+          return {
+            ok: false,
+            error: `Remote verification read-back failed: Expected ${expected.expectedAnalysesCount} analyses, but found ${analysesRows?.length ?? 0} in Supabase.`,
+          };
+        }
+      }
+
+      return { ok: true };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Verification read-back query error.",
+      };
     }
   }
 
@@ -536,7 +668,7 @@ class SupabaseService {
         .maybeSingle();
 
       if (error || !data) {
-        return this.loadFromLocalCloudVault(id);
+        return null;
       }
 
       const row = data as Record<string, unknown>;
@@ -572,7 +704,7 @@ class SupabaseService {
 
       return record;
     } catch {
-      return this.loadFromLocalCloudVault(id);
+      return null;
     }
   }
 
@@ -602,8 +734,12 @@ class SupabaseService {
       }
 
       const { data, error } = await query;
-      if (error || !data) {
-        return localRecords;
+      if (error) {
+        console.warn("Could not query Supabase projects:", error.message);
+        return [];
+      }
+      if (!data) {
+        return [];
       }
 
       const records: CloudRecord[] = (data as Array<Record<string, unknown>>).map((row) => {
@@ -635,9 +771,9 @@ class SupabaseService {
         };
       });
 
-      return records.length > 0 ? records : localRecords;
+      return records;
     } catch {
-      return localRecords;
+      return [];
     }
   }
 
@@ -782,17 +918,22 @@ class SupabaseService {
 
     let currentUserId = options?.userId ?? null;
     try {
-      const { data: sessionData } = await client.auth.getSession();
-      if (sessionData?.session?.user?.id) {
-        currentUserId = sessionData.session.user.id;
+      const { data: userData, error: userErr } = await client.auth.getUser();
+      if (!userErr && userData?.user?.id) {
+        currentUserId = userData.user.id;
+      } else {
+        const { data: sessionData } = await client.auth.getSession();
+        if (sessionData?.session?.user?.id) {
+          currentUserId = sessionData.session.user.id;
+        }
       }
     } catch {
       // Unauthenticated
     }
 
-    if (!currentUserId) {
+    if (!currentUserId || !isValidUuid(currentUserId)) {
       result.success = false;
-      result.errors.push("Authentication required. Please sign in to import local projects.");
+      result.errors.push("Authentication required. Please sign in to an authenticated account to import local projects.");
       return result;
     }
 
