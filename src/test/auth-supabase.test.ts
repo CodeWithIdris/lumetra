@@ -118,24 +118,49 @@ describe("Supabase Persistence Client", () => {
   });
 
   it("safeguards projects into the persistent cloud vault", async () => {
+    const MOCK_USER_ID = "11111111-1111-4111-8111-111111111111";
     const sampleRecord = {
       id: "proj_99",
+      user_id: MOCK_USER_ID,
       name: "Latency Analysis",
       csv_content: "latency,qps\n10,100",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       status: "data-loaded",
+      datasets: [
+        {
+          id: "11111111-1111-4111-8111-111111111112",
+          project_id: "proj_99",
+          user_id: MOCK_USER_ID,
+          name: "telemetry.csv",
+          row_count: 100,
+          column_count: 5,
+          csv_content: "latency,qps\n10,100",
+        },
+      ],
+      saved_analyses: [],
     };
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([sampleRecord]), {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("/auth/v1/")) {
+        return new Response(
+          JSON.stringify({
+            user: { id: MOCK_USER_ID, email: "user@lumetra.io" },
+            session: { user: { id: MOCK_USER_ID } },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify([sampleRecord]), {
         status: 200,
         headers: { "Content-Type": "application/json" },
-      }),
-    );
+      });
+    });
 
     const supabase = getSupabaseClient();
     const project = {
       id: "proj_99",
+      userId: MOCK_USER_ID,
       name: "Latency Analysis",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -149,7 +174,7 @@ describe("Supabase Persistence Client", () => {
       },
     };
 
-    const res = await supabase.saveProject(project, "latency,qps\n10,100");
+    const res = await supabase.saveProject(project, "latency,qps\n10,100", MOCK_USER_ID);
     expect(res.ok).toBe(true);
 
     const loaded = await supabase.loadProject("proj_99");

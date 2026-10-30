@@ -37,8 +37,10 @@ import {
   Plus,
   CheckCircle2,
   AlertCircle,
+  UploadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AuthModal } from "@/components/AuthModal";
 
 export const Route = createFileRoute("/projects")({
   head: () =>
@@ -64,6 +66,7 @@ function Projects() {
     deleteProject,
     duplicateProject,
     createProject,
+    saveAsProject,
     active,
     activeProject,
     startNew,
@@ -79,6 +82,8 @@ function Projects() {
   const [draft, setDraft] = useState("");
   const [toDelete, setToDelete] = useState<ProjectMeta | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [unsavedDialogOpen, setUnsavedDialogOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"updatedAt" | "name" | "rows">("updatedAt");
   const [sortAsc, setSortAsc] = useState(false);
@@ -123,17 +128,117 @@ function Projects() {
     }
   };
 
-  const handleSyncAll = async () => {
+  const executeSync = async () => {
     setSyncing(true);
     const res = await syncWithCloud();
     setSyncing(false);
     if (res.success) {
       toast.success(
-        `Synchronized ${res.count ?? projects.length} project record(s) with Supabase Cloud.`,
+        `Synchronized and verified ${res.count ?? projects.length} project(s) in Supabase PostgreSQL Cloud.`,
       );
     } else {
-      toast.error(res.error || "Sync encountered an error.");
+      if (res.state === "not_authenticated") {
+        toast.error("Please sign in to your account to synchronize projects with Supabase Cloud.", {
+          action: {
+            label: "Sign In",
+            onClick: () => setAuthOpen(true),
+          },
+        });
+      } else if (res.state === "partially_synced") {
+        toast.warning(
+          `Partially synchronized: ${res.count ?? 0} of ${res.total ?? projects.length} projects verified. ${res.error ?? ""}`,
+        );
+      } else {
+        toast.error(res.error || "Database synchronization failed.");
+      }
     }
+  };
+
+  const handleSyncClick = () => {
+    if (cloudSyncStatus.state === "not_configured") {
+      navigate({ to: "/settings" });
+      return;
+    }
+    if (cloudSyncStatus.state === "not_authenticated" || !user) {
+      setAuthOpen(true);
+      return;
+    }
+    if (active && !activeProject) {
+      setUnsavedDialogOpen(true);
+      return;
+    }
+    executeSync();
+  };
+
+  const handleSaveActiveAndSync = async () => {
+    setUnsavedDialogOpen(false);
+    if (active && !activeProject) {
+      const saved = saveAsProject(active.dataset.name);
+      if (saved) {
+        toast.success(`Project "${saved.name}" saved locally.`);
+      }
+    }
+    await executeSync();
+  };
+
+  const handleSyncSavedOnly = async () => {
+    setUnsavedDialogOpen(false);
+    await executeSync();
+  };
+
+  const renderSyncButton = () => {
+    if (cloudSyncStatus.state === "not_configured") {
+      return (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate({ to: "/settings" })}
+          className="h-8 border-amber-300 bg-amber-50 text-xs text-amber-900 hover:bg-amber-100 font-medium"
+        >
+          <Cloud className="mr-1.5 size-3.5 text-amber-600" />
+          <span>Configure Cloud</span>
+        </Button>
+      );
+    }
+
+    if (cloudSyncStatus.state === "not_authenticated" || !user) {
+      return (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setAuthOpen(true)}
+          className="h-8 border-blue-300 bg-blue-50/50 text-xs text-blue-800 hover:bg-blue-100/50 font-medium"
+        >
+          <Cloud className="mr-1.5 size-3.5 text-blue-600" />
+          <span>Sign In to Sync</span>
+        </Button>
+      );
+    }
+
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={syncing || cloudSyncStatus.isSyncing}
+        onClick={handleSyncClick}
+        className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+      >
+        <RefreshCw
+          className={`mr-1.5 size-3.5 text-slate-500 ${
+            syncing || cloudSyncStatus.isSyncing ? "animate-spin" : ""
+          }`}
+        />
+        <span>
+          {syncing || cloudSyncStatus.isSyncing
+            ? "Syncing..."
+            : cloudSyncStatus.state === "partially_synced"
+              ? "Retry Partial Sync"
+              : cloudSyncStatus.state === "failed"
+                ? "Retry Sync"
+                : "Sync to Supabase"}
+        </span>
+      </Button>
+    );
   };
 
   // Filter & sort projects
@@ -181,18 +286,7 @@ function Projects() {
         description="Structured records of your analytical datasets, parameters, and findings."
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={syncing}
-              onClick={handleSyncAll}
-              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
-            >
-              <RefreshCw
-                className={`mr-1.5 size-3.5 text-slate-500 ${syncing ? "animate-spin" : ""}`}
-              />
-              <span>{syncing ? "Syncing..." : "Sync to Supabase"}</span>
-            </Button>
+            {renderSyncButton()}
             <Button
               size="sm"
               className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
@@ -209,6 +303,69 @@ function Projects() {
         }
       />
 
+      {/* Cloud Diagnostics & Status Banners */}
+      {cloudSyncStatus.state === "failed" && cloudSyncStatus.errorMessage && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="size-4 text-red-600 shrink-0" />
+            <span>
+              <strong>Cloud Synchronization Error:</strong> {cloudSyncStatus.errorMessage}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-red-300 bg-white text-red-900 hover:bg-red-100 shrink-0"
+            onClick={executeSync}
+            disabled={syncing}
+          >
+            Retry Sync
+          </Button>
+        </div>
+      )}
+
+      {cloudSyncStatus.state === "partially_synced" && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="size-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Partial Synchronization:</strong> {cloudSyncStatus.syncedCount} of{" "}
+              {cloudSyncStatus.totalCount} projects verified in Supabase Cloud.{" "}
+              {cloudSyncStatus.errorMessage ? `(${cloudSyncStatus.errorMessage})` : ""}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-amber-300 bg-white text-amber-900 hover:bg-amber-100 shrink-0"
+            onClick={executeSync}
+            disabled={syncing}
+          >
+            Retry Remaining
+          </Button>
+        </div>
+      )}
+
+      {!user && (
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-700 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <HardDrive className="size-4 text-slate-500 shrink-0" />
+            <span>
+              You are currently viewing <strong>local browser vault</strong> projects. Sign in to
+              synchronize your datasets and findings with Supabase Cloud.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-blue-300 bg-white text-blue-700 hover:bg-blue-50 shrink-0"
+            onClick={() => setAuthOpen(true)}
+          >
+            Sign In
+          </Button>
+        </div>
+      )}
+
       {/* Save Status / Error Notification */}
       {saveState === "error" && lastSaveError && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900 flex items-center gap-2">
@@ -222,16 +379,29 @@ function Projects() {
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 flex items-center justify-between gap-3">
           <span>
             You have an active unsaved session with <strong>{active.dataset.name}</strong>. Save it
-            from the Data Workspace to record it permanently.
+            as a project to record it permanently and sync with the cloud.
           </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs border-amber-300 bg-white text-amber-900 hover:bg-amber-100/50 shrink-0"
-            onClick={() => navigate({ to: "/workspace" })}
-          >
-            Go to Workspace
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-amber-300 bg-white text-amber-900 hover:bg-amber-100/50"
+              onClick={() => {
+                const p = saveAsProject(active.dataset.name);
+                if (p) toast.success(`Project "${p.name}" saved.`);
+              }}
+            >
+              Save as Project
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-amber-300 bg-white text-amber-900 hover:bg-amber-100/50"
+              onClick={() => navigate({ to: "/workspace" })}
+            >
+              Go to Workspace
+            </Button>
+          </div>
         </div>
       )}
 
@@ -407,10 +577,35 @@ function Projects() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-mono">
-                          <HardDrive className="size-3 text-slate-400" />
-                          <span>Local Vault</span>
-                        </span>
+                        {p.isCloudSynced ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-mono"
+                            title={
+                              p.cloudSyncedAt
+                                ? `Verified and synced to Supabase Cloud on ${new Date(p.cloudSyncedAt).toLocaleString()}`
+                                : "Verified and synced to Supabase Cloud"
+                            }
+                          >
+                            <Cloud className="size-3 text-emerald-600 shrink-0" />
+                            <span>Cloud Synced</span>
+                          </span>
+                        ) : p.cloudSyncError ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] text-red-700 font-mono"
+                            title={p.cloudSyncError}
+                          >
+                            <AlertCircle className="size-3 text-red-600 shrink-0" />
+                            <span>Sync Failed</span>
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 text-[11px] text-slate-600 font-mono"
+                            title="Stored locally in browser IndexedDB vault"
+                          >
+                            <HardDrive className="size-3 text-slate-400 shrink-0" />
+                            <span>Local Vault</span>
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -513,7 +708,13 @@ function Projects() {
           </div>
           <span>
             {user
-              ? `Account: ${user.name} (${cloudSyncStatus.lastSyncedAt ? "Cloud Synced" : "Local Vault"})`
+              ? `Account: ${user.name} (${
+                  cloudSyncStatus.state === "synced"
+                    ? "Cloud Synced"
+                    : cloudSyncStatus.state === "partially_synced"
+                      ? "Partially Synced"
+                      : "Local Vault"
+                })`
               : `Local Vault (${projects.length} saved)`}
           </span>
         </div>
@@ -611,6 +812,46 @@ function Projects() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Active Unsaved Session Prompt Dialog */}
+      <AlertDialog open={unsavedDialogOpen} onOpenChange={setUnsavedDialogOpen}>
+        <AlertDialogContent className="bg-white text-slate-900 border-slate-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm font-semibold">
+              Active Unsaved Session Detected
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-600 leading-relaxed">
+              You have an active dataset session for{" "}
+              <strong>{active?.dataset.name || "microservice-telemetry.csv"}</strong> that has not
+              yet been saved as a project. Would you like to save it as a project now so that it is
+              included in your Supabase Cloud synchronization?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-end">
+            <AlertDialogCancel className="h-8 text-xs border-slate-300 text-slate-700">
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncSavedOnly}
+              className="h-8 text-xs border-slate-300 text-slate-700"
+            >
+              Sync Saved Only
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveActiveAndSync}
+              className="h-8 text-xs bg-blue-600 text-white hover:bg-blue-700 font-medium"
+            >
+              Save as Project & Sync All
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Auth Modal for signing in to sync */}
+      <AuthModal open={authOpen} onOpenChange={setAuthOpen} defaultTab="login" />
     </div>
   );
 }

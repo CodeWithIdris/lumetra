@@ -215,8 +215,26 @@ function Settings() {
               >
                 {configStatus.isConfigured ? "Connected" : "Unconfigured"}
               </span>
-              <span className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-mono text-slate-600">
-                {cloudSyncStatus.lastSyncedAt ? "Synced" : "Local Vault"}
+              <span
+                className={`rounded border px-2 py-0.5 text-[10px] font-mono ${
+                  cloudSyncStatus.state === "synced"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : cloudSyncStatus.state === "partially_synced"
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : cloudSyncStatus.state === "failed"
+                        ? "border-red-200 bg-red-50 text-red-800"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                }`}
+              >
+                {cloudSyncStatus.state === "synced"
+                  ? "Cloud Synced"
+                  : cloudSyncStatus.state === "partially_synced"
+                    ? `Partially Synced (${cloudSyncStatus.syncedCount}/${cloudSyncStatus.totalCount})`
+                    : cloudSyncStatus.state === "failed"
+                      ? "Sync Failed"
+                      : !user
+                        ? "Local Vault (Signed Out)"
+                        : "Local Vault"}
               </span>
             </div>
           </div>

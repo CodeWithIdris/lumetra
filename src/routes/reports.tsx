@@ -16,7 +16,18 @@ import {
 import { fmt } from "@/lib/stats/descriptive";
 import { descriptiveToCsv, downloadText, generateReportMarkdown } from "@/lib/data/export";
 import { pageMeta } from "@/lib/meta";
-import { Printer, Download, FileText, Wand2, Layers, AlertTriangle, FileCode } from "lucide-react";
+import {
+  Cloud,
+  Printer,
+  Download,
+  FileText,
+  Wand2,
+  Layers,
+  AlertTriangle,
+  FileCode,
+} from "lucide-react";
+import { toast } from "sonner";
+import { getSupabaseClient } from "@/lib/persistence/supabase";
 
 export const Route = createFileRoute("/reports")({
   head: () =>
@@ -387,12 +398,13 @@ function AnalysisResultsSummary({ analysis }: { analysis: SavedAnalysis }) {
 }
 
 function Reports() {
-  const { active, activeProject, setObjective, rawDataset, cleaningSteps, savedAnalyses } =
+  const { active, activeProject, setObjective, rawDataset, cleaningSteps, savedAnalyses, user } =
     useStore();
   const navigate = useNavigate();
   const ds = active?.dataset;
   const report = useMemo(() => (ds ? runDescriptive(ds) : null), [ds]);
   const [objective, setObj] = useState("");
+  const [savingReport, setSavingReport] = useState(false);
 
   useEffect(() => {
     setObj(activeProject?.objective || activeProject?.description || "");
@@ -441,6 +453,53 @@ function Reports() {
     downloadText(`${(activeProject?.name ?? ds.name).replace(/\.[^.]+$/, "")}-report.md`, md);
   };
 
+  const handleSaveReportToCloud = async () => {
+    if (!activeProject) {
+      toast.error("Please save your project in Data Workspace before persisting reports to cloud.");
+      return;
+    }
+    if (!user) {
+      toast.error("Please sign in to an authenticated account to save reports to Supabase.");
+      return;
+    }
+
+    setSavingReport(true);
+    const md = generateReportMarkdown({
+      projectName: activeProject.name,
+      objective,
+      datasetName: ds.name,
+      rawRowCount: rawDataset?.rows.length ?? ds.rows.length,
+      cleanRowCount: ds.rows.length,
+      columnCount: ds.columns.length,
+      columnsList: ds.columns,
+      cleaningSteps,
+      savedAnalyses,
+      descriptiveReport: report,
+    });
+
+    const supabase = getSupabaseClient();
+    const res = await supabase.saveReport({
+      projectId: activeProject.id,
+      title: `${activeProject.name} Analytical Report`,
+      markdown: md,
+      objective,
+      userId: user.id,
+      summary: {
+        rawRows: rawDataset?.rows.length ?? ds.rows.length,
+        cleanRows: ds.rows.length,
+        columns: ds.columns.length,
+        analysesCount: savedAnalyses.length,
+      },
+    });
+
+    setSavingReport(false);
+    if (res.ok) {
+      toast.success("Analytical report successfully saved and verified in Supabase Cloud.");
+    } else {
+      toast.error(res.error || "Failed to save report to Supabase.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -448,6 +507,16 @@ function Reports() {
         description="Structured analytical summary generated across dataset inventory, cleaning transformations, and completed analyses."
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={savingReport}
+              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+              onClick={handleSaveReportToCloud}
+            >
+              <Cloud className="mr-1.5 size-3.5 text-blue-600" />
+              {savingReport ? "Saving..." : "Save Report to Supabase"}
+            </Button>
             <Button
               variant="outline"
               size="sm"

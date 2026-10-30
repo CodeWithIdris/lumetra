@@ -396,7 +396,8 @@ class SupabaseService {
     if (!this.isConfigured()) {
       return {
         ok: false,
-        error: "Supabase database credentials are not configured. Please configure them in Settings.",
+        error:
+          "Supabase database credentials are not configured. Please configure them in Settings.",
       };
     }
 
@@ -472,7 +473,8 @@ class SupabaseService {
             name: project.dataset?.name || `${project.name}.csv`,
             source: project.dataset?.source || "upload",
             row_count: project.dataset?.rows || 0,
-            column_count: project.dataset?.columns || (columnsList.length > 0 ? columnsList.length : 0),
+            column_count:
+              project.dataset?.columns || (columnsList.length > 0 ? columnsList.length : 0),
             columns: (columnsList as unknown) || [],
             delimiter: ",",
             cleaning_steps: (project.cleaningSteps as unknown) || [],
@@ -933,7 +935,9 @@ class SupabaseService {
 
     if (!currentUserId || !isValidUuid(currentUserId)) {
       result.success = false;
-      result.errors.push("Authentication required. Please sign in to an authenticated account to import local projects.");
+      result.errors.push(
+        "Authentication required. Please sign in to an authenticated account to import local projects.",
+      );
       return result;
     }
 

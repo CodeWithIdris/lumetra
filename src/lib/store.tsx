@@ -181,6 +181,64 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+export function computeSyncStatus(
+  configured: boolean,
+  u: UserProfile | null,
+  projs: ProjectMeta[],
+  lastSynced: string | null = null,
+  err: string | null = null,
+): CloudSyncStatus {
+  if (!configured) {
+    return {
+      state: "not_configured",
+      isConfigured: false,
+      isSyncing: false,
+      lastSyncedAt: null,
+      errorMessage: "Supabase database credentials are not configured.",
+      syncedCount: 0,
+      totalCount: projs.length,
+    };
+  }
+
+  if (!u || !u.id || !isValidUuid(u.id)) {
+    return {
+      state: "not_authenticated",
+      isConfigured: true,
+      isSyncing: false,
+      lastSyncedAt: null,
+      errorMessage: "Sign in to an authenticated account to sync projects with Supabase Cloud.",
+      syncedCount: 0,
+      totalCount: projs.length,
+    };
+  }
+
+  const userProjects = projs.filter((p) => p.userId === u.id || !p.userId);
+  const total = userProjects.length;
+  const synced = userProjects.filter((p) => p.isCloudSynced).length;
+  const failed = userProjects.filter((p) => Boolean(p.cloudSyncError)).length;
+
+  let state: CloudSyncState = "ready";
+  if (total > 0 && synced === total) {
+    state = "synced";
+  } else if (synced > 0 && synced < total) {
+    state = "partially_synced";
+  } else if (failed > 0 && synced === 0) {
+    state = "failed";
+  } else {
+    state = "ready";
+  }
+
+  return {
+    state,
+    isConfigured: true,
+    isSyncing: false,
+    lastSyncedAt: lastSynced ?? (synced > 0 ? nowIso() : null),
+    errorMessage: err,
+    syncedCount: synced,
+    totalCount: total,
+  };
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [ready, setReady] = useState(false);
@@ -194,9 +252,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({
-    isConfigured: false,
+    state: isSupabaseConfigured() ? "not_authenticated" : "not_configured",
+    isConfigured: isSupabaseConfigured(),
     isSyncing: false,
     lastSyncedAt: null,
+    errorMessage: null,
+    syncedCount: 0,
+    totalCount: 0,
   });
 
   const activeRef = useRef<Active | null>(null);
@@ -241,11 +303,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       personaRef.current = initialPersona;
 
       const supabase = getSupabaseClient();
-      setCloudSyncStatus({
-        isConfigured: supabase.isConfigured(),
-        isSyncing: false,
-        lastSyncedAt: sessionUser ? nowIso() : null,
-      });
+      setCloudSyncStatus(computeSyncStatus(supabase.isConfigured(), sessionUser, loadedProjects));
 
       setReady(true);
     }
@@ -256,9 +314,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
       setUser(changedUser);
       setAuthLoading(false);
+      const supabase = getSupabaseClient();
       if (changedUser) {
         setPersona(changedUser.persona);
-        setProjects(loadProjectsForUser(changedUser.id));
+        const pList = loadProjectsForUser(changedUser.id);
+        setProjects(pList);
+        setCloudSyncStatus(computeSyncStatus(supabase.isConfigured(), changedUser, pList));
       } else {
         // Prevent data leaks on signout
         setActive(null);
@@ -267,7 +328,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         cleaningStepsRef.current = [];
         setSavedAnalyses([]);
         savedAnalysesRef.current = [];
-        setProjects(loadProjectsForUser(null));
+        const pList = loadProjectsForUser(null);
+        setProjects(pList);
+        setCloudSyncStatus(computeSyncStatus(supabase.isConfigured(), null, pList));
       }
     });
 
@@ -881,39 +944,171 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return signInWithGoogleOAuth();
   }, []);
 
-  const syncWithCloud = useCallback(async () => {
-    setCloudSyncStatus((prev) => ({ ...prev, isSyncing: true }));
+  const syncWithCloud = useCallback(async (): Promise<{
+    success: boolean;
+    state?: CloudSyncState;
+    count?: number;
+    total?: number;
+    error?: string;
+  }> => {
     const supabase = getSupabaseClient();
+    if (!supabase.isConfigured()) {
+      const err =
+        "Supabase database credentials are not configured. Please configure your Project URL and Anon Key in Settings.";
+      setCloudSyncStatus((prev) => ({
+        ...prev,
+        state: "not_configured",
+        isConfigured: false,
+        isSyncing: false,
+        errorMessage: err,
+      }));
+      return { success: false, state: "not_configured", error: err };
+    }
+
+    if (!user || !user.id || !isValidUuid(user.id)) {
+      const err =
+        "Authentication required. Please sign in to an authenticated Supabase account to sync your projects.";
+      setCloudSyncStatus((prev) => ({
+        ...prev,
+        state: "not_authenticated",
+        isConfigured: true,
+        isSyncing: false,
+        errorMessage: err,
+      }));
+      return { success: false, state: "not_authenticated", error: err };
+    }
+
+    setCloudSyncStatus((prev) => ({
+      ...prev,
+      state: "syncing",
+      isSyncing: true,
+      errorMessage: null,
+    }));
+
     try {
-      const currentProjects = loadProjects();
+      const allProjects = loadProjects();
+      const targetProjects = allProjects.filter((p) => p.userId === user.id || !p.userId);
+
+      if (targetProjects.length === 0) {
+        setCloudSyncStatus({
+          state: "ready",
+          isConfigured: true,
+          isSyncing: false,
+          lastSyncedAt: nowIso(),
+          syncedCount: 0,
+          totalCount: 0,
+          errorMessage: null,
+        });
+        return { success: true, state: "ready", count: 0, total: 0 };
+      }
+
       let syncedCount = 0;
-      for (const p of currentProjects) {
+      const errors: string[] = [];
+      let updatedAll = [...allProjects];
+
+      for (const p of targetProjects) {
         let csv: string | null = null;
+        let storedCols: string[] | undefined = undefined;
+
         if (p.dataset?.id) {
           const stored = await loadDataset(p.dataset.id).catch(() => null);
-          csv = stored?.csv || null;
+          if (stored) {
+            csv = stored.csv || null;
+            storedCols = stored.columns;
+          }
         }
         if (!csv) {
           const stored = await loadDatasetByProject(p.id).catch(() => null);
-          csv = stored?.csv || null;
+          if (stored) {
+            csv = stored.csv || null;
+            storedCols = stored.columns;
+          }
         }
         if (!csv) {
           csv = loadCsv(p.id);
         }
-        const res = await supabase.saveProject(p, csv, user?.id);
-        if (res.ok) syncedCount++;
+
+        const res = await supabase.saveProject(p, csv, user.id, { columns: storedCols });
+        const now = nowIso();
+
+        if (res.ok) {
+          syncedCount++;
+          const targetId = p.id;
+          const newId = res.remoteId || p.id;
+          updatedAll = updatedAll.map((item) =>
+            item.id === targetId
+              ? {
+                  ...item,
+                  id: newId,
+                  userId: user.id,
+                  isCloudSynced: true,
+                  cloudSyncedAt: now,
+                  cloudSyncError: undefined,
+                  dataset: item.dataset
+                    ? {
+                        ...item.dataset,
+                        id: res.datasetId || item.dataset.id,
+                        stored: true,
+                      }
+                    : null,
+                }
+              : item,
+          );
+        } else {
+          errors.push(`"${p.name}": ${res.error || "Save failed"}`);
+          updatedAll = updatedAll.map((item) =>
+            item.id === p.id
+              ? {
+                  ...item,
+                  isCloudSynced: false,
+                  cloudSyncError: res.error || "Sync failed",
+                }
+              : item,
+          );
+        }
       }
+
+      commit(updatedAll);
+
+      const totalCount = targetProjects.length;
+      let finalState: CloudSyncState = "failed";
+      if (syncedCount === totalCount) {
+        finalState = "synced";
+      } else if (syncedCount > 0) {
+        finalState = "partially_synced";
+      } else {
+        finalState = "failed";
+      }
+
+      const errMsg = errors.length > 0 ? errors.join("; ") : null;
       setCloudSyncStatus({
-        isConfigured: supabase.isConfigured(),
+        state: finalState,
+        isConfigured: true,
         isSyncing: false,
-        lastSyncedAt: nowIso(),
+        lastSyncedAt: syncedCount > 0 ? nowIso() : null,
+        errorMessage: errMsg,
+        syncedCount,
+        totalCount,
       });
-      return { success: true, count: syncedCount };
+
+      return {
+        success: syncedCount === totalCount,
+        state: finalState,
+        count: syncedCount,
+        total: totalCount,
+        error: errMsg ?? undefined,
+      };
     } catch (e) {
-      setCloudSyncStatus((prev) => ({ ...prev, isSyncing: false }));
-      return { success: false, error: e instanceof Error ? e.message : "Sync failed" };
+      const errMsg = e instanceof Error ? e.message : "Sync encountered an unexpected error.";
+      setCloudSyncStatus((prev) => ({
+        ...prev,
+        state: "failed",
+        isSyncing: false,
+        errorMessage: errMsg,
+      }));
+      return { success: false, state: "failed", error: errMsg };
     }
-  }, [user]);
+  }, [commit, user]);
 
   const importLocalProjects = useCallback(async (): Promise<CloudImportResult> => {
     setCloudSyncStatus((prev) => ({ ...prev, isSyncing: true }));
@@ -936,14 +1131,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return csv;
       });
 
-      setCloudSyncStatus({
-        isConfigured: supabase.isConfigured(),
-        isSyncing: false,
-        lastSyncedAt: nowIso(),
-      });
+      if (result.success && result.projects.length > 0) {
+        // Mark imported projects as cloud synced locally
+        const importedUuids = new Set(result.projects.map((p) => p.id));
+        const now = nowIso();
+        const updated = currentProjects.map((p) => {
+          const uId = toValidUuid(p.id);
+          if (importedUuids.has(uId)) {
+            return {
+              ...p,
+              id: uId,
+              userId: user?.id ?? p.userId,
+              isCloudSynced: true,
+              cloudSyncedAt: now,
+              cloudSyncError: undefined,
+            };
+          }
+          return p;
+        });
+        commit(updated);
+      }
+
+      const all = loadProjects();
+      setCloudSyncStatus(
+        computeSyncStatus(supabase.isConfigured(), user, all, result.success ? nowIso() : null),
+      );
       return result;
     } catch (e) {
-      setCloudSyncStatus((prev) => ({ ...prev, isSyncing: false }));
+      setCloudSyncStatus((prev) => ({ ...prev, isSyncing: false, state: "failed" }));
       return {
         success: false,
         imported: 0,
@@ -952,7 +1167,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         projects: [],
       };
     }
-  }, []);
+  }, [commit, user]);
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === (active?.projectId ?? activeProjectId)) ?? null,

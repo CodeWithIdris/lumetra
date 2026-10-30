@@ -7,6 +7,7 @@ import {
   generateUuid,
   toValidUuid,
 } from "@/lib/persistence/supabase";
+import { computeSyncStatus } from "@/lib/store";
 import type { ProjectMeta } from "@/lib/persistence/projects";
 import type { SavedAnalysis } from "@/lib/stats/analysis";
 
@@ -356,8 +357,8 @@ describe("Phase 4B: Row Level Security (RLS) & Multi-User Isolation", () => {
     };
 
     const res = await supabaseService.saveProject(project, "a,b\n1,2", USER_A_ID);
-    // Warning logged and local vault fallback preserved safely
-    expect(res).toBeDefined();
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("dataset persistence failed");
   });
 });
 
@@ -487,5 +488,184 @@ describe("Phase 4B: Local Project Import & Resilience", () => {
     expect(res.ok).toBe(false);
     expect(res.error).toContain("PGRST205");
     expect(res.error).toContain("20261029101800_create_lumetra_schema_and_rls.sql");
+  });
+});
+
+describe("Phase 4B.1: Persistence Flow Diagnostics & Robustness", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("rejects unauthenticated project save and does not report false success", async () => {
+    const supabaseService = getSupabaseClient();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/auth/v1/")) {
+        return new Response(JSON.stringify({ user: null, session: null }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const project: ProjectMeta = {
+      id: generateUuid(),
+      name: "Unauthenticated Work",
+      status: "no-data",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      dataset: null,
+    };
+
+    const res = await supabaseService.saveProject(project, null);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("Authentication required");
+  });
+
+  it("fails when an analysis child-record fails and does not produce a false success", async () => {
+    const supabaseService = getSupabaseClient();
+    const projectId = generateUuid();
+    const analysisId = generateUuid();
+
+    const analysis: SavedAnalysis = {
+      id: analysisId,
+      name: "Failing Analysis",
+      type: "correlation",
+      timestamp: new Date().toISOString(),
+      datasetId: generateUuid(),
+      datasetName: "data.csv",
+      datasetSignature: "sig",
+      variables: ["x", "y"],
+      configuration: {},
+      sampleSize: 10,
+      missingCount: 0,
+      missingHandling: "exclude",
+      results: {},
+      interpretation: { summary: "test" },
+      methodNotes: [],
+    };
+
+    const project: ProjectMeta = {
+      id: projectId,
+      userId: USER_A_ID,
+      name: "Project with Failing Analysis",
+      status: "analysed",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      dataset: null,
+      savedAnalyses: [analysis],
+    };
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/auth/v1/")) {
+        return new Response(JSON.stringify({ user: { id: USER_A_ID } }), { status: 200 });
+      }
+      if (init?.method === "POST" && urlStr.includes("/rest/v1/saved_analyses")) {
+        return new Response(
+          JSON.stringify({
+            code: "23503",
+            message: 'violates foreign key constraint "saved_analyses_project_id_fkey"',
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify([{ id: projectId }]), { status: 200 });
+    });
+
+    const res = await supabaseService.saveProject(project, null, USER_A_ID);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("failed to persist");
+  });
+
+  it("fails when remote read-back verification fails to confirm records", async () => {
+    const supabaseService = getSupabaseClient();
+    const projectId = generateUuid();
+
+    const project: ProjectMeta = {
+      id: projectId,
+      userId: USER_A_ID,
+      name: "Ghost Project",
+      status: "no-data",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      dataset: null,
+    };
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/auth/v1/")) {
+        return new Response(JSON.stringify({ user: { id: USER_A_ID } }), { status: 200 });
+      }
+      // Insert succeeds
+      if (init?.method === "POST") {
+        return new Response(JSON.stringify([{ id: projectId }]), { status: 201 });
+      }
+      // But read-back query returns empty (as if write was rolled back or deleted)
+      if (!init?.method || init.method === "GET") {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const res = await supabaseService.saveProject(project, null, USER_A_ID);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("Remote verification read-back failed");
+  });
+
+  it("accurately computes cloud sync state diagnostics", () => {
+    const mockUser = {
+      id: USER_A_ID,
+      email: "researcher@lumetra.io",
+      name: "Researcher",
+      persona: "engineer" as const,
+      isCloudSynced: true,
+      provider: "supabase" as const,
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    };
+
+    // 1. Not configured
+    const s1 = computeSyncStatus(false, mockUser, []);
+    expect(s1.state).toBe("not_configured");
+
+    // 2. Not authenticated
+    const s2 = computeSyncStatus(true, null, []);
+    expect(s2.state).toBe("not_authenticated");
+
+    // 3. Ready (authenticated, but projects not yet synced)
+    const p1: ProjectMeta = {
+      id: generateUuid(),
+      userId: USER_A_ID,
+      name: "Local Project",
+      status: "no-data",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      dataset: null,
+      isCloudSynced: false,
+    };
+    const s3 = computeSyncStatus(true, mockUser, [p1]);
+    expect(s3.state).toBe("ready");
+
+    // 4. Synced
+    const pSynced: ProjectMeta = {
+      ...p1,
+      isCloudSynced: true,
+      cloudSyncedAt: new Date().toISOString(),
+    };
+    const s4 = computeSyncStatus(true, mockUser, [pSynced]);
+    expect(s4.state).toBe("synced");
+
+    // 5. Partially Synced
+    const s5 = computeSyncStatus(true, mockUser, [pSynced, p1]);
+    expect(s5.state).toBe("partially_synced");
+
+    // 6. Failed
+    const pFailed: ProjectMeta = {
+      ...p1,
+      isCloudSynced: false,
+      cloudSyncError: "PostgreSQL constraint error",
+    };
+    const s6 = computeSyncStatus(true, mockUser, [pFailed]);
+    expect(s6.state).toBe("failed");
   });
 });
