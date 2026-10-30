@@ -62,6 +62,7 @@ class PersistenceCoordinator {
   private sequenceCounter = 0;
   private currentUserId: string | null = null;
   private isProcessing = false;
+  private activeProcessingPromise: Promise<void> | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<Listener>();
@@ -157,6 +158,7 @@ class PersistenceCoordinator {
    */
   public init(userId: string | null) {
     this.currentUserId = userId;
+    this.loadQueueFromStorage();
     if (userId) {
       // Reconcile unassociated pending writes with authenticated user ID
       let modified = false;
@@ -169,10 +171,6 @@ class PersistenceCoordinator {
       });
       if (modified) {
         this.saveQueueToStorage();
-      }
-
-      if (this.queue.length > 0 && this.isOnline) {
-        this.flushQueue(true);
       }
     }
     this.notify();
@@ -424,6 +422,20 @@ class PersistenceCoordinator {
 
   // --- Queue Processor ---
   public async flushQueue(force: boolean = false): Promise<void> {
+    if (this.activeProcessingPromise) {
+      await this.activeProcessingPromise;
+      return;
+    }
+
+    this.activeProcessingPromise = this.processQueueInternal(force);
+    try {
+      await this.activeProcessingPromise;
+    } finally {
+      this.activeProcessingPromise = null;
+    }
+  }
+
+  private async processQueueInternal(force: boolean = false): Promise<void> {
     if (this.isProcessing && !force) return;
     if (this.queue.length === 0) {
       this.status = "saved";
@@ -642,6 +654,7 @@ class PersistenceCoordinator {
     this.debounceTimer = null;
     this.retryTimer = null;
     this.isProcessing = false;
+    this.activeProcessingPromise = null;
     this.status = "saved";
     this.lastError = null;
     this.saveQueueToStorage();
