@@ -17,7 +17,6 @@ import { fmt } from "@/lib/stats/descriptive";
 import { descriptiveToCsv, downloadText, generateReportMarkdown } from "@/lib/data/export";
 import { pageMeta } from "@/lib/meta";
 import {
-  Cloud,
   Printer,
   Download,
   FileText,
@@ -27,7 +26,6 @@ import {
   FileCode,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getSupabaseClient } from "@/lib/persistence/supabase";
 
 export const Route = createFileRoute("/reports")({
   head: () =>
@@ -398,17 +396,81 @@ function AnalysisResultsSummary({ analysis }: { analysis: SavedAnalysis }) {
 }
 
 function Reports() {
-  const { active, activeProject, setObjective, rawDataset, cleaningSteps, savedAnalyses, user } =
-    useStore();
+  const {
+    active,
+    activeProject,
+    setObjective,
+    rawDataset,
+    cleaningSteps,
+    savedAnalyses,
+    user,
+    saveReport,
+    loadProjectReports,
+  } = useStore();
   const navigate = useNavigate();
   const ds = active?.dataset;
   const report = useMemo(() => (ds ? runDescriptive(ds) : null), [ds]);
   const [objective, setObj] = useState("");
-  const [savingReport, setSavingReport] = useState(false);
+  const [savedReportsList, setSavedReportsList] = useState<Array<{ id: string; title: string; created_at: string }>>([]);
 
   useEffect(() => {
     setObj(activeProject?.objective || activeProject?.description || "");
   }, [activeProject?.id, activeProject?.objective, activeProject?.description]);
+
+  // Load project reports history if active
+  useEffect(() => {
+    if (activeProject?.id) {
+      loadProjectReports(activeProject.id)
+        .then((reps) => {
+          setSavedReportsList(reps.map((r) => ({ id: r.id, title: r.title, created_at: r.created_at })));
+        })
+        .catch(() => {});
+    }
+  }, [activeProject?.id, loadProjectReports]);
+
+  // Automatic report persistence whenever dataset, objective, cleaning, or analyses change
+  useEffect(() => {
+    if (activeProject && ds && report) {
+      const timer = setTimeout(() => {
+        const md = generateReportMarkdown({
+          projectName: activeProject.name,
+          objective,
+          datasetName: ds.name,
+          rawRowCount: rawDataset?.rows.length ?? ds.rows.length,
+          cleanRowCount: ds.rows.length,
+          columnCount: ds.columns.length,
+          columnsList: ds.columns,
+          cleaningSteps,
+          savedAnalyses,
+          descriptiveReport: report,
+        });
+
+        saveReport({
+          projectId: activeProject.id,
+          title: `${activeProject.name} Analytical Report`,
+          markdown: md,
+          objective,
+          summary: {
+            rawRows: rawDataset?.rows.length ?? ds.rows.length,
+            cleanRows: ds.rows.length,
+            columns: ds.columns.length,
+            analysesCount: savedAnalyses.length,
+          },
+        }).catch(() => {});
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [
+    activeProject?.id,
+    objective,
+    ds,
+    report,
+    rawDataset?.rows.length,
+    cleaningSteps,
+    savedAnalyses,
+    saveReport,
+  ]);
 
   if (!ds || !report) {
     return (
@@ -453,53 +515,6 @@ function Reports() {
     downloadText(`${(activeProject?.name ?? ds.name).replace(/\.[^.]+$/, "")}-report.md`, md);
   };
 
-  const handleSaveReportToCloud = async () => {
-    if (!activeProject) {
-      toast.error("Please save your project in Data Workspace before persisting reports to cloud.");
-      return;
-    }
-    if (!user) {
-      toast.error("Please sign in to an authenticated account to save reports to Supabase.");
-      return;
-    }
-
-    setSavingReport(true);
-    const md = generateReportMarkdown({
-      projectName: activeProject.name,
-      objective,
-      datasetName: ds.name,
-      rawRowCount: rawDataset?.rows.length ?? ds.rows.length,
-      cleanRowCount: ds.rows.length,
-      columnCount: ds.columns.length,
-      columnsList: ds.columns,
-      cleaningSteps,
-      savedAnalyses,
-      descriptiveReport: report,
-    });
-
-    const supabase = getSupabaseClient();
-    const res = await supabase.saveReport({
-      projectId: activeProject.id,
-      title: `${activeProject.name} Analytical Report`,
-      markdown: md,
-      objective,
-      userId: user.id,
-      summary: {
-        rawRows: rawDataset?.rows.length ?? ds.rows.length,
-        cleanRows: ds.rows.length,
-        columns: ds.columns.length,
-        analysesCount: savedAnalyses.length,
-      },
-    });
-
-    setSavingReport(false);
-    if (res.ok) {
-      toast.success("Analytical report successfully saved and verified in Supabase Cloud.");
-    } else {
-      toast.error(res.error || "Failed to save report to Supabase.");
-    }
-  };
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -510,21 +525,38 @@ function Reports() {
             <Button
               variant="outline"
               size="sm"
-              disabled={savingReport}
-              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
-              onClick={handleSaveReportToCloud}
-            >
-              <Cloud className="mr-1.5 size-3.5 text-blue-600" />
-              {savingReport ? "Saving..." : "Save Report to Supabase"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
               onClick={handleExportMarkdown}
             >
               <FileCode className="mr-1.5 size-3.5 text-slate-500" />
               Export Markdown
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+              onClick={() =>
+                downloadText(
+                  `${ds.name.replace(/\.[^.]+$/, "")}-report.csv`,
+                  descriptiveToCsv(report),
+                )
+              }
+            >
+              <Download className="mr-1.5 size-3.5 text-slate-500" />
+              Export Descriptives CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+              onClick={() => window.print()}
+            >
+              <Printer className="mr-1.5 size-3.5 text-slate-500" />
+              Print / Save as PDF
+            </Button>
+          </div>
+        }
+      />
             </Button>
             <Button
               variant="outline"

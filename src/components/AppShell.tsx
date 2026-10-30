@@ -73,12 +73,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     persona,
     setPersona,
     user,
-    cloudSyncStatus,
-    saveState,
-    lastSaveError,
+    persistenceState,
   } = useStore();
   const [authOpen, setAuthOpen] = useState(false);
-  const [authTab, setAuthTab] = useState<"signup" | "login" | "supabase">("signup");
+  const [authTab, setAuthTab] = useState<"signup" | "login" | "magic" | "reset">("signup");
   const [personaOpen, setPersonaOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -201,16 +199,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               />
               <span>Local Engine</span>
             </span>
-            <button
-              onClick={() => {
-                setAuthTab("supabase");
-                setAuthOpen(true);
-              }}
-              className="font-mono text-[10px] text-slate-500 hover:text-slate-800 hover:underline"
-              title="Storage persistence"
-            >
-              {cloudSyncStatus.lastSyncedAt ? "Cloud Synced" : "Local Vault"}
-            </button>
+            <div className="flex items-center gap-1 font-mono text-[10px] text-slate-500">
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span>{persistenceState.status === "saved" ? "Saved" : persistenceState.statusText}</span>
+            </div>
           </div>
         </div>
       </aside>
@@ -257,50 +249,62 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {/* Top Bar Controls */}
           <div className="flex items-center gap-2">
-            {/* Save & Persistence Indicator (Requirement 1) */}
-            {activeProject && (
-              <div
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border ${
-                  saveState === "error"
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : saveState === "saving"
+            {/* Save & Persistence Indicator (Requirement 1 & 9) */}
+            <div
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border ${
+                persistenceState.status === "error"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : persistenceState.status === "retrying"
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : persistenceState.status === "saving"
                       ? "border-blue-200 bg-blue-50 text-blue-700"
-                      : "border-slate-200 bg-slate-50 text-slate-600"
-                }`}
-                title={
-                  saveState === "error"
-                    ? (lastSaveError ?? "Save failed")
-                    : saveState === "saving"
-                      ? "Saving changes to vault..."
-                      : "All project changes saved"
-                }
-              >
-                {saveState === "saving" && (
-                  <>
-                    <Loader2 className="size-3 animate-spin text-blue-600" />
-                    <span className="hidden sm:inline">Saving...</span>
-                  </>
-                )}
-                {saveState === "saved" && (
-                  <>
-                    <CheckCircle2 className="size-3 text-emerald-600" />
-                    <span className="text-emerald-700 hidden sm:inline">Saved</span>
-                  </>
-                )}
-                {saveState === "error" && (
-                  <>
-                    <AlertCircle className="size-3 text-red-600" />
-                    <span className="text-red-600 hidden sm:inline">Save failed</span>
-                  </>
-                )}
-                {saveState === "pending" && (
-                  <>
-                    <span className="size-1.5 rounded-full bg-amber-500" />
-                    <span className="text-amber-700 hidden sm:inline">Unsaved</span>
-                  </>
-                )}
-              </div>
-            )}
+                      : persistenceState.status === "offline"
+                        ? "border-slate-200 bg-slate-100 text-slate-600"
+                        : persistenceState.status === "pending"
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+              title={persistenceState.error ?? persistenceState.statusText}
+            >
+              {persistenceState.status === "saving" && (
+                <>
+                  <Loader2 className="size-3 animate-spin text-blue-600" />
+                  <span className="hidden sm:inline">Saving...</span>
+                </>
+              )}
+              {persistenceState.status === "saved" && (
+                <>
+                  <CheckCircle2 className="size-3 text-emerald-600" />
+                  <span className="text-emerald-700 hidden sm:inline">
+                    {activeProject ? "Saved" : persistenceState.statusText}
+                  </span>
+                </>
+              )}
+              {persistenceState.status === "offline" && (
+                <>
+                  <span className="size-1.5 rounded-full bg-slate-400" />
+                  <span className="text-slate-600 hidden sm:inline">Working offline</span>
+                </>
+              )}
+              {persistenceState.status === "pending" && (
+                <>
+                  <span className="size-1.5 rounded-full bg-amber-500" />
+                  <span className="text-amber-700 hidden sm:inline">Changes pending</span>
+                </>
+              )}
+              {persistenceState.status === "retrying" && (
+                <>
+                  <Loader2 className="size-3 animate-spin text-amber-600" />
+                  <span className="text-amber-700 hidden sm:inline">Couldn't save changes. Retrying...</span>
+                </>
+              )}
+              {persistenceState.status === "error" && (
+                <>
+                  <AlertCircle className="size-3 text-red-600" />
+                  <span className="text-red-600 hidden sm:inline">Save failed</span>
+                </>
+              )}
+            </div>
             {/* Compact Professional Persona Selector */}
             <div className="relative">
               <button
@@ -356,7 +360,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {user ? (
               <button
                 onClick={() => {
-                  setAuthTab("supabase");
+                  setAuthTab("login");
                   setAuthOpen(true);
                 }}
                 className="flex items-center gap-1.5 rounded border border-slate-200 px-2 h-7 text-xs text-slate-700 hover:bg-slate-50"

@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,16 +15,9 @@ import { PageHeader } from "@/components/AppShell";
 import { useStore } from "@/lib/store";
 import { pageMeta } from "@/lib/meta";
 import { PERSONAS, type PersonaId } from "@/lib/stats/personas";
-import {
-  loadSupabaseConfig,
-  saveSupabaseConfig,
-  getSupabaseClient,
-} from "@/lib/persistence/supabase";
-import { validateSupabaseConfig } from "@/integrations/supabase/client";
 import { getStorageEstimate, type StorageEstimateInfo } from "@/lib/persistence/indexeddb";
 import { toast } from "sonner";
 import {
-  Database,
   ShieldCheck,
   Check,
   HardDrive,
@@ -35,15 +26,15 @@ import {
   Boxes,
   Target,
   HeartPulse,
-  RefreshCw,
-  UploadCloud,
+  Trash2,
+  CheckCircle2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
   head: () =>
     pageMeta(
       "Settings",
-      "Account, Supabase cloud persistence, and professional analytical settings for Lumetra.",
+      "Account, persistence, and analytical preferences for Lumetra.",
     ),
   component: Settings,
 });
@@ -63,12 +54,11 @@ function Settings() {
     persona,
     setPersona,
     user,
-    syncWithCloud,
+    persistenceState,
     importLocalProjects,
-    cloudSyncStatus,
   } = useStore();
   const [confirm, setConfirm] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [associating, setAssociating] = useState(false);
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimateInfo | null>(null);
 
   useEffect(() => {
@@ -77,65 +67,36 @@ function Settings() {
       .catch(() => {});
   }, [projects]);
 
-  // Supabase connection state
-  const config = loadSupabaseConfig();
-  const configStatus = validateSupabaseConfig();
-  const [supaUrl, setSupaUrl] = useState(config.url);
-  const [supaKey, setSupaKey] = useState(config.anonKey);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-
-  const handleTestConnection = async () => {
-    setTesting(true);
-    setTestResult(null);
-    const supabase = getSupabaseClient();
-    const res = await supabase.testConnection(supaUrl, supaKey);
-    setTesting(false);
-    setTestResult(res);
-    if (res.ok) {
-      saveSupabaseConfig({ url: supaUrl, anonKey: supaKey });
-      toast.success("Successfully connected to Supabase Cloud.");
-    } else {
-      toast.error(res.message);
-    }
-  };
-
-  const handleSaveConfig = () => {
-    saveSupabaseConfig({ url: supaUrl, anonKey: supaKey });
-    toast.success("Supabase database configuration saved.");
-  };
-
-  const handleImportLocalProjects = async () => {
-    if (!user) {
-      toast.error("Please sign in to an authenticated account before importing local projects.");
-      return;
-    }
-    setImporting(true);
+  const handleAssociateLocalProjects = async () => {
+    if (!user) return;
+    setAssociating(true);
     try {
       const res = await importLocalProjects();
       if (res.success && res.imported > 0) {
-        toast.success(
-          `Successfully imported and verified ${res.imported} project(s) to PostgreSQL cloud storage.`,
-        );
+        toast.success(`Associated and verified ${res.imported} project(s) to your account.`);
       } else if (res.skipped > 0 && res.imported === 0) {
-        toast.info(
-          `All ${res.skipped} local project(s) are already synchronized with your cloud database.`,
-        );
+        toast.info("All local projects are already associated with your account.");
       } else if (!res.success) {
-        toast.error(res.errors[0] || "Import encountered an error.");
+        toast.error(res.errors[0] || "Could not associate local projects.");
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to import local projects.");
+      toast.error(e instanceof Error ? e.message : "Failed to associate projects.");
     } finally {
-      setImporting(false);
+      setAssociating(false);
     }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        description="Configure your active professional persona, storage preferences, and cloud connectivity."
+        description="Configure your active professional persona, local working cache, and workspace settings."
       />
 
       <div className="max-w-4xl space-y-6">
@@ -190,147 +151,82 @@ function Settings() {
           </div>
         </section>
 
-        {/* Section 2: Storage & Supabase Cloud Integration */}
+        {/* Section 2: Storage & Working Cache */}
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <Database className="size-4 text-blue-600" />
+                <HardDrive className="size-4 text-blue-600" />
                 <h2 className="text-sm font-semibold text-slate-900">
-                  Cloud Persistence & Supabase Integration
+                  Workspace Storage & Cache
                 </h2>
               </div>
               <p className="mt-0.5 text-xs text-slate-600">
-                Configure your Supabase project credentials to synchronize projects, datasets, and
-                cached results.
+                All projects and analyses are automatically persisted as you work. Local browser cache provides instant offline capability.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span
-                className={`rounded border px-2 py-0.5 text-[10px] font-mono ${
-                  configStatus.isConfigured
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : "border-amber-200 bg-amber-50 text-amber-800"
-                }`}
-              >
-                {configStatus.isConfigured ? "Connected" : "Unconfigured"}
-              </span>
-              <span
-                className={`rounded border px-2 py-0.5 text-[10px] font-mono ${
-                  cloudSyncStatus.state === "synced"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : cloudSyncStatus.state === "partially_synced"
-                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                      : cloudSyncStatus.state === "failed"
-                        ? "border-red-200 bg-red-50 text-red-800"
-                        : "border-slate-200 bg-slate-50 text-slate-600"
-                }`}
-              >
-                {cloudSyncStatus.state === "synced"
-                  ? "Cloud Synced"
-                  : cloudSyncStatus.state === "partially_synced"
-                    ? `Partially Synced (${cloudSyncStatus.syncedCount}/${cloudSyncStatus.totalCount})`
-                    : cloudSyncStatus.state === "failed"
-                      ? "Sync Failed"
-                      : !user
-                        ? "Local Vault (Signed Out)"
-                        : "Local Vault"}
+              <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-mono text-emerald-800">
+                {user ? "Automatic Persistence Active" : "Saved to Device"}
               </span>
             </div>
           </div>
 
-          {!configStatus.isConfigured && (
-            <div className="rounded border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 leading-relaxed">
-              <strong>Configuration Notice:</strong> <code>VITE_SUPABASE_URL</code> and{" "}
-              <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> are not detected in the environment. Set
-              them in <code>.env.local</code> or Lovable Settings to enable Supabase Cloud
-              authentication and cloud database persistence. Never expose secret or service_role
-              keys.
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div className="rounded border border-slate-200 bg-slate-50/70 p-3 space-y-1">
+              <div className="text-[11px] text-slate-500 font-sans">Local Cache Usage</div>
+              <div className="text-base font-bold text-slate-900 font-mono">
+                {storageEstimate ? formatBytes(storageEstimate.usage) : "—"}
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono">
+                {storageEstimate ? `${storageEstimate.percentUsed.toFixed(2)}% of browser quota` : "Calculating..."}
+              </div>
             </div>
-          )}
 
-          <div className="grid gap-3 sm:grid-cols-2 pt-1">
-            <div className="space-y-1">
-              <Label className="text-xs font-medium text-slate-700">Supabase Project URL</Label>
-              <Input
-                placeholder="https://your-project.supabase.co"
-                value={supaUrl}
-                onChange={(e) => setSupaUrl(e.target.value)}
-                className="h-8 border-slate-300 bg-white text-xs font-mono text-slate-900"
-              />
+            <div className="rounded border border-slate-200 bg-slate-50/70 p-3 space-y-1">
+              <div className="text-[11px] text-slate-500 font-sans">Active Projects</div>
+              <div className="text-base font-bold text-slate-900 font-mono">
+                {projects.length}
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono">
+                {persistenceState.statusText}
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-medium text-slate-700">
-                Supabase Anon Public API Key
-              </Label>
-              <Input
-                type="password"
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                value={supaKey}
-                onChange={(e) => setSupaKey(e.target.value)}
-                className="h-8 border-slate-300 bg-white text-xs font-mono text-slate-900"
-              />
+
+            <div className="rounded border border-slate-200 bg-slate-50/70 p-3 space-y-1">
+              <div className="text-[11px] text-slate-500 font-sans">Account Status</div>
+              <div className="text-sm font-bold text-slate-900 truncate">
+                {user ? user.email : "Local Guest"}
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono">
+                {user ? "Cross-device sync enabled" : "Stored on this device"}
+              </div>
             </div>
           </div>
 
-          {testResult && (
-            <div
-              className={`rounded border p-3 text-xs ${
-                testResult.ok
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-red-200 bg-red-50 text-red-800"
-              }`}
-            >
-              {testResult.message}
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+            {user && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={associating}
+                onClick={handleAssociateLocalProjects}
+                className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
+              >
+                <CheckCircle2 className="mr-1.5 size-3.5 text-blue-600" />
+                {associating ? "Associating..." : "Associate Device Projects to Account"}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
               size="sm"
-              disabled={testing}
-              onClick={handleTestConnection}
-              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
+              onClick={() => setConfirm(true)}
+              className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50"
             >
-              {testing ? "Testing..." : "Test Connection"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSaveConfig}
-              className="h-8 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
-            >
-              Save Configuration
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={importing}
-              onClick={handleImportLocalProjects}
-              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
-            >
-              <UploadCloud className="mr-1.5 size-3.5 text-blue-500" />
-              {importing ? "Importing..." : "Import Local Projects to Cloud"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                const res = await syncWithCloud();
-                if (res.success) {
-                  toast.success("Synchronized project records with Supabase.");
-                } else {
-                  toast.error(res.error || "Sync error");
-                }
-              }}
-              className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
-            >
-              <RefreshCw className="mr-1.5 size-3.5 text-slate-400" />
-              Sync Projects Now
+              <Trash2 className="mr-1.5 size-3.5" />
+              Reset Local Storage
             </Button>
           </div>
         </section>
@@ -355,88 +251,20 @@ function Settings() {
               excluded from calculations. They are never coerced to zero.
             </p>
             <p>
-              • <strong>Storage Boundaries:</strong> Local analysis remains on this device by
-              default. When you configure and connect Supabase Cloud, project metadata and dataset
-              records are transmitted securely to your designated database endpoint.
+              • <strong>Seamless Persistence:</strong> Your projects, datasets, and analysis configurations
+              are automatically persisted to your account with PostgreSQL Row Level Security. All computation remains client-side.
             </p>
-          </div>
-        </section>
-
-        {/* Section 4: Local Storage & Quota Management */}
-        <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <HardDrive className="size-4 text-blue-600" />
-                <h2 className="text-sm font-semibold text-slate-900">Browser-Local Storage</h2>
-              </div>
-              <p className="mt-0.5 text-xs text-slate-600">
-                Datasets are stored locally using browser IndexedDB with metadata preserved in local
-                storage.
-              </p>
-            </div>
-            <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-mono text-emerald-700">
-              IndexedDB Active
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-            <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] text-slate-500">Local Projects</div>
-              <div className="text-sm font-bold text-slate-900 mt-0.5 font-mono">
-                {projects.length} project{projects.length === 1 ? "" : "s"}
-              </div>
-            </div>
-            <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] text-slate-500">Storage Used</div>
-              <div className="text-sm font-bold text-slate-900 mt-0.5 font-mono">
-                {storageEstimate
-                  ? `${(storageEstimate.usage / (1024 * 1024)).toFixed(1)} MB`
-                  : "Client managed"}
-              </div>
-            </div>
-            <div className="rounded border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] text-slate-500">Available Quota</div>
-              <div className="text-sm font-bold text-slate-900 mt-0.5 font-mono">
-                {storageEstimate && storageEstimate.quota > 0
-                  ? `${(storageEstimate.available / (1024 * 1024)).toFixed(0)} MB free (${storageEstimate.percentUsed.toFixed(1)}% used)`
-                  : "Browser managed"}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 space-y-1">
-            <div className="font-semibold text-amber-950 flex items-center gap-1.5">
-              <span>Notice on Browser-Local Persistence</span>
-            </div>
-            <p className="text-[11px] leading-relaxed text-amber-900">
-              Browser-local data is subject to client environment boundaries: clearing browser
-              cookies/site data, operating in private/incognito browsing windows, or disk space
-              pressure can lead to browser eviction. We strongly recommend exporting critical
-              datasets and analytical reports from the Export view.
-            </p>
-          </div>
-
-          <div className="pt-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-              onClick={() => setConfirm(true)}
-            >
-              Clear Browser Cache & Local Data
-            </Button>
           </div>
         </section>
       </div>
 
+      {/* Reset Confirmation Dialog */}
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent className="bg-white text-slate-900 border-slate-200">
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear local cached data?</AlertDialogTitle>
+            <AlertDialogTitle>Reset local working storage?</AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600">
-              All projects and locally cached datasets will be removed from this browser. Records
-              synced to Supabase Cloud remain intact.
+              This will clear cached datasets and projects stored in this browser session. Verified account records remain intact.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -445,12 +273,12 @@ function Settings() {
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 text-xs text-white hover:bg-red-700"
-              onClick={() => {
-                resetAll();
-                toast.success("Local browser cache cleared.");
+              onClick={async () => {
+                await resetAll();
+                toast.success("Local storage cache cleared.");
               }}
             >
-              Clear Cache
+              Reset Storage
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -448,7 +448,7 @@ function Workspace() {
             </div>
 
             <div className="mt-4 text-[11px] text-slate-400 font-mono">
-              Client-side in-memory execution • No unconsented cloud transfer • Maximum 20 MB
+              Client-side deterministic execution • Automatic persistence • Maximum 20 MB
             </div>
           </div>
         ) : (

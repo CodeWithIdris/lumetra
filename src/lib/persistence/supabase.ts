@@ -799,9 +799,10 @@ class SupabaseService {
   }
 
   /**
-   * Persists an analytical report linked to an owning project.
+   * Persists an analytical report linked to an owning project (idempotent upsert).
    */
   public async saveReport(report: {
+    id?: string;
     projectId: string;
     title: string;
     markdown: string;
@@ -809,53 +810,366 @@ class SupabaseService {
     summary?: Record<string, unknown>;
     userId?: string;
   }): Promise<{ ok: boolean; id?: string; error?: string }> {
-    if (!this.isConfigured()) {
-      return { ok: true, id: generateUuid() };
-    }
+    return this.upsertReportRecord(report, report.userId);
+  }
 
+  /**
+   * Resolve authenticated user ID from active Supabase session.
+   */
+  public async resolveSessionUserId(fallbackUserId?: string): Promise<string | null> {
     const client = getSupabaseClientInstance();
-    if (!client) {
-      return { ok: false, error: "Supabase client not initialized." };
-    }
-
-    let sessionUserId: string | null = report.userId ?? null;
+    if (!client) return fallbackUserId ?? null;
     try {
-      const { data } = await client.auth.getSession();
-      if (data.session?.user?.id) {
-        sessionUserId = data.session.user.id;
+      const { data: userData, error: userErr } = await client.auth.getUser();
+      if (!userErr && userData?.user?.id) {
+        return userData.user.id;
+      }
+      const { data: sessionData } = await client.auth.getSession();
+      if (sessionData?.session?.user?.id) {
+        return sessionData.session.user.id;
       }
     } catch {
-      // Unauthenticated
+      // ignore
+    }
+    return fallbackUserId ?? null;
+  }
+
+  /**
+   * Granular, idempotent upsert for a project record.
+   */
+  public async upsertProjectRecord(
+    project: ProjectMeta,
+    userId?: string,
+  ): Promise<{ ok: boolean; remoteId?: string; error?: string }> {
+    if (!this.isConfigured()) {
+      return { ok: false, error: "Database not configured." };
+    }
+    const client = getSupabaseClientInstance();
+    if (!client) {
+      return { ok: false, error: "Database client unavailable." };
     }
 
-    if (!sessionUserId) {
-      return { ok: false, error: "User is not authenticated." };
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+      return { ok: false, error: "Authentication required to persist project." };
     }
 
-    const reportId = generateUuid();
-    const projectUuid = toValidUuid(report.projectId);
+    const projectUuid = toValidUuid(project.id);
     const now = new Date().toISOString();
 
     try {
-      const { error } = await client.from("reports").insert({
-        id: reportId,
-        project_id: projectUuid,
-        user_id: sessionUserId,
-        title: report.title,
-        objective: report.objective || null,
-        content_markdown: report.markdown,
-        summary: (report.summary as unknown) || null,
-        created_at: now,
-        updated_at: now,
-      });
+      const { error } = await client.from("lumetra_projects").upsert(
+        {
+          id: projectUuid,
+          user_id: sessionUserId,
+          name: project.name,
+          description: project.description || null,
+          objective: project.objective || null,
+          status: project.status,
+          updated_at: now,
+        },
+        { onConflict: "id" },
+      );
 
       if (error) {
         return { ok: false, error: error.message };
       }
 
-      return { ok: true, id: reportId };
+      // Verification read-back
+      const { data, error: vErr } = await client
+        .from("lumetra_projects")
+        .select("id")
+        .eq("id", projectUuid)
+        .eq("user_id", sessionUserId)
+        .maybeSingle();
+
+      if (vErr || !data) {
+        return { ok: false, error: "Project write verification failed." };
+      }
+
+      return { ok: true, remoteId: projectUuid };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Failed to save report" };
+      return { ok: false, error: e instanceof Error ? e.message : "Project write error" };
+    }
+  }
+
+  /**
+   * Granular, idempotent upsert for a dataset record.
+   * Incremental: if csvContent is undefined, metadata and cleaning steps are updated
+   * without requiring re-uploading the entire CSV payload.
+   */
+  public async upsertDatasetRecord(
+    projectId: string,
+    dataset: {
+      id?: string;
+      name: string;
+      source?: string;
+      rows: number;
+      columns: number;
+      columnList?: string[];
+      cleaningSteps?: CleaningStep[];
+      csvContent?: string | null;
+      delimiter?: string;
+      typeOverrides?: Record<string, unknown>;
+    },
+    userId?: string,
+  ): Promise<{ ok: boolean; datasetId?: string; error?: string }> {
+    if (!this.isConfigured()) {
+      return { ok: false, error: "Database not configured." };
+    }
+    const client = getSupabaseClientInstance();
+    if (!client) {
+      return { ok: false, error: "Database client unavailable." };
+    }
+
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+      return { ok: false, error: "Authentication required to persist dataset." };
+    }
+
+    const projectUuid = toValidUuid(projectId);
+    const datasetUuid = toValidUuid(dataset.id || `${projectUuid}_dataset`);
+    const now = new Date().toISOString();
+
+    try {
+      const payload: Record<string, unknown> = {
+        id: datasetUuid,
+        project_id: projectUuid,
+        user_id: sessionUserId,
+        name: dataset.name,
+        source: dataset.source || "upload",
+        row_count: dataset.rows,
+        column_count: dataset.columns,
+        columns: dataset.columnList || [],
+        delimiter: dataset.delimiter || ",",
+        cleaning_steps: dataset.cleaningSteps || [],
+        updated_at: now,
+      };
+
+      if (dataset.typeOverrides) {
+        payload.type_overrides = dataset.typeOverrides;
+      }
+
+      if (dataset.csvContent !== undefined) {
+        payload.csv_content = dataset.csvContent;
+      }
+
+      const { error } = await client.from("datasets").upsert(payload, { onConflict: "id" });
+
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+
+      // Verification read-back
+      const { data, error: vErr } = await client
+        .from("datasets")
+        .select("id")
+        .eq("id", datasetUuid)
+        .eq("user_id", sessionUserId)
+        .maybeSingle();
+
+      if (vErr || !data) {
+        return { ok: false, error: "Dataset write verification failed." };
+      }
+
+      return { ok: true, datasetId: datasetUuid };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Dataset write error" };
+    }
+  }
+
+  /**
+   * Granular, idempotent upsert for a saved analysis record.
+   */
+  public async upsertAnalysisRecord(
+    projectId: string,
+    analysis: SavedAnalysis,
+    userId?: string,
+  ): Promise<{ ok: boolean; analysisId?: string; error?: string }> {
+    if (!this.isConfigured()) {
+      return { ok: false, error: "Database not configured." };
+    }
+    const client = getSupabaseClientInstance();
+    if (!client) {
+      return { ok: false, error: "Database client unavailable." };
+    }
+
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+      return { ok: false, error: "Authentication required to persist analysis." };
+    }
+
+    const projectUuid = toValidUuid(projectId);
+    const analysisUuid = toValidUuid(analysis.id);
+    const now = new Date().toISOString();
+
+    try {
+      const { error } = await client.from("saved_analyses").upsert(
+        {
+          id: analysisUuid,
+          project_id: projectUuid,
+          user_id: sessionUserId,
+          name: analysis.name,
+          type: analysis.type,
+          dataset_id: analysis.datasetId ? toValidUuid(analysis.datasetId) : null,
+          dataset_name: analysis.datasetName || null,
+          dataset_signature: analysis.datasetSignature || `${analysis.name}:${now}`,
+          variables: (analysis.variables as unknown) || [],
+          configuration: (analysis.configuration as unknown) || {},
+          sample_size: analysis.sampleSize || 0,
+          missing_count: analysis.missingCount || 0,
+          missing_handling: analysis.missingHandling || "exclude",
+          results: (analysis.results as unknown) || {},
+          interpretation: (analysis.interpretation as unknown) || {},
+          method_notes: (analysis.methodNotes as unknown) || [],
+          updated_at: now,
+        },
+        { onConflict: "id" },
+      );
+
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+
+      // Verification read-back
+      const { data, error: vErr } = await client
+        .from("saved_analyses")
+        .select("id")
+        .eq("id", analysisUuid)
+        .eq("user_id", sessionUserId)
+        .maybeSingle();
+
+      if (vErr || !data) {
+        return { ok: false, error: "Analysis write verification failed." };
+      }
+
+      return { ok: true, analysisId: analysisUuid };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Analysis write error" };
+    }
+  }
+
+  /**
+   * Delete a saved analysis from PostgreSQL Cloud.
+   */
+  public async deleteAnalysisRecord(
+    analysisId: string,
+    userId?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.isConfigured()) return { ok: true };
+    const client = getSupabaseClientInstance();
+    if (!client) return { ok: false, error: "Client not available" };
+
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId) return { ok: false, error: "Authentication required" };
+
+    const analysisUuid = toValidUuid(analysisId);
+    try {
+      const { error } = await client
+        .from("saved_analyses")
+        .delete()
+        .eq("id", analysisUuid)
+        .eq("user_id", sessionUserId);
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Delete error" };
+    }
+  }
+
+  /**
+   * Granular, idempotent upsert for an analytical report.
+   */
+  public async upsertReportRecord(
+    report: {
+      id?: string;
+      projectId: string;
+      title: string;
+      markdown: string;
+      objective?: string;
+      summary?: Record<string, unknown>;
+    },
+    userId?: string,
+  ): Promise<{ ok: boolean; id?: string; error?: string }> {
+    if (!this.isConfigured()) {
+      return { ok: true, id: report.id || generateUuid() };
+    }
+    const client = getSupabaseClientInstance();
+    if (!client) {
+      return { ok: false, error: "Database client unavailable." };
+    }
+
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+      return { ok: false, error: "Authentication required to persist report." };
+    }
+
+    const reportUuid = toValidUuid(report.id || generateUuid());
+    const projectUuid = toValidUuid(report.projectId);
+    const now = new Date().toISOString();
+
+    try {
+      const { error } = await client.from("reports").upsert(
+        {
+          id: reportUuid,
+          project_id: projectUuid,
+          user_id: sessionUserId,
+          title: report.title,
+          objective: report.objective || null,
+          content_markdown: report.markdown,
+          summary: (report.summary as unknown) || null,
+          updated_at: now,
+        },
+        { onConflict: "id" },
+      );
+
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+
+      // Verification read-back
+      const { data, error: vErr } = await client
+        .from("reports")
+        .select("id")
+        .eq("id", reportUuid)
+        .eq("user_id", sessionUserId)
+        .maybeSingle();
+
+      if (vErr || !data) {
+        return { ok: false, error: "Report write verification failed." };
+      }
+
+      return { ok: true, id: reportUuid };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Report write error" };
+    }
+  }
+
+  /**
+   * Delete a report from PostgreSQL Cloud.
+   */
+  public async deleteReportRecord(
+    reportId: string,
+    userId?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.isConfigured()) return { ok: true };
+    const client = getSupabaseClientInstance();
+    if (!client) return { ok: false, error: "Client not available" };
+
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId) return { ok: false, error: "Authentication required" };
+
+    const reportUuid = toValidUuid(reportId);
+    try {
+      const { error } = await client
+        .from("reports")
+        .delete()
+        .eq("id", reportUuid)
+        .eq("user_id", sessionUserId);
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Delete error" };
     }
   }
 
