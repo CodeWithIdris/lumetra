@@ -203,7 +203,7 @@ function Settings() {
                 className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
               >
                 <CheckCircle2 className="mr-1.5 size-3.5 text-blue-600" />
-                {associating ? "Associating..." : "Associate Device Projects to Account"}
+                {associating ? "Importing..." : "Import Unassigned Local Projects"}
               </Button>
             )}
             <Button
@@ -217,6 +217,12 @@ function Settings() {
               Reset Local Storage
             </Button>
           </div>
+          {user && (
+            <p className="text-[11px] text-slate-500">
+              Only projects with no account owner are included. Importing uploads those projects and
+              their saved dataset and analyses to this account.
+            </p>
+          )}
         </section>
 
         {/* Section 3: Privacy & Computation Architecture */}

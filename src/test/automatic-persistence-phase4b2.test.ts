@@ -174,6 +174,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
       for (const [k, v] of remoteDb.reports.entries()) {
         if (v.project_id === pId) remoteDb.reports.delete(k);
       }
+      return { ok: true };
     });
 
     vi.spyOn(supabase, "loadProject").mockImplementation(async (projId) => {
@@ -522,6 +523,100 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     expect(freshCoordinator.getState().pendingCount).toBe(0);
   });
 
+  it("keeps dataset CSV out of the localStorage queue and recovers it from IndexedDB", async () => {
+    const projectId = generateUuid();
+    const datasetId = generateUuid();
+    const csvContent = `metric\n${"42\n".repeat(2000)}`;
+    const project: ProjectMeta = {
+      id: projectId,
+      userId: USER_A_ID,
+      name: "IndexedDB Queue Recovery",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "data-loaded",
+      dataset: {
+        id: datasetId,
+        name: "metrics.csv",
+        rows: 2000,
+        columns: 1,
+        source: "upload",
+        stored: true,
+      },
+    };
+
+    await saveDataset(
+      {
+        id: datasetId,
+        name: "metrics.csv",
+        source: "upload",
+        columns: ["metric"],
+        rows: Array.from({ length: 2000 }, () => ["42"]),
+        sizeBytes: csvContent.length,
+        warnings: [],
+        delimiter: ",",
+      },
+      { projectId, csv: csvContent },
+    );
+
+    coordinator.setOnlineStatus(false);
+    coordinator.queueProjectSave(project, USER_A_ID, { immediate: true });
+    coordinator.queueDatasetSave(
+      projectId,
+      {
+        id: datasetId,
+        name: "metrics.csv",
+        source: "upload",
+        rows: 2000,
+        columns: 1,
+        columnList: ["metric"],
+        csvContent,
+      },
+      USER_A_ID,
+      { immediate: true },
+    );
+
+    const queueKey = "lumetra.persistence_queue.v1";
+    const storedQueue = localStorage.getItem(queueKey) || "";
+    expect(storedQueue).not.toContain(csvContent);
+    const queuedDataset = (JSON.parse(storedQueue) as PendingWriteItem[]).find(
+      (item) => item.entityType === "dataset",
+    );
+    expect(queuedDataset?.data["csvContentStoredExternally"]).toBe(true);
+
+    coordinator.resetQueue();
+    localStorage.setItem(queueKey, storedQueue);
+    coordinator.setOnlineStatus(true);
+    coordinator.init(USER_A_ID);
+    await coordinator.flushQueue();
+
+    expect(remoteDb.datasets.get(datasetId)?.["csv_content"]).toBe(csvContent);
+    expect(coordinator.getState().pendingCount).toBe(0);
+  });
+
+  it("does not reassign guest queue items when an account signs in", async () => {
+    coordinator.setOnlineStatus(false);
+    coordinator.init(null);
+    const projectId = generateUuid();
+    const project: ProjectMeta = {
+      id: projectId,
+      name: "Unassigned Local Project",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "no-data",
+      dataset: null,
+    };
+
+    coordinator.queueProjectSave(project, undefined, { immediate: true });
+    coordinator.init(USER_B_ID);
+    await coordinator.flushQueue();
+
+    const queued = JSON.parse(
+      localStorage.getItem("lumetra.persistence_queue.v1") || "[]",
+    ) as PendingWriteItem[];
+    expect(queued[0]?.userId).toBe("");
+    expect(remoteDb.lumetra_projects.has(projectId)).toBe(false);
+  });
+
   // Scenario 8: Disconnect the internet, make changes, reconnect, and verify automatic synchronization.
   it("Scenario 8: Queues offline changes without data loss and auto-syncs upon reconnecting", async () => {
     const projectId = generateUuid();
@@ -699,5 +794,50 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     const remoteProj = remoteDb.lumetra_projects.get(projectId);
     expect(remoteProj?.name).toBe("Final Correct Title");
     expect(coordinator.getState().status).toBe("saved");
+  });
+
+  it("keeps a newer edit queued when an older write is already in flight", async () => {
+    const projectId = generateUuid();
+    let markStarted!: () => void;
+    let releaseWrite!: () => void;
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const blockedWrite = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+
+    vi.spyOn(supabase, "upsertProjectRecord").mockImplementation(async (project, userId) => {
+      if (project.name === "Older edit") {
+        markStarted();
+        await blockedWrite;
+      }
+      const id = toValidUuid(project.id);
+      remoteDb.lumetra_projects.set(id, {
+        id,
+        user_id: userId || USER_A_ID,
+        name: project.name,
+      });
+      return { ok: true, remoteId: id };
+    });
+
+    const makeProject = (name: string): ProjectMeta => ({
+      id: projectId,
+      userId: USER_A_ID,
+      name,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "no-data",
+      dataset: null,
+    });
+
+    coordinator.queueProjectSave(makeProject("Older edit"), USER_A_ID, { immediate: true });
+    await firstWriteStarted;
+    coordinator.queueProjectSave(makeProject("Newest edit"), USER_A_ID, { immediate: true });
+    releaseWrite();
+    await coordinator.flushQueue();
+
+    expect(remoteDb.lumetra_projects.get(projectId)?.name).toBe("Newest edit");
+    expect(coordinator.getState().pendingCount).toBe(0);
   });
 });

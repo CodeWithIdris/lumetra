@@ -368,31 +368,6 @@ class SupabaseService {
     userId?: string,
     options?: { columns?: string[] },
   ): Promise<{ ok: boolean; error?: string; remoteId?: string; datasetId?: string }> {
-    // 1. Maintain local persistent cloud vault cache as offline safeguard
-    const record: CloudRecord = {
-      id: project.id,
-      user_id: userId,
-      name: project.name,
-      status: project.status,
-      objective: project.objective,
-      dataset_name: project.dataset?.name,
-      dataset_rows: project.dataset?.rows,
-      dataset_columns: project.dataset?.columns,
-      dataset_source: project.dataset?.source,
-      csv_content: csvContent || undefined,
-      cleaning_steps:
-        project.cleaningSteps && project.cleaningSteps.length > 0
-          ? JSON.stringify(project.cleaningSteps)
-          : undefined,
-      saved_analyses:
-        project.savedAnalyses && project.savedAnalyses.length > 0
-          ? JSON.stringify(project.savedAnalyses)
-          : undefined,
-      created_at: project.createdAt,
-      updated_at: project.updatedAt,
-    };
-    this.saveToLocalCloudVault(record);
-
     if (!this.isConfigured()) {
       return {
         ok: false,
@@ -429,6 +404,33 @@ class SupabaseService {
           "Authentication required. You must be signed in to a verified Supabase account to sync projects to cloud storage.",
       };
     }
+    if (userId && sessionUserId !== userId) {
+      return { ok: false, error: "Authenticated account changed before project persistence." };
+    }
+
+    const record: CloudRecord = {
+      id: project.id,
+      user_id: sessionUserId,
+      name: project.name,
+      status: project.status,
+      objective: project.objective,
+      dataset_name: project.dataset?.name,
+      dataset_rows: project.dataset?.rows,
+      dataset_columns: project.dataset?.columns,
+      dataset_source: project.dataset?.source,
+      csv_content: csvContent || undefined,
+      cleaning_steps:
+        project.cleaningSteps && project.cleaningSteps.length > 0
+          ? JSON.stringify(project.cleaningSteps)
+          : undefined,
+      saved_analyses:
+        project.savedAnalyses && project.savedAnalyses.length > 0
+          ? JSON.stringify(project.savedAnalyses)
+          : undefined,
+      created_at: project.createdAt,
+      updated_at: project.updatedAt,
+    };
+    this.saveToLocalCloudVault(record);
 
     const projectUuid = toValidUuid(project.id);
     const now = new Date().toISOString();
@@ -783,18 +785,35 @@ class SupabaseService {
    * Delete a project from Supabase PostgreSQL Cloud.
    * Foreign keys cascade deletion to datasets, saved_analyses, and reports.
    */
-  public async deleteProject(id: string): Promise<void> {
-    this.deleteFromLocalCloudVault(id);
-    if (!this.isConfigured()) return;
+  public async deleteProject(
+    id: string,
+    userId?: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.isConfigured()) {
+      this.deleteFromLocalCloudVault(id);
+      return { ok: true };
+    }
 
     const client = getSupabaseClientInstance();
-    if (!client) return;
+    if (!client) return { ok: false, error: "Database client unavailable." };
+
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId || (userId && sessionUserId !== userId)) {
+      return { ok: false, error: "Authenticated account changed before project deletion." };
+    }
 
     const projectUuid = toValidUuid(id);
     try {
-      await client.from("lumetra_projects").delete().eq("id", projectUuid);
-    } catch {
-      // Ignored
+      const { error } = await client
+        .from("lumetra_projects")
+        .delete()
+        .eq("id", projectUuid)
+        .eq("user_id", sessionUserId);
+      if (error) return { ok: false, error: error.message };
+      this.deleteFromLocalCloudVault(id);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Project delete error." };
     }
   }
 
@@ -850,7 +869,7 @@ class SupabaseService {
     }
 
     const sessionUserId = await this.resolveSessionUserId(userId);
-    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+    if (!sessionUserId || !isValidUuid(sessionUserId) || (userId && sessionUserId !== userId)) {
       return { ok: false, error: "Authentication required to persist project." };
     }
 
@@ -923,7 +942,7 @@ class SupabaseService {
     }
 
     const sessionUserId = await this.resolveSessionUserId(userId);
-    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+    if (!sessionUserId || !isValidUuid(sessionUserId) || (userId && sessionUserId !== userId)) {
       return { ok: false, error: "Authentication required to persist dataset." };
     }
 
@@ -995,7 +1014,7 @@ class SupabaseService {
     }
 
     const sessionUserId = await this.resolveSessionUserId(userId);
-    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+    if (!sessionUserId || !isValidUuid(sessionUserId) || (userId && sessionUserId !== userId)) {
       return { ok: false, error: "Authentication required to persist analysis." };
     }
 
@@ -1061,7 +1080,9 @@ class SupabaseService {
     if (!client) return { ok: false, error: "Client not available" };
 
     const sessionUserId = await this.resolveSessionUserId(userId);
-    if (!sessionUserId) return { ok: false, error: "Authentication required" };
+    if (!sessionUserId || (userId && sessionUserId !== userId)) {
+      return { ok: false, error: "Authenticated account changed before analysis deletion." };
+    }
 
     const analysisUuid = toValidUuid(analysisId);
     try {
@@ -1100,7 +1121,7 @@ class SupabaseService {
     }
 
     const sessionUserId = await this.resolveSessionUserId(userId);
-    if (!sessionUserId || !isValidUuid(sessionUserId)) {
+    if (!sessionUserId || !isValidUuid(sessionUserId) || (userId && sessionUserId !== userId)) {
       return { ok: false, error: "Authentication required to persist report." };
     }
 
@@ -1157,7 +1178,9 @@ class SupabaseService {
     if (!client) return { ok: false, error: "Client not available" };
 
     const sessionUserId = await this.resolveSessionUserId(userId);
-    if (!sessionUserId) return { ok: false, error: "Authentication required" };
+    if (!sessionUserId || (userId && sessionUserId !== userId)) {
+      return { ok: false, error: "Authenticated account changed before report deletion." };
+    }
 
     const reportUuid = toValidUuid(reportId);
     try {

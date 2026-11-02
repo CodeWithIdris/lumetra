@@ -13,8 +13,11 @@
  */
 
 import type { CleaningStep } from "../data/clean";
+import { parseCsvText } from "../data/parse";
 import type { SavedAnalysis } from "../stats/analysis";
+import { loadDataset, loadDatasetByProject, saveDataset } from "./indexeddb";
 import type { ProjectMeta } from "./projects";
+import { loadCsv } from "./projects";
 import { getSupabaseClient, isValidUuid, toValidUuid, generateUuid } from "./supabase";
 
 export type PersistenceStatus = "saved" | "saving" | "pending" | "offline" | "retrying" | "error";
@@ -63,6 +66,7 @@ class PersistenceCoordinator {
   private currentUserId: string | null = null;
   private isProcessing = false;
   private activeProcessingPromise: Promise<void> | null = null;
+  private legacyQueueMigration: Promise<void> | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<Listener>();
@@ -159,21 +163,10 @@ class PersistenceCoordinator {
   public init(userId: string | null) {
     this.currentUserId = userId;
     this.loadQueueFromStorage();
-    if (userId) {
-      // Reconcile unassociated pending writes with authenticated user ID
-      let modified = false;
-      this.queue = this.queue.map((item) => {
-        if (!item.userId || item.userId !== userId) {
-          modified = true;
-          return { ...item, userId };
-        }
-        return item;
-      });
-      if (modified) {
-        this.saveQueueToStorage();
-      }
-    }
     this.notify();
+    if (userId && this.isOnline && this.queue.some((item) => item.userId === userId)) {
+      void this.flushQueue(true);
+    }
   }
 
   public setUserId(userId: string | null) {
@@ -181,12 +174,28 @@ class PersistenceCoordinator {
   }
 
   // --- Queue Storage Management ---
-  private saveQueueToStorage() {
-    if (typeof window === "undefined") return;
+  private saveQueueToStorage(): boolean {
+    if (typeof window === "undefined") return true;
     try {
-      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(this.queue));
+      const persistedQueue = this.queue.map((item) => {
+        if (item.entityType !== "dataset") return item;
+        const dataset = item.data["dataset"] as { csvContent?: string | null } | undefined;
+        if (typeof dataset?.csvContent !== "string") return item;
+
+        return {
+          ...item,
+          data: {
+            ...item.data,
+            dataset: { ...dataset, csvContent: undefined },
+            csvContentStoredExternally: true,
+          },
+        };
+      });
+      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(persistedQueue));
+      return true;
     } catch {
-      // Ignore quota errors for queue serialization
+      this.lastError = "Couldn't save pending changes to this device.";
+      return false;
     }
   }
 
@@ -198,12 +207,66 @@ class PersistenceCoordinator {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         this.queue = parsed;
+        this.sequenceCounter = Math.max(
+          this.sequenceCounter,
+          ...this.queue.map((item) => Number(item.sequence) || 0),
+        );
+        const legacyDatasetWrites = this.queue.filter((item) => {
+          if (item.entityType !== "dataset") return false;
+          const dataset = item.data?.["dataset"] as { csvContent?: unknown } | undefined;
+          return typeof dataset?.csvContent === "string";
+        });
+        if (legacyDatasetWrites.length > 0 && !this.legacyQueueMigration) {
+          this.legacyQueueMigration = this.migrateLegacyDatasetWrites(legacyDatasetWrites);
+        }
         if (this.queue.length > 0) {
           this.status = this.isOnline ? "pending" : "offline";
         }
       }
     } catch {
-      this.queue = [];
+      this.status = "error";
+      this.lastError = "Pending changes could not be read from this device.";
+    }
+  }
+
+  private async migrateLegacyDatasetWrites(items: PendingWriteItem[]): Promise<void> {
+    try {
+      for (const item of items) {
+        const dataset = item.data["dataset"] as {
+          id?: string;
+          name: string;
+          source?: "upload" | "sample";
+          csvContent: string;
+        };
+        const parsed = parseCsvText(dataset.csvContent, dataset.name, dataset.source);
+        if (!parsed.ok) {
+          throw new Error(`Could not migrate queued dataset "${dataset.name}" to IndexedDB.`);
+        }
+        await saveDataset(
+          { ...parsed.dataset, id: dataset.id || parsed.dataset.id },
+          {
+            projectId: item.projectId,
+            csv: dataset.csvContent,
+          },
+        );
+        item.data = {
+          ...item.data,
+          ["dataset"]: { ...dataset, csvContent: undefined },
+          ["csvContentStoredExternally"]: true,
+        };
+      }
+      if (!this.saveQueueToStorage()) {
+        throw new Error("Could not save the migrated pending-write queue.");
+      }
+    } catch (err) {
+      this.lastError =
+        err instanceof Error
+          ? `Pending dataset migration failed: ${err.message}`
+          : "Pending dataset migration failed.";
+      this.status = "error";
+      this.notify();
+    } finally {
+      this.legacyQueueMigration = null;
     }
   }
 
@@ -325,13 +388,14 @@ class PersistenceCoordinator {
     options?: { immediate?: boolean },
   ) {
     const targetUserId = userId || this.currentUserId || "";
+    const reportId = report.id || generateUuid();
     this.enqueue(
       {
         entityType: "report",
-        entityId: report.id || report.projectId,
+        entityId: reportId,
         projectId: report.projectId,
         userId: targetUserId,
-        data: { report },
+        data: { report: { ...report, id: reportId } },
       },
       options?.immediate !== undefined ? options.immediate : true,
     );
@@ -342,8 +406,9 @@ class PersistenceCoordinator {
    */
   public queueProjectDelete(projectId: string, userId: string | undefined) {
     const targetUserId = userId || this.currentUserId || "";
-    // Remove all pending writes for this project
-    this.queue = this.queue.filter((q) => q.projectId !== projectId);
+    this.queue = this.queue.filter(
+      (queued) => queued.projectId !== projectId || queued.userId !== targetUserId,
+    );
     this.enqueue(
       {
         entityType: "delete_project",
@@ -371,7 +436,11 @@ class PersistenceCoordinator {
 
     // Deduplicate / coalesce existing pending write for the same entity if not yet in flight
     const existingIndex = this.queue.findIndex(
-      (q) => q.entityType === item.entityType && q.entityId === item.entityId,
+      (q) =>
+        q.userId === item.userId &&
+        q.entityType === item.entityType &&
+        q.entityId === item.entityId &&
+        q.projectId === item.projectId,
     );
 
     const writeItem: PendingWriteItem = {
@@ -392,7 +461,11 @@ class PersistenceCoordinator {
       this.queue.push(writeItem);
     }
 
-    this.saveQueueToStorage();
+    if (!this.saveQueueToStorage()) {
+      this.status = "error";
+      this.notify();
+      return;
+    }
 
     if (!this.isOnline) {
       this.status = "offline";
@@ -437,6 +510,9 @@ class PersistenceCoordinator {
 
   private async processQueueInternal(force: boolean = false): Promise<void> {
     if (this.isProcessing && !force) return;
+    if (this.legacyQueueMigration) {
+      await this.legacyQueueMigration;
+    }
     if (this.queue.length === 0) {
       this.status = "saved";
       this.lastError = null;
@@ -459,17 +535,9 @@ class PersistenceCoordinator {
     }
 
     // Resolve authenticated user ID
-    let activeUserId = this.currentUserId;
-    if (!activeUserId) {
-      activeUserId = await supabase.resolveSessionUserId();
-      if (activeUserId) {
-        this.currentUserId = activeUserId;
-      }
-    }
-
+    const activeUserId = this.currentUserId;
     if (!activeUserId || !isValidUuid(activeUserId)) {
-      // Unauthenticated: changes remain stored safely in local storage & IndexedDB
-      this.status = "saved";
+      this.status = this.queue.length > 0 ? "pending" : "saved";
       this.notify();
       return;
     }
@@ -485,36 +553,44 @@ class PersistenceCoordinator {
       this.sortQueueForDependencyOrder();
 
       while (this.queue.length > 0) {
+        if (this.currentUserId !== activeUserId) {
+          break;
+        }
         if (!this.isOnline) {
           this.status = "offline";
           this.notify();
           break;
         }
 
-        const item = this.queue[0];
-        // Ensure user ID is attached to the item
-        const itemUserId = item.userId && isValidUuid(item.userId) ? item.userId : activeUserId;
+        const itemIndex = this.queue.findIndex((queued) => queued.userId === activeUserId);
+        if (itemIndex < 0) {
+          this.status = "pending";
+          this.notify();
+          break;
+        }
+        const item = this.queue[itemIndex];
+        if (!item) break;
 
-        const success = await this.executeWriteItem(item, itemUserId);
+        const success = await this.executeWriteItem(item, activeUserId);
         if (success) {
-          // Dequeue item
-          this.queue.shift();
+          const completedIndex = this.queue.findIndex((queued) => queued.id === item.id);
+          if (completedIndex >= 0) this.queue.splice(completedIndex, 1);
           this.saveQueueToStorage();
           this.updateLastSaved();
           this.lastError = null;
         } else {
-          // Failure handling: check if retryable
           item.retryCount++;
           if (item.retryCount > MAX_RETRIES) {
             console.warn(
-              `Write item ${item.entityType}:${item.entityId} exceeded max retries. Pausing item.`,
+              `Write item ${item.entityType}:${item.entityId} exceeded max retries. Keeping it queued.`,
             );
-            this.queue.shift();
             this.saveQueueToStorage();
             this.lastError = `Failed to sync ${item.entityType}.`;
             this.status = "error";
             this.notify();
+            break;
           } else {
+            this.saveQueueToStorage();
             const backoff = Math.min(
               MAX_BACKOFF_MS,
               BASE_BACKOFF_MS * Math.pow(2, item.retryCount),
@@ -556,7 +632,8 @@ class PersistenceCoordinator {
     this.queue.sort((a, b) => {
       // If same project, order by typePriority
       if (a.projectId === b.projectId) {
-        const pDiff = typePriority[a.entityType] - typePriority[b.entityType];
+        const pDiff =
+          a.userId === b.userId ? typePriority[a.entityType] - typePriority[b.entityType] : 0;
         if (pDiff !== 0) return pDiff;
       }
       return a.sequence - b.sequence;
@@ -569,13 +646,13 @@ class PersistenceCoordinator {
     try {
       switch (item.entityType) {
         case "project": {
-          const project = item.data.project as ProjectMeta;
+          const project = item.data["project"] as ProjectMeta;
           const res = await supabase.upsertProjectRecord(project, userId);
           return res.ok;
         }
 
         case "dataset": {
-          const dataset = item.data.dataset as {
+          let dataset = item.data["dataset"] as {
             id?: string;
             name: string;
             source?: string;
@@ -587,12 +664,21 @@ class PersistenceCoordinator {
             delimiter?: string;
             typeOverrides?: Record<string, unknown>;
           };
+          if (item.data["csvContentStoredExternally"]) {
+            const storedDataset = dataset.id ? await loadDataset(dataset.id) : null;
+            const datasetByProject = storedDataset ?? (await loadDatasetByProject(item.projectId));
+            const csvContent = datasetByProject?.csv ?? loadCsv(item.projectId);
+            if (csvContent === null || csvContent === undefined) {
+              throw new Error("Dataset content is unavailable in local storage.");
+            }
+            dataset = { ...dataset, csvContent };
+          }
           const res = await supabase.upsertDatasetRecord(item.projectId, dataset, userId);
           return res.ok;
         }
 
         case "analysis": {
-          const analysis = item.data.analysis as SavedAnalysis;
+          const analysis = item.data["analysis"] as SavedAnalysis;
           const res = await supabase.upsertAnalysisRecord(item.projectId, analysis, userId);
           return res.ok;
         }
@@ -603,7 +689,7 @@ class PersistenceCoordinator {
         }
 
         case "report": {
-          const report = item.data.report as {
+          const report = item.data["report"] as {
             id?: string;
             projectId: string;
             title: string;
@@ -621,8 +707,8 @@ class PersistenceCoordinator {
         }
 
         case "delete_project": {
-          await supabase.deleteProject(item.projectId);
-          return true;
+          const res = await supabase.deleteProject(item.projectId, userId);
+          return res.ok;
         }
 
         default:

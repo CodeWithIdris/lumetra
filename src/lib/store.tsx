@@ -224,7 +224,7 @@ export function computeSyncStatus(
     };
   }
 
-  const userProjects = projs.filter((p) => p.userId === u.id || !p.userId);
+  const userProjects = projs.filter((p) => p.userId === u.id);
   const total = userProjects.length;
   const synced = userProjects.filter((p) => p.isCloudSynced).length;
   const failed = userProjects.filter((p) => Boolean(p.cloudSyncError)).length;
@@ -280,6 +280,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const activeRef = useRef<Active | null>(null);
   const activeProjectIdRef = useRef<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
   const cleaningStepsRef = useRef<CleaningStep[]>([]);
   const savedAnalysesRef = useRef<SavedAnalysis[]>([]);
   const personaRef = useRef<PersonaId>("engineer");
@@ -310,6 +311,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const sessionUser = await restoreUserSession();
       if (!mounted) return;
       setUser(sessionUser);
+      userIdRef.current = sessionUser?.id ?? null;
       setAuthLoading(false);
 
       coordinator.init(sessionUser?.id ?? null);
@@ -320,28 +322,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       let loadedProjects = loadProjectsForUser(sessionUser?.id ?? null);
 
-      // 2. If authenticated user, reconcile unassociated local projects & pull remote list
+      // 2. If authenticated, pull only projects already owned by this account.
       if (sessionUser && isSupabaseConfigured()) {
         try {
           const supabase = getSupabaseClient();
           const remoteProjects = await supabase.listProjects(sessionUser.id);
           const allLocal = loadProjects();
 
-          // Associate any unassociated local projects created on this device with current user
-          const unassigned = allLocal.filter((p) => !p.userId);
-          for (const p of unassigned) {
-            p.userId = sessionUser.id;
-            coordinator.queueProjectSave(p, sessionUser.id, { immediate: true });
-          }
-
           // Merge any remote-only projects into local cache
-          const localIds = new Set(allLocal.map((p) => p.id));
+          const localIds = new Set(
+            allLocal.filter((project) => project.userId === sessionUser.id).map((p) => p.id),
+          );
           const toAdd: ProjectMeta[] = [];
           for (const rem of remoteProjects) {
+            if (rem.user_id !== sessionUser.id) continue;
             if (!localIds.has(rem.id)) {
               toAdd.push({
                 id: rem.id,
-                userId: rem.user_id,
+                userId: sessionUser.id,
                 name: rem.name,
                 description: rem.objective,
                 objective: rem.objective,
@@ -365,7 +363,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          if (unassigned.length > 0 || toAdd.length > 0) {
+          if (toAdd.length > 0) {
             const merged = [...allLocal, ...toAdd];
             saveProjects(merged);
             loadedProjects = loadProjectsForUser(sessionUser.id);
@@ -403,6 +401,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Subscribe to auth state transitions
     const unsubscribeAuth = subscribeToAuthChanges((changedUser) => {
       if (!mounted) return;
+      const changedUserId = changedUser?.id ?? null;
+      if (userIdRef.current !== changedUserId) {
+        setActive(null);
+        activeProjectIdRef.current = null;
+        setActiveProjectId(null);
+        setCleaningSteps([]);
+        cleaningStepsRef.current = [];
+        setSavedAnalyses([]);
+        savedAnalysesRef.current = [];
+      }
+      userIdRef.current = changedUserId;
       setUser(changedUser);
       setAuthLoading(false);
       coordinator.init(changedUser?.id ?? null);
@@ -411,15 +420,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (changedUser) {
         setPersona(changedUser.persona);
         const allLocal = loadProjects();
-        // Associate unassigned projects with user
-        const unassigned = allLocal.filter((p) => !p.userId);
-        for (const p of unassigned) {
-          p.userId = changedUser.id;
-          coordinator.queueProjectSave(p, changedUser.id, { immediate: true });
-        }
-        if (unassigned.length > 0) {
-          saveProjects(allLocal);
-        }
 
         const pList = loadProjectsForUser(changedUser.id);
         setProjects(pList);
@@ -435,10 +435,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               const currentIds = new Set(current.map((p) => p.id));
               const additions: ProjectMeta[] = [];
               for (const rem of remoteProjects) {
+                if (rem.user_id !== changedUser.id) continue;
                 if (!currentIds.has(rem.id)) {
                   additions.push({
                     id: rem.id,
-                    userId: rem.user_id,
+                    userId: changedUser.id,
                     name: rem.name,
                     description: rem.objective,
                     objective: rem.objective,
@@ -471,12 +472,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       } else {
         // Prevent data leaks on signout
-        setActive(null);
-        setActiveProjectId(null);
-        setCleaningSteps([]);
-        cleaningStepsRef.current = [];
-        setSavedAnalyses([]);
-        savedAnalysesRef.current = [];
         const pList = loadProjectsForUser(null);
         setProjects(pList);
         setCloudSyncStatus(computeSyncStatus(supabase.isConfigured(), null, pList));
@@ -494,7 +489,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSaveState("saving");
     const ok = saveProjects(next);
     if (ok) {
-      setProjects(next);
+      setProjects(loadProjectsForUser(user?.id ?? null));
       setSaveState("saved");
       setLastSaveError(null);
       return true;
@@ -503,11 +498,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLastSaveError("Failed to save changes to local storage. Storage quota may be exceeded.");
       return false;
     }
-  }, []);
+  }, [user]);
 
   const update = useCallback(
     (id: string, patch: Partial<ProjectMeta>): boolean => {
       const currentList = loadProjects();
+      const currentProject = currentList.find((p) => p.id === id);
+      if (!currentProject || (currentProject.userId ?? null) !== (user?.id ?? null)) {
+        return false;
+      }
       const next = currentList.map((p) =>
         p.id === id ? { ...p, ...patch, updatedAt: nowIso() } : p,
       );
@@ -549,10 +548,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 stored: true,
               },
             });
+            coordinator.queueDatasetSave(
+              id,
+              {
+                id: datasetToSave.id,
+                name: datasetToSave.name,
+                source: datasetToSave.source,
+                rows: datasetToSave.rows.length,
+                columns: datasetToSave.columns.length,
+                columnList: datasetToSave.columns,
+                cleaningSteps: cleaningStepsRef.current,
+                csvContent: cur.csv,
+                ...(datasetToSave.delimiter !== undefined
+                  ? { delimiter: datasetToSave.delimiter }
+                  : {}),
+                ...(datasetToSave.typeOverrides !== undefined
+                  ? { typeOverrides: datasetToSave.typeOverrides }
+                  : {}),
+              },
+              user?.id,
+              { immediate: true },
+            );
           })
-          .catch(() => {
-            if (cur.csv) {
-              storeCsv(id, cur.csv);
+          .catch((err) => {
+            const fallbackStored = cur.csv ? storeCsv(id, cur.csv) : false;
+            if (fallbackStored) {
+              coordinator.queueDatasetSave(
+                id,
+                {
+                  id: datasetToSave.id,
+                  name: datasetToSave.name,
+                  source: datasetToSave.source,
+                  rows: datasetToSave.rows.length,
+                  columns: datasetToSave.columns.length,
+                  columnList: datasetToSave.columns,
+                  cleaningSteps: cleaningStepsRef.current,
+                  csvContent: cur.csv,
+                },
+                user?.id,
+                { immediate: true },
+              );
+            } else {
+              setSaveState("error");
+              setLastSaveError(
+                err instanceof Error
+                  ? err.message
+                  : "Failed to store dataset locally. Storage limit reached.",
+              );
             }
           });
 
@@ -561,7 +603,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const p: ProjectMeta = {
         id,
-        userId: user?.id,
+        ...(user?.id ? { userId: user.id } : {}),
         name: trimmedName,
         description: description?.trim() || "",
         objective: description?.trim() || "",
@@ -597,24 +639,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       // Automatically persist project and dataset immediately
       coordinator.queueProjectSave(p, user?.id, { immediate: true });
-      if (cur?.dataset) {
-        coordinator.queueDatasetSave(
-          id,
-          {
-            id: cur.dataset.id,
-            name: cur.dataset.name,
-            source: cur.dataset.source,
-            rows: cur.dataset.rows.length,
-            columns: cur.dataset.columns.length,
-            columnList: cur.dataset.columns,
-            cleaningSteps: cleaningStepsRef.current,
-            csvContent: cur.csv,
-          },
-          user?.id,
-          { immediate: true },
-        );
-      }
-
       return p;
     },
     [commit, user, setActive, update],
@@ -787,16 +811,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const openProject = useCallback(
     async (id: string): Promise<{ error?: string; notice?: string }> => {
-      let p = loadProjects().find((x) => x.id === id);
+      let p = loadProjectsForUser(user?.id ?? null).find((x) => x.id === id);
 
       // If not in local projects list, check if available in cloud
       if (!p && isSupabaseConfigured()) {
         try {
           const cloudRecord = await getSupabaseClient().loadProject(id);
-          if (cloudRecord) {
+          if (cloudRecord && user?.id && cloudRecord.user_id === user.id) {
             p = {
               id: cloudRecord.id,
-              userId: cloudRecord.user_id,
+            userId: user.id,
               name: cloudRecord.name,
               description: cloudRecord.objective,
               objective: cloudRecord.objective,
@@ -934,8 +958,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (id: string): ProjectMeta | null => {
       const copy = duplicateProjectPersistence(id);
       if (copy) {
-        setProjects(loadProjects());
-        const source = loadProjects().find((p) => p.id === id);
+        setProjects(loadProjectsForUser(user?.id ?? null));
+        const source = loadProjectsForUser(user?.id ?? null).find((p) => p.id === id);
         const sourceDsId = source?.dataset?.id || id;
         const newDsId = copy.dataset?.id || "ds_" + copy.id;
         duplicateDatasetIdb(sourceDsId, newDsId, copy.id).catch((err) => {
@@ -952,7 +976,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const deleteProject = useCallback(
     (id: string) => {
-      const p = loadProjects().find((x) => x.id === id);
+      const p = loadProjectsForUser(user?.id ?? null).find((x) => x.id === id);
+      if (!p) return;
       if (p?.dataset?.id) {
         deleteDataset(p.dataset.id).catch(() => {});
       }
@@ -1213,8 +1238,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           projectId: targetProjectId,
           title: report.title,
           markdown: report.markdown,
-          objective: report.objective,
-          summary: report.summary,
+          ...(report.objective !== undefined ? { objective: report.objective } : {}),
+          ...(report.summary !== undefined ? { summary: report.summary } : {}),
         },
         user?.id,
         { immediate: true },
@@ -1238,6 +1263,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (email: string, pass: string, name: string, targetPersona: PersonaId) => {
       const res = await registerUser(email, pass, name, targetPersona);
       if (res.user) {
+        userIdRef.current = res.user.id;
         setUser(res.user);
         setPersona(res.user.persona);
         coordinator.init(res.user.id);
@@ -1252,6 +1278,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (email: string, pass: string) => {
       const res = await loginUser(email, pass);
       if (res.user) {
+        userIdRef.current = res.user.id;
         setUser(res.user);
         setPersona(res.user.persona);
         coordinator.init(res.user.id);
@@ -1264,6 +1291,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const handleLogout = useCallback(() => {
     signOutUser().catch(() => {});
+    userIdRef.current = null;
     coordinator.init(null);
     setUser(null);
     setActive(null);
@@ -1322,8 +1350,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCloudSyncStatus((prev) => ({ ...prev, isSyncing: true }));
     const supabase = getSupabaseClient();
     try {
-      const currentProjects = loadProjects();
-      const result = await supabase.importLocalProjects(currentProjects, async (p) => {
+      const guestProjects = loadProjectsForUser(null);
+      const result = await supabase.importLocalProjects(guestProjects, async (p) => {
         let csv: string | null = null;
         if (p.dataset?.id) {
           const stored = await loadDataset(p.dataset.id).catch(() => null);
@@ -1342,16 +1370,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (result.success && result.projects.length > 0) {
         const importedUuids = new Set(result.projects.map((p) => p.id));
         const now = nowIso();
-        const updated = currentProjects.map((p) => {
+        const updated = loadProjects().map((p) => {
           const uId = toValidUuid(p.id);
-          if (importedUuids.has(uId)) {
+          if (!p.userId && importedUuids.has(uId)) {
+            const { cloudSyncError: _cloudSyncError, ...projectWithoutSyncError } = p;
             return {
-              ...p,
+              ...projectWithoutSyncError,
               id: uId,
-              userId: user?.id ?? p.userId,
+              ...(user?.id ? { userId: user.id } : {}),
               isCloudSynced: true,
               cloudSyncedAt: now,
-              cloudSyncError: undefined,
             };
           }
           return p;
