@@ -290,6 +290,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveState(next);
   }, []);
 
+  const clearAccountWorkingState = useCallback(() => {
+    setActive(null);
+    activeProjectIdRef.current = null;
+    setActiveProjectId(null);
+    setCleaningSteps([]);
+    cleaningStepsRef.current = [];
+    setSavedAnalyses([]);
+    savedAnalysesRef.current = [];
+  }, [setActive]);
+
   const setPersona = useCallback((next: PersonaId) => {
     personaRef.current = next;
     setPersonaState(next);
@@ -327,6 +337,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           const supabase = getSupabaseClient();
           const remoteProjects = await supabase.listProjects(sessionUser.id);
+          if (!mounted || userIdRef.current !== sessionUser.id) return;
           const allLocal = loadProjects();
 
           // Merge any remote-only projects into local cache
@@ -341,8 +352,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 id: rem.id,
                 userId: sessionUser.id,
                 name: rem.name,
-                description: rem.objective,
-                objective: rem.objective,
+                ...(rem.objective !== undefined
+                  ? { description: rem.objective, objective: rem.objective }
+                  : {}),
                 createdAt: rem.created_at,
                 updatedAt: rem.updated_at,
                 status: (rem.status as ProjectStatus) || "no-data",
@@ -373,6 +385,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      if (userIdRef.current !== (sessionUser?.id ?? null)) {
+        setReady(true);
+        return;
+      }
       setProjects(loadedProjects);
 
       const supabase = getSupabaseClient();
@@ -403,13 +419,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
       const changedUserId = changedUser?.id ?? null;
       if (userIdRef.current !== changedUserId) {
-        setActive(null);
-        activeProjectIdRef.current = null;
-        setActiveProjectId(null);
-        setCleaningSteps([]);
-        cleaningStepsRef.current = [];
-        setSavedAnalyses([]);
-        savedAnalysesRef.current = [];
+        clearAccountWorkingState();
       }
       userIdRef.current = changedUserId;
       setUser(changedUser);
@@ -419,7 +429,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       if (changedUser) {
         setPersona(changedUser.persona);
-        const allLocal = loadProjects();
 
         const pList = loadProjectsForUser(changedUser.id);
         setProjects(pList);
@@ -430,9 +439,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           supabase
             .listProjects(changedUser.id)
             .then((remoteProjects) => {
-              if (!mounted) return;
+              if (!mounted || userIdRef.current !== changedUser.id) return;
               const current = loadProjects();
-              const currentIds = new Set(current.map((p) => p.id));
+              const currentIds = new Set(
+                current.filter((project) => project.userId === changedUser.id).map((p) => p.id),
+              );
               const additions: ProjectMeta[] = [];
               for (const rem of remoteProjects) {
                 if (rem.user_id !== changedUser.id) continue;
@@ -441,8 +452,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                     id: rem.id,
                     userId: changedUser.id,
                     name: rem.name,
-                    description: rem.objective,
-                    objective: rem.objective,
+                    ...(rem.objective !== undefined
+                      ? { description: rem.objective, objective: rem.objective }
+                      : {}),
                     createdAt: rem.created_at,
                     updatedAt: rem.updated_at,
                     status: (rem.status as ProjectStatus) || "no-data",
@@ -476,6 +488,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setProjects(pList);
         setCloudSyncStatus(computeSyncStatus(supabase.isConfigured(), null, pList));
       }
+      setReady(true);
     });
 
     return () => {
@@ -483,22 +496,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       unsubscribeCoordinator();
       unsubscribeAuth();
     };
-  }, [setActive, setPersona]);
+  }, [clearAccountWorkingState, setActive, setPersona]);
 
-  const commit = useCallback((next: ProjectMeta[]): boolean => {
-    setSaveState("saving");
-    const ok = saveProjects(next);
-    if (ok) {
-      setProjects(loadProjectsForUser(user?.id ?? null));
-      setSaveState("saved");
-      setLastSaveError(null);
-      return true;
-    } else {
-      setSaveState("error");
-      setLastSaveError("Failed to save changes to local storage. Storage quota may be exceeded.");
-      return false;
-    }
-  }, [user]);
+  const commit = useCallback(
+    (next: ProjectMeta[]): boolean => {
+      setSaveState("saving");
+      const ok = saveProjects(next);
+      if (ok) {
+        setProjects(loadProjectsForUser(user?.id ?? null));
+        setSaveState("saved");
+        setLastSaveError(null);
+        return true;
+      } else {
+        setSaveState("error");
+        setLastSaveError("Failed to save changes to local storage. Storage quota may be exceeded.");
+        return false;
+      }
+    },
+    [user],
+  );
 
   const update = useCallback(
     (id: string, patch: Partial<ProjectMeta>): boolean => {
@@ -706,8 +722,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 columnList: dataset.columns,
                 cleaningSteps: [],
                 csvContent: csv,
-                delimiter: dataset.delimiter,
-                typeOverrides: dataset.typeOverrides,
+                ...(dataset.delimiter !== undefined ? { delimiter: dataset.delimiter } : {}),
+                ...(dataset.typeOverrides !== undefined
+                  ? { typeOverrides: dataset.typeOverrides }
+                  : {}),
               },
               user?.id,
               { immediate: true },
@@ -811,19 +829,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const openProject = useCallback(
     async (id: string): Promise<{ error?: string; notice?: string }> => {
-      let p = loadProjectsForUser(user?.id ?? null).find((x) => x.id === id);
+      const openingUserId = user?.id ?? null;
+      let p = loadProjectsForUser(openingUserId).find((x) => x.id === id);
 
       // If not in local projects list, check if available in cloud
       if (!p && isSupabaseConfigured()) {
         try {
           const cloudRecord = await getSupabaseClient().loadProject(id);
-          if (cloudRecord && user?.id && cloudRecord.user_id === user.id) {
-            p = {
+          if (
+            userIdRef.current !== openingUserId ||
+            !cloudRecord ||
+            !openingUserId ||
+            cloudRecord.user_id !== openingUserId
+          ) {
+            return { error: "Account changed while opening this project." };
+          }
+          if (cloudRecord) {
+            const cloudProject: ProjectMeta = {
               id: cloudRecord.id,
-            userId: user.id,
+              userId: openingUserId,
               name: cloudRecord.name,
-              description: cloudRecord.objective,
-              objective: cloudRecord.objective,
+              ...(cloudRecord.objective !== undefined
+                ? { description: cloudRecord.objective, objective: cloudRecord.objective }
+                : {}),
               createdAt: cloudRecord.created_at,
               updatedAt: cloudRecord.updated_at,
               status: (cloudRecord.status as ProjectStatus) || "no-data",
@@ -845,7 +873,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               isCloudSynced: true,
               cloudSyncedAt: cloudRecord.updated_at,
             };
-            commit([p, ...loadProjects()]);
+            p = cloudProject;
+            commit([cloudProject, ...loadProjects()]);
           }
         } catch {
           // ignore
@@ -853,6 +882,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
 
       if (!p) return { error: "Project not found." };
+      if (userIdRef.current !== openingUserId) {
+        return { error: "Account changed while opening this project." };
+      }
 
       activeProjectIdRef.current = id;
       setActiveProjectId(id);
@@ -877,6 +909,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
 
         if (stored) {
+          if (userIdRef.current !== openingUserId) {
+            return { error: "Account changed while opening this project." };
+          }
           const rawDataset: Dataset = {
             id: stored.id,
             name: stored.name,
@@ -885,8 +920,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             rows: stored.rows,
             sizeBytes: stored.sizeBytes,
             warnings: stored.warnings ?? [],
-            delimiter: stored.delimiter,
-            typeOverrides: stored.typeOverrides,
+            ...(stored.delimiter !== undefined ? { delimiter: stored.delimiter } : {}),
+            ...(stored.typeOverrides !== undefined ? { typeOverrides: stored.typeOverrides } : {}),
           };
 
           let analyticalDataset = rawDataset;
@@ -912,6 +947,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!csv && isSupabaseConfigured()) {
         try {
           const cloudRecord = await getSupabaseClient().loadProject(id);
+          if (
+            userIdRef.current !== openingUserId ||
+            (cloudRecord && cloudRecord.user_id !== openingUserId)
+          ) {
+            return { error: "Account changed while opening this project." };
+          }
           if (cloudRecord?.csv_content) {
             csv = cloudRecord.csv_content;
           }
@@ -930,6 +971,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const res = parseCsvText(csv, p.dataset.name, p.dataset.source);
       if (!res.ok) return { error: res.errors.join(" ") };
+      if (userIdRef.current !== openingUserId) {
+        return { error: "Account changed while opening this project." };
+      }
 
       const rawDataset = res.dataset;
       let analyticalDataset = rawDataset;
@@ -944,7 +988,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setActive({ dataset: analyticalDataset, rawDataset, csv, projectId: id });
       return {};
     },
-    [setActive, commit],
+    [setActive, commit, user],
   );
 
   const renameProject = useCallback(
@@ -956,6 +1000,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const duplicateProject = useCallback(
     (id: string): ProjectMeta | null => {
+      if (!loadProjectsForUser(user?.id ?? null).some((project) => project.id === id)) {
+        return null;
+      }
       const copy = duplicateProjectPersistence(id);
       if (copy) {
         setProjects(loadProjectsForUser(user?.id ?? null));
@@ -1263,6 +1310,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (email: string, pass: string, name: string, targetPersona: PersonaId) => {
       const res = await registerUser(email, pass, name, targetPersona);
       if (res.user) {
+        if (userIdRef.current !== res.user.id) {
+          clearAccountWorkingState();
+          setProjects(loadProjectsForUser(res.user.id));
+        }
         userIdRef.current = res.user.id;
         setUser(res.user);
         setPersona(res.user.persona);
@@ -1271,13 +1322,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       return res;
     },
-    [setPersona],
+    [clearAccountWorkingState, setPersona],
   );
 
   const handleLogin = useCallback(
     async (email: string, pass: string) => {
       const res = await loginUser(email, pass);
       if (res.user) {
+        if (userIdRef.current !== res.user.id) {
+          clearAccountWorkingState();
+          setProjects(loadProjectsForUser(res.user.id));
+        }
         userIdRef.current = res.user.id;
         setUser(res.user);
         setPersona(res.user.persona);
@@ -1286,7 +1341,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       return res;
     },
-    [setPersona],
+    [clearAccountWorkingState, setPersona],
   );
 
   const handleLogout = useCallback(() => {
@@ -1294,14 +1349,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     userIdRef.current = null;
     coordinator.init(null);
     setUser(null);
-    setActive(null);
-    setActiveProjectId(null);
-    setCleaningSteps([]);
-    cleaningStepsRef.current = [];
-    setSavedAnalyses([]);
-    savedAnalysesRef.current = [];
+    clearAccountWorkingState();
     setProjects(loadProjectsForUser(null));
-  }, [setActive]);
+  }, [clearAccountWorkingState]);
 
   const handleMagicLink = useCallback(async (email: string) => {
     return sendMagicLink(email);
@@ -1326,15 +1376,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     total?: number;
     error?: string;
   }> => {
-    // Flush the coordinator queue immediately
-    await coordinator.flushQueue(true);
-
     const supabase = getSupabaseClient();
     if (!supabase.isConfigured()) {
       return { success: false, state: "not_configured", error: "Database not configured." };
     }
-    if (!user || !user.id) {
+    if (!user || !isValidUuid(user.id)) {
       return { success: false, state: "not_authenticated", error: "Sign in required." };
+    }
+
+    await coordinator.flushQueue(true);
+    if (coordinator.hasPendingWritesForUser(user.id)) {
+      return {
+        success: false,
+        state: "failed",
+        error: coordinator.getState().error || "Some account changes are still pending.",
+      };
     }
 
     const allProjects = loadProjectsForUser(user.id);

@@ -40,11 +40,14 @@ describe("Phase 4B: SQL Schema and Migration Integrity", () => {
     expect(sql).toContain("ALTER TABLE public.saved_analyses ENABLE ROW LEVEL SECURITY;");
     expect(sql).toContain("ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;");
 
-    // 4. Explicit RLS Policies for SELECT, INSERT, UPDATE, DELETE
-    expect(sql).toContain('CREATE POLICY "Users can select own projects"');
-    expect(sql).toContain('CREATE POLICY "Users can insert own projects"');
-    expect(sql).toContain('CREATE POLICY "Users can update own projects"');
-    expect(sql).toContain('CREATE POLICY "Users can delete own projects"');
+    // 4. Every table has explicit owner policies for all CRUD operations.
+    const policyLabels = ["projects", "datasets", "analyses", "reports"];
+    for (const label of policyLabels) {
+      for (const action of ["select", "insert", "update", "delete"]) {
+        expect(sql).toContain(`CREATE POLICY "Users can ${action} own ${label}"`);
+      }
+    }
+    expect(sql.match(/auth\.uid\(\) = user_id/g)).toHaveLength(20);
 
     // 5. Child records check ownership via project relationship
     expect(sql).toContain("EXISTS (");

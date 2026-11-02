@@ -132,6 +132,10 @@ class PersistenceCoordinator {
     };
   }
 
+  public hasPendingWritesForUser(userId: string): boolean {
+    return this.queue.some((item) => item.userId === userId);
+  }
+
   public setOnlineStatus(online: boolean) {
     this.isOnline = online;
     if (!online) {

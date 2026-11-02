@@ -216,6 +216,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     coordinator.resetQueue();
   });
@@ -617,6 +618,32 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     expect(remoteDb.lumetra_projects.has(projectId)).toBe(false);
   });
 
+  it("does not send one account's queued write while another account is active", async () => {
+    coordinator.setOnlineStatus(false);
+    const projectId = generateUuid();
+    const project: ProjectMeta = {
+      id: projectId,
+      userId: USER_A_ID,
+      name: "Account A Pending Project",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "no-data",
+      dataset: null,
+    };
+
+    coordinator.queueProjectSave(project, USER_A_ID, { immediate: true });
+    coordinator.init(USER_B_ID);
+    coordinator.setOnlineStatus(true);
+    await coordinator.flushQueue();
+
+    expect(remoteDb.lumetra_projects.has(projectId)).toBe(false);
+    expect(coordinator.getState().pendingCount).toBe(1);
+
+    coordinator.init(USER_A_ID);
+    await coordinator.flushQueue();
+    expect(remoteDb.lumetra_projects.get(projectId)?.["user_id"]).toBe(USER_A_ID);
+  });
+
   // Scenario 8: Disconnect the internet, make changes, reconnect, and verify automatic synchronization.
   it("Scenario 8: Queues offline changes without data loss and auto-syncs upon reconnecting", async () => {
     const projectId = generateUuid();
@@ -709,6 +736,25 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     expect(remoteDb.datasets.has(datasetBId)).toBe(false);
   });
 
+  it("rejects a write if the authenticated account changed after it was queued", async () => {
+    vi.spyOn(supabase, "upsertProjectRecord").mockRestore();
+    vi.spyOn(supabase, "resolveSessionUserId").mockResolvedValue(USER_B_ID);
+    const result = await supabase.upsertProjectRecord(
+      {
+        id: generateUuid(),
+        name: "Account A Project",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: "no-data",
+        dataset: null,
+      },
+      USER_A_ID,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Authentication required");
+  });
+
   // Scenario 11: Simulate a failed write and confirm application does not falsely display "Saved".
   it("Scenario 11: Does not falsely display 'Saved' when remote write fails", async () => {
     // Inject write failure
@@ -735,6 +781,38 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     expect(coordinator.getState().status).not.toBe("saved");
     expect(coordinator.getState().statusText).not.toBe("All changes saved");
     expect(["retrying", "error", "pending"]).toContain(coordinator.getState().status);
+  });
+
+  it("retains a failed write after automatic retries are exhausted", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(supabase, "upsertProjectRecord").mockResolvedValue({
+      ok: false,
+      error: "PostgreSQL 503 Service Unavailable",
+    });
+
+    const projectId = generateUuid();
+    coordinator.queueProjectSave(
+      {
+        id: projectId,
+        userId: USER_A_ID,
+        name: "Recoverable Failed Write",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: "no-data",
+        dataset: null,
+      },
+      USER_A_ID,
+      { immediate: true },
+    );
+
+    await vi.runAllTimersAsync();
+    const storedQueue = JSON.parse(
+      localStorage.getItem("lumetra.persistence_queue.v1") || "[]",
+    ) as PendingWriteItem[];
+    expect(coordinator.getState().status).toBe("error");
+    expect(coordinator.getState().pendingCount).toBe(1);
+    expect(storedQueue).toHaveLength(1);
+    vi.useRealTimers();
   });
 
   // Scenario 12: Test rapid successive edits to ensure older writes cannot overwrite newer versions.
@@ -792,7 +870,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     await coordinator.flushQueue();
 
     const remoteProj = remoteDb.lumetra_projects.get(projectId);
-    expect(remoteProj?.name).toBe("Final Correct Title");
+    expect(remoteProj?.["name"]).toBe("Final Correct Title");
     expect(coordinator.getState().status).toBe("saved");
   });
 
@@ -837,7 +915,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     releaseWrite();
     await coordinator.flushQueue();
 
-    expect(remoteDb.lumetra_projects.get(projectId)?.name).toBe("Newest edit");
+    expect(remoteDb.lumetra_projects.get(projectId)?.["name"]).toBe("Newest edit");
     expect(coordinator.getState().pendingCount).toBe(0);
   });
 });
