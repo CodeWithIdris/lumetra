@@ -25,6 +25,7 @@ import {
   isSupabaseConfigured,
   validateSupabaseConfig,
 } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 
 export { isSupabaseConfigured };
 
@@ -146,19 +147,51 @@ export interface CloudImportResult {
   projects: ProjectMeta[];
 }
 
+function toSupabaseJson(value: unknown, ancestors: Set<object> = new Set()): Json {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("A saved value contains a non-finite number.");
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (ancestors.has(value)) throw new Error("A saved value contains a circular reference.");
+    ancestors.add(value);
+    try {
+      return value.map((entry) => toSupabaseJson(entry, ancestors));
+    } finally {
+      ancestors.delete(value);
+    }
+  }
+  if (typeof value === "object") {
+    if (ancestors.has(value)) throw new Error("A saved value contains a circular reference.");
+    ancestors.add(value);
+    try {
+      const result: { [key: string]: Json | undefined } = {};
+      for (const [key, entry] of Object.entries(value)) {
+        if (entry !== undefined) result[key] = toSupabaseJson(entry, ancestors);
+      }
+      return result;
+    } finally {
+      ancestors.delete(value);
+    }
+  }
+  throw new Error("A saved value cannot be represented as JSON.");
+}
+
 const CONFIG_STORAGE_KEY = "lumetra.supabase.config.v1";
 const CLOUD_CACHE_KEY = "lumetra.supabase.cloud_cache.v1";
 
 const envUrl =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) ||
-  (typeof process !== "undefined" && process.env?.VITE_SUPABASE_URL) ||
+  (typeof import.meta !== "undefined" && import.meta.env?.["VITE_SUPABASE_URL"]) ||
+  (typeof process !== "undefined" && process.env?.["VITE_SUPABASE_URL"]) ||
   "";
 
 const envKey =
   (typeof import.meta !== "undefined" &&
-    (import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env?.VITE_SUPABASE_ANON_KEY)) ||
+    (import.meta.env?.["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+      import.meta.env?.["VITE_SUPABASE_ANON_KEY"])) ||
   (typeof process !== "undefined" &&
-    (process.env?.VITE_SUPABASE_PUBLISHABLE_KEY || process.env?.VITE_SUPABASE_ANON_KEY)) ||
+    (process.env?.["VITE_SUPABASE_PUBLISHABLE_KEY"] || process.env?.["VITE_SUPABASE_ANON_KEY"])) ||
   "";
 
 const DEFAULT_CONFIG: SupabaseConfig = {
@@ -594,7 +627,7 @@ class SupabaseService {
       return {
         ok: true,
         remoteId: projectUuid,
-        datasetId: datasetUuid ?? undefined,
+        ...(datasetUuid != null ? { datasetId: datasetUuid } : {}),
         revision: projectResult.revision,
       };
     } catch (e) {
@@ -726,17 +759,17 @@ class SupabaseService {
       if (!data) return null;
 
       const row = data as Record<string, unknown>;
-      const datasets = ((row.datasets as Array<Record<string, unknown>>) || []).sort(
+      const datasets = ((row["datasets"] as Array<Record<string, unknown>>) || []).sort(
         (left, right) =>
           String(right["updated_at"] ?? "").localeCompare(String(left["updated_at"] ?? "")),
       );
       const primaryDataset = datasets[0] || null;
-      const analyses = (row.saved_analyses as Array<Record<string, unknown>>) || [];
+      const analyses = (row["saved_analyses"] as Array<Record<string, unknown>>) || [];
       let datasetCsv =
-        (primaryDataset?.csv_content as string | null) ||
-        (row.csv_content as string | null) ||
+        (primaryDataset?.["csv_content"] as string | null) ||
+        (row["csv_content"] as string | null) ||
         null;
-      const datasetContentPath = primaryDataset?.content_path as string | null | undefined;
+      const datasetContentPath = primaryDataset?.["content_path"] as string | null | undefined;
       if (!datasetCsv && datasetContentPath) {
         const { data: file, error: downloadError } = await client.storage
           .from(DATASET_STORAGE_BUCKET)
@@ -746,29 +779,32 @@ class SupabaseService {
       }
 
       const record: CloudRecord = {
-        id: (row.id as string) || id,
-        user_id: (row.user_id as string) || undefined,
-        name: (row.name as string) || "Project",
-        status: (row.status as string) || "no-data",
-        objective: (row.objective as string) || undefined,
-        dataset_name: (primaryDataset?.name as string) || (row.dataset_name as string) || undefined,
-        dataset_id: (primaryDataset?.id as string) || undefined,
+        id: (row["id"] as string) || id,
+        user_id: (row["user_id"] as string) || undefined,
+        name: (row["name"] as string) || "Project",
+        status: (row["status"] as string) || "no-data",
+        objective: (row["objective"] as string) || undefined,
+        dataset_name:
+          (primaryDataset?.["name"] as string) || (row["dataset_name"] as string) || undefined,
+        dataset_id: (primaryDataset?.["id"] as string) || undefined,
         dataset_rows:
-          (primaryDataset?.row_count as number) || (row.dataset_rows as number) || undefined,
+          (primaryDataset?.["row_count"] as number) || (row["dataset_rows"] as number) || undefined,
         dataset_columns:
-          (primaryDataset?.column_count as number) || (row.dataset_columns as number) || undefined,
+          (primaryDataset?.["column_count"] as number) ||
+          (row["dataset_columns"] as number) ||
+          undefined,
         dataset_source:
-          (primaryDataset?.source as string) || (row.dataset_source as string) || undefined,
+          (primaryDataset?.["source"] as string) || (row["dataset_source"] as string) || undefined,
         csv_content: datasetCsv ?? undefined,
-        cleaning_steps: primaryDataset?.cleaning_steps
-          ? JSON.stringify(primaryDataset.cleaning_steps)
-          : (row.cleaning_steps as string) || undefined,
+        cleaning_steps: primaryDataset?.["cleaning_steps"]
+          ? JSON.stringify(primaryDataset["cleaning_steps"])
+          : (row["cleaning_steps"] as string) || undefined,
         saved_analyses:
-          serializeSavedAnalyses(analyses) ?? ((row.saved_analyses as string) || undefined),
-        created_at: (row.created_at as string) || new Date().toISOString(),
-        updated_at: (row.updated_at as string) || new Date().toISOString(),
-        revision: Number(row.revision) || 1,
-        dataset_revision: Number(primaryDataset?.revision) || 0,
+          serializeSavedAnalyses(analyses) ?? ((row["saved_analyses"] as string) || undefined),
+        created_at: (row["created_at"] as string) || new Date().toISOString(),
+        updated_at: (row["updated_at"] as string) || new Date().toISOString(),
+        revision: Number(row["revision"]) || 1,
+        dataset_revision: Number(primaryDataset?.["revision"]) || 0,
       };
 
       return record;
@@ -812,35 +848,38 @@ class SupabaseService {
       }
 
       const records: CloudRecord[] = (data as Array<Record<string, unknown>>).map((row) => {
-        const datasets = ((row.datasets as Array<Record<string, unknown>>) || []).sort(
+        const datasets = ((row["datasets"] as Array<Record<string, unknown>>) || []).sort(
           (left, right) =>
             String(right["updated_at"] ?? "").localeCompare(String(left["updated_at"] ?? "")),
         );
         const ds = datasets[0] || null;
-        const analyses = (row.saved_analyses as Array<Record<string, unknown>>) || [];
+        const analyses = (row["saved_analyses"] as Array<Record<string, unknown>>) || [];
 
         return {
-          id: row.id as string,
-          user_id: row.user_id as string,
-          name: row.name as string,
-          status: row.status as string,
-          objective: (row.objective as string) || undefined,
-          dataset_name: (ds?.name as string) || (row.dataset_name as string) || undefined,
-          dataset_id: (ds?.id as string) || undefined,
-          dataset_rows: (ds?.row_count as number) || (row.dataset_rows as number) || undefined,
+          id: row["id"] as string,
+          user_id: row["user_id"] as string,
+          name: row["name"] as string,
+          status: row["status"] as string,
+          objective: (row["objective"] as string) || undefined,
+          dataset_name: (ds?.["name"] as string) || (row["dataset_name"] as string) || undefined,
+          dataset_id: (ds?.["id"] as string) || undefined,
+          dataset_rows:
+            (ds?.["row_count"] as number) || (row["dataset_rows"] as number) || undefined,
           dataset_columns:
-            (ds?.column_count as number) || (row.dataset_columns as number) || undefined,
-          dataset_source: (ds?.source as string) || (row.dataset_source as string) || undefined,
-          csv_content: (ds?.csv_content as string) || (row.csv_content as string) || undefined,
-          cleaning_steps: ds?.cleaning_steps
-            ? JSON.stringify(ds.cleaning_steps)
-            : (row.cleaning_steps as string) || undefined,
+            (ds?.["column_count"] as number) || (row["dataset_columns"] as number) || undefined,
+          dataset_source:
+            (ds?.["source"] as string) || (row["dataset_source"] as string) || undefined,
+          csv_content:
+            (ds?.["csv_content"] as string) || (row["csv_content"] as string) || undefined,
+          cleaning_steps: ds?.["cleaning_steps"]
+            ? JSON.stringify(ds["cleaning_steps"])
+            : (row["cleaning_steps"] as string) || undefined,
           saved_analyses:
-            serializeSavedAnalyses(analyses) ?? ((row.saved_analyses as string) || undefined),
-          created_at: row.created_at as string,
-          updated_at: row.updated_at as string,
-          revision: Number(row.revision) || 1,
-          dataset_revision: Number(ds?.revision) || 0,
+            serializeSavedAnalyses(analyses) ?? ((row["saved_analyses"] as string) || undefined),
+          created_at: row["created_at"] as string,
+          updated_at: row["updated_at"] as string,
+          revision: Number(row["revision"]) || 1,
+          dataset_revision: Number(ds?.["revision"]) || 0,
         };
       });
 
@@ -893,17 +932,51 @@ class SupabaseService {
         ...(versions.data ?? []).map((record) => record.content_path),
       ].filter((path): path is string => Boolean(path));
 
+      const projectStoragePrefix = `${sessionUserId}/${projectUuid}/`;
+      if (storagePaths.some((path) => !path.startsWith(projectStoragePrefix))) {
+        return {
+          ok: false,
+          error: "Project files could not be verified as belonging to this project. Nothing was deleted.",
+        };
+      }
+
+      if (storagePaths.length > 0) {
+        const activeUserId = await this.resolveSessionUserId(userId);
+        if (activeUserId !== sessionUserId) {
+          return {
+            ok: false,
+            error: "The active account changed during project deletion. Retry while signed in to the same account.",
+          };
+        }
+        const { error: storageError } = await client.storage
+          .from(DATASET_STORAGE_BUCKET)
+          .remove(storagePaths);
+        if (storageError) {
+          return {
+            ok: false,
+            error: `Project files could not be removed (${storageError.message}). The project is still saved; retry deletion to finish.`,
+          };
+        }
+      }
+
+      const activeUserId = await this.resolveSessionUserId(userId);
+      if (activeUserId !== sessionUserId) {
+        return {
+          ok: false,
+          error: "The active account changed during project deletion. Retry while signed in to the same account.",
+        };
+      }
+
       const { error } = await client
         .from("lumetra_projects")
         .delete()
         .eq("id", projectUuid)
         .eq("user_id", sessionUserId);
-      if (error) return { ok: false, error: error.message };
-      if (storagePaths.length > 0) {
-        const { error: storageError } = await client.storage
-          .from(DATASET_STORAGE_BUCKET)
-          .remove(storagePaths);
-        if (storageError) console.warn("Some removed project files could not be cleaned up.");
+      if (error) {
+        return {
+          ok: false,
+          error: `Project files were removed, but the project records could not be deleted (${error.message}). Retry deletion to finish.`,
+        };
       }
       this.deleteFromLocalCloudVault(id);
       return { ok: true };
@@ -1395,10 +1468,12 @@ class SupabaseService {
         column_count: dataset.columns,
         columns: dataset.columnList || [],
         delimiter: dataset.delimiter || ",",
-        cleaning_steps: dataset.cleaningSteps || [],
-        ...(dataset.typeOverrides !== undefined ? { type_overrides: dataset.typeOverrides } : {}),
+        cleaning_steps: toSupabaseJson(dataset.cleaningSteps || []),
+        ...(dataset.typeOverrides !== undefined
+          ? { type_overrides: toSupabaseJson(dataset.typeOverrides) }
+          : {}),
         ...(dataset.csvContent !== undefined
-          ? { csv_content: csvContent, content_path: contentPath }
+          ? { csv_content: csvContent ?? null, content_path: contentPath }
           : {}),
         updated_at: new Date().toISOString(),
       };
@@ -1596,13 +1671,13 @@ class SupabaseService {
         dataset_version: analysis.datasetVersion ?? null,
         dataset_version_id: analysis.datasetVersionId ?? null,
         variables: analysis.variables,
-        configuration: analysis.configuration,
+        configuration: toSupabaseJson(analysis.configuration),
         sample_size: analysis.sampleSize,
         missing_count: analysis.missingCount,
         missing_handling: analysis.missingHandling,
-        results: analysis.results,
-        interpretation: analysis.interpretation,
-        method_notes: analysis.methodNotes,
+        results: toSupabaseJson(analysis.results),
+        interpretation: toSupabaseJson(analysis.interpretation),
+        method_notes: toSupabaseJson(analysis.methodNotes),
         updated_at: new Date().toISOString(),
       };
 
@@ -1772,7 +1847,7 @@ class SupabaseService {
         title: report.title,
         objective: report.objective || null,
         content_markdown: report.markdown,
-        summary: report.summary ?? null,
+        summary: report.summary ? toSupabaseJson(report.summary) : null,
         updated_at: new Date().toISOString(),
       };
       if (!current.data) {

@@ -123,7 +123,7 @@ export interface ScatterPlotChartProps {
   missingCount?: number;
   className?: string;
   height?: number;
-  staleNotice?: string;
+  staleNotice?: string | undefined;
   discrepancyNotice?: string;
   caption?: string;
 }
@@ -328,9 +328,9 @@ export function ScatterPlotChart({
             {hasTrendLine && (
               <Scatter
                 name="Fitted Reference Line (OLS)"
-                data={activeTrendLine}
+                data={activeTrendLine ?? []}
                 line={{ stroke: "#475569", strokeWidth: 2, strokeDasharray: "4 4" }}
-                shape={() => null}
+                shape={() => <></>}
                 isAnimationActive={false}
               />
             )}

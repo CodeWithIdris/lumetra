@@ -160,8 +160,8 @@ export function histogram(nums: number[], binCount?: number): HistogramBin[] {
   return bins;
 }
 
-export function fmt(x: number | null, digits = 2): string {
-  if (x === null || !Number.isFinite(x)) return "—";
+export function fmt(x: number | null | undefined, digits = 2): string {
+  if (x == null || !Number.isFinite(x)) return "—";
   if (Number.isInteger(x) && Math.abs(x) < 1e15) return x.toLocaleString("en-US");
   const abs = Math.abs(x);
   if (abs !== 0 && (abs >= 1e9 || abs < 1e-3)) return x.toExponential(digits);

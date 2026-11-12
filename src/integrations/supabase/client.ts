@@ -27,16 +27,17 @@ export function getEffectiveCredentials(): {
   source: "env" | "storage" | "none";
 } {
   const envUrl =
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) ||
-    (typeof process !== "undefined" && process.env?.VITE_SUPABASE_URL) ||
+    (typeof import.meta !== "undefined" && import.meta.env?.["VITE_SUPABASE_URL"]) ||
+    (typeof process !== "undefined" && process.env?.["VITE_SUPABASE_URL"]) ||
     "";
 
   const envKey =
     (typeof import.meta !== "undefined" &&
-      (import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-        import.meta.env?.VITE_SUPABASE_ANON_KEY)) ||
+      (import.meta.env?.["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+        import.meta.env?.["VITE_SUPABASE_ANON_KEY"])) ||
     (typeof process !== "undefined" &&
-      (process.env?.VITE_SUPABASE_PUBLISHABLE_KEY || process.env?.VITE_SUPABASE_ANON_KEY)) ||
+      (process.env?.["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+        process.env?.["VITE_SUPABASE_ANON_KEY"])) ||
     "";
 
   if (envUrl.trim() && envKey.trim()) {

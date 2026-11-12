@@ -98,7 +98,7 @@ function cloneDataset(ds: Dataset): Dataset {
     columns: [...ds.columns],
     rows: ds.rows.map((r) => [...r]),
     warnings: [...ds.warnings],
-    typeOverrides: ds.typeOverrides ? { ...ds.typeOverrides } : undefined,
+    ...(ds.typeOverrides !== undefined ? { typeOverrides: { ...ds.typeOverrides } } : {}),
   };
 }
 
@@ -351,6 +351,10 @@ export function changeColumnType(
   const nextRows = dataset.rows.map((row) => {
     const nextRow = [...row];
     const cell = nextRow[colIdx];
+    if (cell === undefined) {
+      nextRow[colIdx] = null;
+      return nextRow;
+    }
     if (cell === null) return nextRow;
 
     if (targetType === "numeric") {

@@ -814,7 +814,7 @@ class PersistenceCoordinator {
           this.saveQueueToStorage();
           const backoff = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** item.retryCount);
           this.status = "retrying";
-          this.lastError = "Unable to save changes. Retrying…";
+          this.lastError = result.error ?? "Unable to save changes. Retrying…";
           this.notify();
           this.scheduleRetry(backoff);
           break;
@@ -866,6 +866,7 @@ class PersistenceCoordinator {
     userId: string,
   ): Promise<{
     ok: boolean;
+    error?: string;
     revision?: number;
     conflict?: boolean;
     remoteRevision?: number;
@@ -955,8 +956,7 @@ class PersistenceCoordinator {
         }
 
         case "delete_project": {
-          const res = await supabase.deleteProject(item.projectId, userId);
-          return { ok: res.ok };
+          return await supabase.deleteProject(item.projectId, userId);
         }
 
         default:
@@ -964,7 +964,10 @@ class PersistenceCoordinator {
       }
     } catch (e) {
       console.warn(`Write execution failed for ${item.entityType}:`, e);
-      return { ok: false };
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "The change could not be saved.",
+      };
     }
   }
 

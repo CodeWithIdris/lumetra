@@ -258,9 +258,13 @@ export async function parseCsvFile(
     return fail(`"${file.name}" could not be read.`);
   }
   try {
+    const { encodingWarning: requestedEncodingWarning, ...baseOptions } = options ?? {};
+    const effectiveEncodingWarning = requestedEncodingWarning ?? encodingWarning;
     const effectiveOptions: ParseCsvOptions = {
-      ...options,
-      encodingWarning: options?.encodingWarning ?? encodingWarning,
+      ...baseOptions,
+      ...(effectiveEncodingWarning !== undefined
+        ? { encodingWarning: effectiveEncodingWarning }
+        : {}),
     };
     return { result: parseCsvText(text, file.name, "upload", effectiveOptions), text };
   } catch (e) {

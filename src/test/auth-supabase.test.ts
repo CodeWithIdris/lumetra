@@ -294,17 +294,17 @@ describe("Authentication Workflows & Security Verification", () => {
     // Alice sees only Alice's projects
     const aliceProjects = loadProjectsForUser("usr_alice");
     expect(aliceProjects).toHaveLength(1);
-    expect(aliceProjects[0].id).toBe("p_alice_1");
+    expect(aliceProjects[0]?.id).toBe("p_alice_1");
 
     // Bob sees only Bob's projects
     const bobProjects = loadProjectsForUser("usr_bob");
     expect(bobProjects).toHaveLength(1);
-    expect(bobProjects[0].id).toBe("p_bob_1");
+    expect(bobProjects[0]?.id).toBe("p_bob_1");
 
     // Guest sees only guest projects
     const guestProjects = loadProjectsForUser(null);
     expect(guestProjects).toHaveLength(1);
-    expect(guestProjects[0].id).toBe("p_guest_1");
+    expect(guestProjects[0]?.id).toBe("p_guest_1");
 
     // Clear Alice cache on sign-out
     clearUserProjectCache("usr_alice");

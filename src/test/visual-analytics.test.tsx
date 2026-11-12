@@ -306,6 +306,7 @@ describe("Visual Analytics: Dataset Version Changes & Discrepancy Reporting", ()
       source: "upload",
       columns: ["x", "unrelated"],
       rows: [["1", "2"]],
+      sizeBytes: 0,
       warnings: [],
     };
 

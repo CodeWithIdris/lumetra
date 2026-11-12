@@ -319,7 +319,7 @@ export function extractBivariateData(
     method,
     r: corr.r,
     pValue: corr.pValue,
-    note: corr.note,
+    ...(corr.note !== undefined ? { note: corr.note } : {}),
     regression,
     trendLine,
     minX,
@@ -364,10 +364,7 @@ export function getSavedBivariateData(analysis: SavedAnalysis): BivariateAnalysi
       typeof analysis.results["pValue"] === "number"
         ? (analysis.results["pValue"] as number)
         : null,
-    note:
-      typeof analysis.results["note"] === "string"
-        ? (analysis.results["note"] as string)
-        : undefined,
+    ...(typeof analysis.results["note"] === "string" ? { note: analysis.results["note"] } : {}),
     regression,
     trendLine: (analysis.results["trendLine"] as Array<{ x: number; y: number }>) ?? null,
     minX:
@@ -495,7 +492,7 @@ export function createCorrelationSavedAnalysis(
     n: data.n,
     r: data.r,
     pValue: data.pValue,
-    note: data.note,
+    ...(data.note !== undefined ? { note: data.note } : {}),
   };
   const interpretation = interpretCorrelation(colX, colY, result);
 

@@ -426,37 +426,37 @@ function Reports() {
 
   // Automatic report persistence whenever dataset, objective, cleaning, or analyses change
   useEffect(() => {
-    if (activeProject && ds && report) {
-      const timer = setTimeout(() => {
-        const md = generateReportMarkdown({
-          projectName: activeProject.name,
-          objective,
-          datasetName: ds.name,
-          rawRowCount: rawDataset?.rows.length ?? ds.rows.length,
-          cleanRowCount: ds.rows.length,
-          columnCount: ds.columns.length,
-          columnsList: ds.columns,
-          cleaningSteps,
-          savedAnalyses,
-          descriptiveReport: report,
-        });
+    if (!activeProject || !ds || !report) return;
 
-        saveReport({
-          projectId: activeProject.id,
-          title: `${activeProject.name} Analytical Report`,
-          markdown: md,
-          objective,
-          summary: {
-            rawRows: rawDataset?.rows.length ?? ds.rows.length,
-            cleanRows: ds.rows.length,
-            columns: ds.columns.length,
-            analysesCount: savedAnalyses.length,
-          },
-        }).catch(() => {});
-      }, 500);
+    const timer = setTimeout(() => {
+      const md = generateReportMarkdown({
+        projectName: activeProject.name,
+        objective,
+        datasetName: ds.name,
+        rawRowCount: rawDataset?.rows.length ?? ds.rows.length,
+        cleanRowCount: ds.rows.length,
+        columnCount: ds.columns.length,
+        columnsList: ds.columns,
+        cleaningSteps,
+        savedAnalyses,
+        descriptiveReport: report,
+      });
 
-      return () => clearTimeout(timer);
-    }
+      saveReport({
+        projectId: activeProject.id,
+        title: `${activeProject.name} Analytical Report`,
+        markdown: md,
+        objective,
+        summary: {
+          rawRows: rawDataset?.rows.length ?? ds.rows.length,
+          cleanRows: ds.rows.length,
+          columns: ds.columns.length,
+          analysesCount: savedAnalyses.length,
+        },
+      }).catch(() => {});
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [
     activeProject?.id,
     objective,

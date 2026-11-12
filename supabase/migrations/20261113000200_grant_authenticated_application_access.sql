@@ -6,7 +6,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE
         public.datasets,
         public.saved_analyses,
         public.reports,
-        public.dataset_versions,
-        public.project_history,
         public.user_preferences
+    TO authenticated;
+
+GRANT SELECT, INSERT, DELETE
+    ON TABLE
+        public.dataset_versions,
+        public.project_history
     TO authenticated;

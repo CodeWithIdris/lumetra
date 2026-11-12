@@ -40,18 +40,19 @@ export function mapSupabaseUser(user: User): UserProfile {
   const metadata = user.user_metadata || {};
   const email = user.email || "";
   const name =
-    (metadata.name as string) ||
-    (metadata.full_name as string) ||
+    (metadata["name"] as string) ||
+    (metadata["full_name"] as string) ||
     email.split("@")[0] ||
     "Researcher";
-  const persona: PersonaId = (metadata.persona as PersonaId) || loadActivePersona() || "engineer";
+  const persona: PersonaId =
+    (metadata["persona"] as PersonaId) || loadActivePersona() || "engineer";
 
   return {
     id: user.id,
     email,
     name,
     persona,
-    avatarUrl: (metadata.avatar_url as string) || undefined,
+    avatarUrl: (metadata["avatar_url"] as string) || undefined,
     isCloudSynced: true,
     provider: "supabase",
     emailConfirmed: Boolean(user.email_confirmed_at),
@@ -183,8 +184,9 @@ export async function registerWithEmailPassword(
           name: trimmedName,
           persona,
         },
-        emailRedirectTo:
-          typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+        ...(typeof window !== "undefined"
+          ? { emailRedirectTo: `${window.location.origin}/login` }
+          : {}),
       },
     });
 
@@ -261,7 +263,7 @@ export async function sendMagicLink(email: string): Promise<{ success: boolean; 
     const { error } = await supabase.auth.signInWithOtp({
       email: trimmedEmail,
       options: {
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        ...(typeof window !== "undefined" ? { emailRedirectTo: window.location.origin } : {}),
       },
     });
 
@@ -295,12 +297,11 @@ export async function sendPasswordReset(
   }
 
   try {
-    const redirectTo =
-      typeof window !== "undefined" ? `${window.location.origin}/settings?auth=reset` : undefined;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-      redirectTo,
-    });
+    const resetOptions =
+      typeof window !== "undefined"
+        ? { redirectTo: `${window.location.origin}/settings?auth=reset` }
+        : {};
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, resetOptions);
 
     if (error) {
       return { success: false, error: error.message };
@@ -362,7 +363,7 @@ export async function signInWithGoogleOAuth(): Promise<{ error?: string }> {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        ...(typeof window !== "undefined" ? { redirectTo: window.location.origin } : {}),
       },
     });
 

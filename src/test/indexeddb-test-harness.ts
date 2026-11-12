@@ -25,6 +25,7 @@ interface StoredIndexDef {
   name: string;
   keyPath: string;
   unique: boolean;
+  multiEntry: boolean;
 }
 
 interface StoredObjectStoreDef {
@@ -41,6 +42,14 @@ interface DatabaseDef {
 }
 
 const memoryDatabases = new Map<string, DatabaseDef>();
+
+type Writable<T, K extends keyof T> = Omit<T, K> & {
+  -readonly [P in K]: T[P];
+};
+
+type MockOpenDBRequest = Writable<IDBOpenDBRequest, "result" | "error" | "readyState">;
+type MockRequest = Writable<IDBRequest<unknown>, "result" | "error" | "readyState">;
+type MockTransaction = Writable<IDBTransaction, "error" | "mode" | "db">;
 
 export const harnessControls: HarnessControls = {
   simulateQuotaError: false,
@@ -77,8 +86,7 @@ export function createMockIndexedDB(): IDBFactory {
   return {
     open(name: string, version?: number): IDBOpenDBRequest {
       const targetVersion = version ?? 1;
-      const request = new EventTarget() as unknown as IDBOpenDBRequest;
-      request.result = null as unknown as IDBDatabase;
+      const request = new EventTarget() as unknown as MockOpenDBRequest;
       request.error = null;
       request.readyState = "pending";
 
@@ -97,7 +105,7 @@ export function createMockIndexedDB(): IDBFactory {
         if (harnessControls.simulateBlockedError) {
           if (typeof request.onblocked === "function") {
             const ev = new Event("blocked");
-            request.onblocked(ev as unknown as Event);
+            request.onblocked(ev as unknown as IDBVersionChangeEvent);
           }
           return;
         }
@@ -173,7 +181,7 @@ export function createMockIndexedDB(): IDBFactory {
     },
 
     deleteDatabase(name: string): IDBOpenDBRequest {
-      const request = new EventTarget() as unknown as IDBOpenDBRequest;
+      const request = new EventTarget() as unknown as MockOpenDBRequest;
       request.readyState = "pending";
       queueMicrotask(() => {
         memoryDatabases.delete(name);
@@ -185,9 +193,11 @@ export function createMockIndexedDB(): IDBFactory {
       return request;
     },
 
-    cmp: (a: unknown, b: unknown) => {
+    databases: async () =>
+      Array.from(memoryDatabases.values(), ({ name, version }) => ({ name, version })),
+    cmp: (a: IDBValidKey, b: IDBValidKey) => {
       if (a === b) return 0;
-      return a > b ? 1 : -1;
+      return String(a) > String(b) ? 1 : -1;
     },
   };
 }
@@ -205,7 +215,7 @@ function createMockTransaction(
   db: IDBDatabase,
   dbDef: DatabaseDef,
 ): IDBTransaction {
-  const tx = new EventTarget() as unknown as IDBTransaction;
+  const tx = new EventTarget() as unknown as MockTransaction;
   let aborted = false;
   let completed = false;
   tx.error = null;
@@ -312,6 +322,7 @@ function createMockObjectStore(
         name,
         keyPath,
         unique: Boolean(options?.unique),
+        multiEntry: Boolean(options?.multiEntry),
       };
       storeDef.indexes.set(name, idxDef);
       return createMockIndex(idxDef, records, txState);
@@ -324,7 +335,7 @@ function createMockObjectStore(
       return createMockIndex(idxDef, records, txState);
     },
     put: (val: unknown, key?: IDBValidKey): IDBRequest => {
-      const request = new EventTarget() as unknown as IDBRequest;
+      const request = new EventTarget() as unknown as MockRequest;
       request.readyState = "pending";
       txState?.notifyPending();
 
@@ -367,7 +378,7 @@ function createMockObjectStore(
       return request;
     },
     get: (key: IDBValidKey): IDBRequest => {
-      const request = new EventTarget() as unknown as IDBRequest;
+      const request = new EventTarget() as unknown as MockRequest;
       request.readyState = "pending";
       txState?.notifyPending();
 
@@ -388,7 +399,7 @@ function createMockObjectStore(
       return request;
     },
     getAll: (): IDBRequest => {
-      const request = new EventTarget() as unknown as IDBRequest;
+      const request = new EventTarget() as unknown as MockRequest;
       request.readyState = "pending";
       txState?.notifyPending();
 
@@ -408,7 +419,7 @@ function createMockObjectStore(
       return request;
     },
     delete: (key: IDBValidKey): IDBRequest => {
-      const request = new EventTarget() as unknown as IDBRequest;
+      const request = new EventTarget() as unknown as MockRequest;
       request.readyState = "pending";
       txState?.notifyPending();
 
@@ -428,7 +439,7 @@ function createMockObjectStore(
       return request;
     },
     clear: (): IDBRequest => {
-      const request = new EventTarget() as unknown as IDBRequest;
+      const request = new EventTarget() as unknown as MockRequest;
       request.readyState = "pending";
       txState?.notifyPending();
 
@@ -461,9 +472,10 @@ function createMockIndex(
     name: idxDef.name,
     keyPath: idxDef.keyPath,
     unique: idxDef.unique,
+    multiEntry: idxDef.multiEntry,
     objectStore: null as unknown as IDBObjectStore,
     get: (key: IDBValidKey): IDBRequest => {
-      const request = new EventTarget() as unknown as IDBRequest;
+      const request = new EventTarget() as unknown as MockRequest;
       request.readyState = "pending";
       txState?.notifyPending();
 
@@ -491,7 +503,7 @@ function createMockIndex(
       return request;
     },
     getAll: (query?: IDBValidKey): IDBRequest => {
-      const request = new EventTarget() as unknown as IDBRequest;
+      const request = new EventTarget() as unknown as MockRequest;
       request.readyState = "pending";
       txState?.notifyPending();
 

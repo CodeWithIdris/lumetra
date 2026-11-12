@@ -77,7 +77,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
         status: proj.status,
         updated_at: new Date().toISOString(),
       });
-      return { ok: true, remoteId: pId };
+      return { ok: true, remoteId: pId, revision: 1 };
     });
 
     vi.spyOn(supabase, "upsertDatasetRecord").mockImplementation(async (projId, ds, userId) => {
@@ -87,7 +87,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
       // Verify parent project exists for this user (foreign key & RLS check)
       const parent = remoteDb.lumetra_projects.get(pId);
-      if (!parent || parent.user_id !== uId) {
+      if (!parent || parent["user_id"] !== uId) {
         return {
           ok: false,
           error: "Foreign key / RLS check failed: project does not exist for user",
@@ -107,7 +107,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
         csv_content: ds.csvContent,
         updated_at: new Date().toISOString(),
       });
-      return { ok: true, datasetId: dId };
+      return { ok: true, datasetId: dId, revision: 1 };
     });
 
     vi.spyOn(supabase, "upsertAnalysisRecord").mockImplementation(async (projId, an, userId) => {
@@ -117,7 +117,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
       // Verify parent project exists for this user
       const parent = remoteDb.lumetra_projects.get(pId);
-      if (!parent || parent.user_id !== uId) {
+      if (!parent || parent["user_id"] !== uId) {
         return {
           ok: false,
           error: "Foreign key / RLS check failed: project does not exist for user",
@@ -137,7 +137,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
         interpretation: an.interpretation,
         updated_at: new Date().toISOString(),
       });
-      return { ok: true, analysisId: aId };
+      return { ok: true, analysisId: aId, revision: 1 };
     });
 
     vi.spyOn(supabase, "upsertReportRecord").mockImplementation(async (rep, userId) => {
@@ -147,7 +147,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
       const revision = Number(remoteDb.reports.get(rId)?.["revision"] ?? 0) + 1;
 
       const parent = remoteDb.lumetra_projects.get(pId);
-      if (!parent || parent.user_id !== uId) {
+      if (!parent || parent["user_id"] !== uId) {
         return {
           ok: false,
           error: "Foreign key / RLS check failed: project does not exist for user",
@@ -173,13 +173,13 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
       remoteDb.lumetra_projects.delete(pId);
       // Cascading deletions
       for (const [k, v] of remoteDb.datasets.entries()) {
-        if (v.project_id === pId) remoteDb.datasets.delete(k);
+        if (v["project_id"] === pId) remoteDb.datasets.delete(k);
       }
       for (const [k, v] of remoteDb.saved_analyses.entries()) {
-        if (v.project_id === pId) remoteDb.saved_analyses.delete(k);
+        if (v["project_id"] === pId) remoteDb.saved_analyses.delete(k);
       }
       for (const [k, v] of remoteDb.reports.entries()) {
-        if (v.project_id === pId) remoteDb.reports.delete(k);
+        if (v["project_id"] === pId) remoteDb.reports.delete(k);
       }
       return { ok: true };
     });
@@ -191,7 +191,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
       let ds: Record<string, unknown> | undefined;
       for (const v of remoteDb.datasets.values()) {
-        if (v.project_id === pId) {
+        if (v["project_id"] === pId) {
           ds = v;
           break;
         }
@@ -199,23 +199,23 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
       const analyses: Array<Record<string, unknown>> = [];
       for (const v of remoteDb.saved_analyses.values()) {
-        if (v.project_id === pId) analyses.push(v);
+        if (v["project_id"] === pId) analyses.push(v);
       }
 
       return {
-        id: p.id as string,
-        user_id: p.user_id as string,
-        name: p.name as string,
-        status: p.status as string,
-        objective: p.objective as string,
-        dataset_name: ds ? (ds.name as string) : undefined,
-        dataset_rows: ds ? (ds.row_count as number) : undefined,
-        dataset_columns: ds ? (ds.column_count as number) : undefined,
-        csv_content: ds ? (ds.csv_content as string) : undefined,
-        cleaning_steps: ds?.cleaning_steps ? JSON.stringify(ds.cleaning_steps) : undefined,
+        id: p["id"] as string,
+        user_id: p["user_id"] as string,
+        name: p["name"] as string,
+        status: p["status"] as string,
+        objective: p["objective"] as string,
+        dataset_name: ds ? (ds["name"] as string) : undefined,
+        dataset_rows: ds ? (ds["row_count"] as number) : undefined,
+        dataset_columns: ds ? (ds["column_count"] as number) : undefined,
+        csv_content: ds ? (ds["csv_content"] as string) : undefined,
+        cleaning_steps: ds?.["cleaning_steps"] ? JSON.stringify(ds["cleaning_steps"]) : undefined,
         saved_analyses: analyses.length > 0 ? JSON.stringify(analyses) : undefined,
-        created_at: (p.updated_at as string) || new Date().toISOString(),
-        updated_at: (p.updated_at as string) || new Date().toISOString(),
+        created_at: (p["updated_at"] as string) || new Date().toISOString(),
+        updated_at: (p["updated_at"] as string) || new Date().toISOString(),
       };
     });
 
@@ -253,8 +253,8 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     // Verify record exists in remote database
     expect(remoteDb.lumetra_projects.has(projectId)).toBe(true);
     const saved = remoteDb.lumetra_projects.get(projectId);
-    expect(saved?.name).toBe("Q3 Latency Analysis");
-    expect(saved?.user_id).toBe(USER_A_ID);
+    expect(saved?.["name"]).toBe("Q3 Latency Analysis");
+    expect(saved?.["user_id"]).toBe(USER_A_ID);
     expect(coordinator.getState().status).toBe("saved");
   });
 
@@ -304,8 +304,8 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     expect(remoteDb.lumetra_projects.has(projectId)).toBe(true);
     expect(remoteDb.datasets.has(datasetId)).toBe(true);
     const savedDs = remoteDb.datasets.get(datasetId);
-    expect(savedDs?.row_count).toBe(3);
-    expect(savedDs?.csv_content).toBe(csvContent);
+    expect(savedDs?.["row_count"]).toBe(3);
+    expect(savedDs?.["csv_content"]).toBe(csvContent);
   });
 
   // Scenario 3: Modify the dataset and confirm the latest version is saved.
@@ -351,8 +351,9 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
         id: "step_1",
         type: "rename_column" as const,
         params: { from: "response_ms", to: "latency_ms" },
-        appliedAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
         description: "Renamed column response_ms to latency_ms",
+        effect: { rowsBefore: 10, rowsAfter: 10, missingBefore: 0, missingAfter: 0 },
       },
     ];
 
@@ -373,8 +374,8 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
     const remoteDs = remoteDb.datasets.get(datasetId);
     expect(remoteDs).toBeDefined();
-    expect(remoteDs?.columns).toEqual(["latency_ms", "status_code"]);
-    expect(remoteDs?.cleaning_steps).toHaveLength(1);
+    expect(remoteDs?.["columns"]).toEqual(["latency_ms", "status_code"]);
+    expect(remoteDs?.["cleaning_steps"]).toHaveLength(1);
   });
 
   // Scenario 4: Run an analysis and confirm its configuration and results are persisted.
@@ -406,7 +407,13 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
       missingCount: 0,
       missingHandling: "exclude",
       results: { r: -0.78, pValue: 0.0001 },
-      interpretation: { summary: "Negative price elasticity observed." },
+      interpretation: {
+        observedResults: ["Negative price elasticity observed."],
+        statisticalInference: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+      },
       methodNotes: ["Missing values excluded."],
     };
 
@@ -415,9 +422,9 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
     expect(remoteDb.saved_analyses.has(analysisId)).toBe(true);
     const remoteAnalysis = remoteDb.saved_analyses.get(analysisId);
-    expect(remoteAnalysis?.name).toBe("Price vs Demand Elasticity");
-    expect(remoteAnalysis?.variables).toEqual(["price", "demand"]);
-    expect((remoteAnalysis?.results as Record<string, unknown>).r).toBe(-0.78);
+    expect(remoteAnalysis?.["name"]).toBe("Price vs Demand Elasticity");
+    expect(remoteAnalysis?.["variables"]).toEqual(["price", "demand"]);
+    expect((remoteAnalysis?.["results"] as Record<string, unknown>)["r"]).toBe(-0.78);
   });
 
   // Scenario 5: Generate a report and confirm it is saved automatically.
@@ -453,8 +460,8 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
     expect(remoteDb.reports.has(reportId)).toBe(true);
     const remoteRep = remoteDb.reports.get(reportId);
-    expect(remoteRep?.title).toBe("Executive Review Report");
-    expect(remoteRep?.content_markdown).toBe(reportMarkdown);
+    expect(remoteRep?.["title"]).toBe("Executive Review Report");
+    expect(remoteRep?.["content_markdown"]).toBe(reportMarkdown);
   });
 
   it("reuses a generated report record and advances its revision on subsequent saves", async () => {
@@ -776,7 +783,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
       USER_B_ID, // User B
     );
 
-    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("Expected the cross-account dataset write to fail.");
     expect(res.error).toContain("RLS check failed");
     expect(remoteDb.datasets.has(datasetBId)).toBe(false);
   });
@@ -796,7 +803,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
       USER_A_ID,
     );
 
-    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected the account-switch write to fail.");
     expect(result.error).toContain("Authentication required");
   });
 
@@ -1007,7 +1014,7 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
         user_id: userId || USER_A_ID,
         name: project.name,
       });
-      return { ok: true, remoteId: id };
+      return { ok: true, remoteId: id, revision: 1 };
     });
 
     const makeProject = (name: string): ProjectMeta => ({

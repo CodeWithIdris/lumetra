@@ -580,6 +580,7 @@ u1,enterprise,$120.50,1,0`; // Row 7 is an exact duplicate of Row 1
     const storedCsv = loadCsv("journey_proj_1");
     expect(storedCsv).toBe(rawCsv);
     const parsedReopened = parseCsvText(storedCsv!, reopened!.dataset!.name, "upload");
+    if (!parsedReopened.ok) throw new Error(parsedReopened.errors.join(", "));
     const replayed = replayCleaningSteps(parsedReopened.dataset!, reopened!.cleaningSteps!);
     expect(replayed.dataset.rows).toHaveLength(6);
     expect(replayed.dataset.typeOverrides?.["latency_ms"]).toBe("numeric");

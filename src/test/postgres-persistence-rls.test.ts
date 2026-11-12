@@ -61,10 +61,12 @@ describe("Phase 4B: SQL Schema and Migration Integrity", () => {
       "datasets",
       "saved_analyses",
       "reports",
-      "dataset_versions",
-      "project_history",
       "user_preferences",
     ]) {
+      expect(sql).toContain(`public.${table}`);
+    }
+    expect(sql).toContain("GRANT SELECT, INSERT, DELETE");
+    for (const table of ["dataset_versions", "project_history"]) {
       expect(sql).toContain(`public.${table}`);
     }
     expect(sql).toContain("TO authenticated");
@@ -168,8 +170,10 @@ describe("Phase 4B: PostgreSQL Persistence & Project Lifecycle", () => {
       missingHandling: "exclude",
       results: { r: 0.85, pValue: 0.001 },
       interpretation: {
-        summary: "Strong positive correlation observed.",
-        contextualImplication: "System load impacts latency.",
+        observedResults: ["Strong positive correlation observed."],
+        statisticalInference: [],
+        assumptions: [],
+        recommendations: [],
         limitations: ["Observational telemetry data."],
       },
       methodNotes: ["Missing values excluded."],
@@ -195,11 +199,16 @@ describe("Phase 4B: PostgreSQL Persistence & Project Lifecycle", () => {
       cleaningSteps: [
         {
           id: "step_1",
-          type: "drop_na",
+          type: "handle_missing",
           params: {},
-          appliedAt: new Date().toISOString(),
+          timestamp: new Date().toISOString(),
           description: "Drop empty rows",
-          effect: { rowsBefore: 105, rowsAfter: 100 },
+          effect: {
+            rowsBefore: 105,
+            rowsAfter: 100,
+            missingBefore: 5,
+            missingAfter: 0,
+          },
         },
       ],
       savedAnalyses: [mockAnalysis],
@@ -357,12 +366,13 @@ describe("Phase 4B: PostgreSQL Persistence & Project Lifecycle", () => {
     });
 
     const res = await supabaseService.saveReport(mockReport);
-    expect(res.ok, res.error).toBe(true);
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error(res.error);
 
     const reports = await supabaseService.loadReports(projectId);
     expect(reports).toHaveLength(1);
-    expect(reports[0].title).toBe("Quarterly Performance Audit");
-    expect(reports[0].content_markdown).toContain("Latency remained within SLA limits.");
+    expect(reports[0]?.title).toBe("Quarterly Performance Audit");
+    expect(reports[0]?.content_markdown).toContain("Latency remained within SLA limits.");
   });
 });
 
@@ -660,7 +670,13 @@ describe("Phase 4B.1: Persistence Flow Diagnostics & Robustness", () => {
       missingCount: 0,
       missingHandling: "exclude",
       results: {},
-      interpretation: { summary: "test" },
+      interpretation: {
+        observedResults: ["test"],
+        statisticalInference: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+      },
       methodNotes: [],
     };
 
