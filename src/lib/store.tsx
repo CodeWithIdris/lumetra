@@ -1036,54 +1036,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       // If not in local projects list, check if available in cloud
       if (!p && isSupabaseConfigured()) {
+        let cloudRecord: CloudRecord | null;
         try {
-          const cloudRecord = await getSupabaseClient().loadProject(id);
-          if (
-            userIdRef.current !== openingUserId ||
-            !cloudRecord ||
-            !openingUserId ||
-            cloudRecord.user_id !== openingUserId
-          ) {
-            return { error: "Account changed while opening this project." };
-          }
-          if (cloudRecord) {
-            const cloudProject: ProjectMeta = {
-              id: cloudRecord.id,
-              userId: openingUserId,
-              name: cloudRecord.name,
-              ...(cloudRecord.objective !== undefined
-                ? { description: cloudRecord.objective, objective: cloudRecord.objective }
-                : {}),
-              createdAt: cloudRecord.created_at,
-              updatedAt: cloudRecord.updated_at,
-              status: (cloudRecord.status as ProjectStatus) || "no-data",
-              dataset: cloudRecord.dataset_name
-                ? {
-                    ...(cloudRecord.dataset_id ? { id: cloudRecord.dataset_id } : {}),
-                    name: cloudRecord.dataset_name,
-                    rows: cloudRecord.dataset_rows || 0,
-                    columns: cloudRecord.dataset_columns || 0,
-                    source: (cloudRecord.dataset_source as "upload" | "sample") || "upload",
-                    stored: false,
-                  }
-                : null,
-              cleaningSteps: cloudRecord.cleaning_steps
-                ? JSON.parse(cloudRecord.cleaning_steps)
-                : [],
-              savedAnalyses: cloudRecord.saved_analyses
-                ? JSON.parse(cloudRecord.saved_analyses)
-                : [],
-              isCloudSynced: true,
-              cloudSyncedAt: cloudRecord.updated_at,
-              revision: cloudRecord.revision ?? 1,
-              datasetRevision: cloudRecord.dataset_revision ?? 0,
-            };
-            p = cloudProject;
-            commit([cloudProject, ...loadProjects()]);
-          }
+          cloudRecord = await getSupabaseClient().loadProject(id);
         } catch {
-          // ignore
+          return {
+            error: "This project could not be loaded. Check your connection and try again.",
+          };
         }
+        if (userIdRef.current !== openingUserId) {
+          return { error: "Account changed while opening this project." };
+        }
+        if (!cloudRecord || !openingUserId || cloudRecord.user_id !== openingUserId) {
+          return { error: "Project not found." };
+        }
+        const cloudProject: ProjectMeta = {
+          id: cloudRecord.id,
+          userId: openingUserId,
+          name: cloudRecord.name,
+          ...(cloudRecord.objective !== undefined
+            ? { description: cloudRecord.objective, objective: cloudRecord.objective }
+            : {}),
+          createdAt: cloudRecord.created_at,
+          updatedAt: cloudRecord.updated_at,
+          status: (cloudRecord.status as ProjectStatus) || "no-data",
+          dataset: cloudRecord.dataset_name
+            ? {
+                ...(cloudRecord.dataset_id ? { id: cloudRecord.dataset_id } : {}),
+                name: cloudRecord.dataset_name,
+                rows: cloudRecord.dataset_rows || 0,
+                columns: cloudRecord.dataset_columns || 0,
+                source: (cloudRecord.dataset_source as "upload" | "sample") || "upload",
+                stored: false,
+              }
+            : null,
+          cleaningSteps: cloudRecord.cleaning_steps ? JSON.parse(cloudRecord.cleaning_steps) : [],
+          savedAnalyses: cloudRecord.saved_analyses ? JSON.parse(cloudRecord.saved_analyses) : [],
+          isCloudSynced: true,
+          cloudSyncedAt: cloudRecord.updated_at,
+          revision: cloudRecord.revision ?? 1,
+          datasetRevision: cloudRecord.dataset_revision ?? 0,
+        };
+        p = cloudProject;
+        commit([cloudProject, ...loadProjects()]);
       }
 
       if (!p) return { error: "Project not found." };
@@ -1173,8 +1168,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (cloudRecord?.csv_content) {
             csv = cloudRecord.csv_content;
           }
-        } catch (e) {
-          console.warn("Cloud project fallback error:", e);
+        } catch {
+          return {
+            error: "This project's data could not be loaded. Check your connection and try again.",
+          };
         }
       }
 

@@ -722,9 +722,8 @@ class SupabaseService {
         .eq("id", projectUuid)
         .maybeSingle();
 
-      if (error || !data) {
-        return null;
-      }
+      if (error) throw error;
+      if (!data) return null;
 
       const row = data as Record<string, unknown>;
       const datasets = ((row.datasets as Array<Record<string, unknown>>) || []).sort(
@@ -806,8 +805,7 @@ class SupabaseService {
 
       const { data, error } = await query;
       if (error) {
-        console.warn("Could not query Supabase projects:", error.message);
-        return [];
+        throw error;
       }
       if (!data) {
         return [];
@@ -847,8 +845,9 @@ class SupabaseService {
       });
 
       return records;
-    } catch {
-      return [];
+    } catch (error) {
+      console.warn("Could not load saved projects.", error);
+      throw error;
     }
   }
 

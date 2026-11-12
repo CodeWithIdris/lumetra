@@ -46,6 +46,31 @@ describe("Phase 4B: SQL Schema and Migration Integrity", () => {
     );
   });
 
+  it("grants authenticated users table access while leaving ownership to RLS", () => {
+    const migrationPath = resolve(
+      process.cwd(),
+      "supabase/migrations/20261113000200_grant_authenticated_application_access.sql",
+    );
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf-8");
+    expect(sql).toContain("GRANT USAGE ON SCHEMA public TO authenticated");
+    expect(sql).toContain("GRANT SELECT, INSERT, UPDATE, DELETE");
+    for (const table of [
+      "lumetra_projects",
+      "datasets",
+      "saved_analyses",
+      "reports",
+      "dataset_versions",
+      "project_history",
+      "user_preferences",
+    ]) {
+      expect(sql).toContain(`public.${table}`);
+    }
+    expect(sql).toContain("TO authenticated");
+    expect(sql).not.toContain("TO anon");
+  });
+
   it("includes version-controlled migration with required tables and RLS policies", () => {
     const migrationPath = resolve(
       process.cwd(),
