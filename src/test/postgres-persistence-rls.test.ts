@@ -15,6 +15,36 @@ const USER_A_ID = "11111111-1111-4111-8111-111111111111";
 const USER_B_ID = "22222222-2222-4222-8222-222222222222";
 
 describe("Phase 4B: SQL Schema and Migration Integrity", () => {
+  it("adds version snapshots, record revisions, and owner-restricted recovery metadata", () => {
+    const migrationPath = resolve(
+      process.cwd(),
+      "supabase/migrations/20261102000100_add_recovery_versions_and_revisions.sql",
+    );
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, "utf-8");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS public.dataset_versions");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS public.project_history");
+    expect(sql).toContain("ALTER TABLE public.dataset_versions ENABLE ROW LEVEL SECURITY");
+    expect(sql).toContain("ALTER TABLE public.project_history ENABLE ROW LEVEL SECURITY");
+    expect(sql).toContain("p.id = project_id AND p.user_id = auth.uid()");
+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS revision BIGINT");
+    expect(sql).not.toContain("UNIQUE (dataset_id, version_number)");
+
+    const storageMigrationPath = resolve(
+      process.cwd(),
+      "supabase/migrations/20261112000100_dataset_version_json_snapshots.sql",
+    );
+    expect(existsSync(storageMigrationPath)).toBe(true);
+    const recoveryUpdate = readFileSync(storageMigrationPath, "utf-8");
+    expect(recoveryUpdate).toContain("'application/json'");
+    expect(recoveryUpdate).toContain("dataset_version_id UUID");
+    expect(recoveryUpdate).toContain("saved_analyses_dataset_version_project_fkey");
+    expect(recoveryUpdate).toContain(
+      "DROP CONSTRAINT IF EXISTS dataset_versions_dataset_id_version_number_key",
+    );
+  });
+
   it("includes version-controlled migration with required tables and RLS policies", () => {
     const migrationPath = resolve(
       process.cwd(),

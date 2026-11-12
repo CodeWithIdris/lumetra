@@ -100,6 +100,8 @@ function Workspace() {
     resetCleaning,
     restoreDatasetVersion,
     datasetVersions,
+    persistenceConflicts,
+    resolvePersistenceConflict,
     savedAnalyses,
     loadFile,
     attachDataset,
@@ -229,7 +231,7 @@ function Workspace() {
     const delim = newDelimiter === "auto" ? undefined : newDelimiter;
     const re = parseCsvText(pendingImport.csv, pendingImport.file.name, "upload", {
       hasHeader: newHasHeader,
-      delimiter: delim,
+      ...(delim ? { delimiter: delim } : {}),
     });
     if (re.ok) {
       setPendingImport({
@@ -590,6 +592,53 @@ function Workspace() {
 
             {activeProject && (
               <section className="rounded border border-slate-200 bg-white">
+                {persistenceConflicts
+                  .filter((conflict) => conflict.projectId === activeProject.id)
+                  .map((conflict) => (
+                    <div
+                      key={conflict.id}
+                      className="border-b border-amber-100 bg-amber-50/70 px-3 py-2"
+                    >
+                      <p className="text-xs font-medium text-amber-900">
+                        A newer saved copy is available
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-amber-800">
+                        Both copies are preserved. Choose which one should become current.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px]"
+                          onClick={async () => {
+                            const result = await resolvePersistenceConflict(
+                              conflict.id,
+                              "keep-local",
+                            );
+                            if (result.success) toast.success("Your changes are now current.");
+                            else toast.error(result.error || "Could not keep your changes.");
+                          }}
+                        >
+                          Keep my changes
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-[11px]"
+                          onClick={async () => {
+                            const result = await resolvePersistenceConflict(
+                              conflict.id,
+                              "use-saved",
+                            );
+                            if (result.success) toast.success("The saved copy is now current.");
+                            else toast.error(result.error || "Could not restore the saved copy.");
+                          }}
+                        >
+                          Use saved copy
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 <div className="flex items-center justify-between gap-3 px-3 py-2">
                   <div className="text-xs font-medium text-slate-700">
                     Recovery history
@@ -616,9 +665,13 @@ function Workspace() {
                           const analyses = savedAnalyses.filter(
                             (analysis) =>
                               analysis.datasetId === version.datasetId &&
-                              analysis.datasetVersion === version.version,
+                              (analysis.datasetVersionId
+                                ? analysis.datasetVersionId === version.id
+                                : analysis.datasetVersion === version.version),
                           );
-                          const isCurrent = active?.dataset.version === version.version;
+                          const isCurrent = active?.dataset.versionId
+                            ? active.dataset.versionId === version.id
+                            : active?.dataset.version === version.version;
                           return (
                             <li
                               key={version.id}

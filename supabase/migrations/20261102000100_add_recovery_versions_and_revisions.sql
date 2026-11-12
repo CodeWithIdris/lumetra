@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS public.dataset_versions (
     cleaning_steps JSONB NOT NULL DEFAULT '[]'::jsonb,
     change_description TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    UNIQUE (dataset_id, version_number),
     UNIQUE (content_path)
 );
 
@@ -100,12 +99,12 @@ VALUES (
     'lumetra-dataset-versions',
     'lumetra-dataset-versions',
     false,
-    20971520,
-    ARRAY['text/csv', 'text/plain', 'application/octet-stream']
+    67108864,
+    ARRAY['text/csv', 'text/plain', 'application/octet-stream', 'application/json']
 )
 ON CONFLICT (id) DO UPDATE SET
     public = false,
-    file_size_limit = 20971520,
+    file_size_limit = 67108864,
     allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 CREATE POLICY "Users can read own dataset version files"

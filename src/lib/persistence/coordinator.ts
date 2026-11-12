@@ -22,6 +22,8 @@ import {
   loadDatasetVersion,
   saveDatasetVersion,
   saveLocalPersistenceConflict,
+  listDatasetVersions,
+  deleteLocalPersistenceConflict,
   type LocalPersistenceConflict,
   saveDataset,
 } from "./indexeddb";
@@ -45,7 +47,6 @@ export interface PersistenceState {
 export type EntityType =
   | "project"
   | "dataset"
-  | "dataset_version"
   | "dataset_version"
   | "analysis"
   | "analysis_delete"
@@ -681,6 +682,9 @@ class PersistenceCoordinator {
             remoteRevision: result.remoteRevision ?? 0,
             ...(versionIds?.local ? { localVersionId: versionIds.local } : {}),
             ...(versionIds?.remote ? { remoteVersionId: versionIds.remote } : {}),
+            ...(item.entityType !== "dataset" && result.remoteRecord
+              ? { remoteSnapshot: result.remoteRecord }
+              : {}),
             createdAt: new Date().toISOString(),
           };
           await saveLocalPersistenceConflict(conflict);
@@ -802,11 +806,7 @@ class PersistenceCoordinator {
           const metadata = item.data["version"] as DatasetVersionMetadata;
           const version = await loadDatasetVersion(metadata.id);
           if (!version) throw new Error("The saved dataset version is unavailable locally.");
-          const res = await supabase.saveDatasetVersionRecord(
-            metadata,
-            version.dataset.csv,
-            userId,
-          );
+          const res = await supabase.saveDatasetVersionRecord(metadata, version.dataset, userId);
           return { ok: res.ok };
         }
 
@@ -933,9 +933,13 @@ class PersistenceCoordinator {
       source?: "upload" | "sample";
       cleaningSteps?: CleaningStep[];
     };
-    const stored = datasetInfo.id
-      ? await loadDataset(datasetInfo.id)
-      : await loadDatasetByProject(item.projectId);
+    const versions = await listDatasetVersions(item.projectId, datasetInfo.id);
+    const latestVersion = versions[0] ? await loadDatasetVersion(versions[0].id) : null;
+    const stored =
+      latestVersion?.dataset ??
+      (datasetInfo.id
+        ? await loadDataset(datasetInfo.id)
+        : await loadDatasetByProject(item.projectId));
     if (!stored) return null;
     const localDataset: Dataset = {
       id: stored.id,
@@ -952,14 +956,13 @@ class PersistenceCoordinator {
       projectId: item.projectId,
       userId,
       dataset: localDataset,
-      ...(stored.csv !== undefined ? { csv: stored.csv } : {}),
       cleaningSteps: datasetInfo.cleaningSteps ?? [],
       description: "Your changes before a newer saved version",
     });
 
     const remote = result.remoteRecord;
-    const remoteCsv = remote?.["csv_content"];
-    if (typeof remoteCsv !== "string") return { local: localVersion.id };
+    if (!remote || typeof remote["csv_content"] !== "string") return { local: localVersion.id };
+    const remoteCsv = remote["csv_content"];
     const parsed = parseCsvText(
       remoteCsv,
       String(remote["name"] ?? stored.name),
@@ -970,7 +973,6 @@ class PersistenceCoordinator {
       projectId: item.projectId,
       userId,
       dataset: { ...parsed.dataset, id: stored.id },
-      csv: remoteCsv,
       cleaningSteps: Array.isArray(remote["cleaning_steps"])
         ? (remote["cleaning_steps"] as CleaningStep[])
         : [],

@@ -31,6 +31,7 @@ import {
   storeCsv,
   replaceCsv,
   duplicateProject as duplicateProjectPersistence,
+  updateProjectRevision,
   type ProjectMeta,
   type ProjectStatus,
 } from "./persistence/projects";
@@ -49,6 +50,9 @@ import {
   migrateFromLocalStorage,
   checkStorageAvailable,
   type DatasetVersionMetadata,
+  type StoredDatasetVersion,
+  listLocalPersistenceConflicts,
+  type LocalPersistenceConflict,
 } from "./persistence/indexeddb";
 import { type PersonaId } from "./stats/personas";
 import {
@@ -112,6 +116,7 @@ export interface Store {
   activeProject: ProjectMeta | null;
   activeProjectId: string | null;
   datasetVersions: DatasetVersionMetadata[];
+  persistenceConflicts: LocalPersistenceConflict[];
   rawDataset: Dataset | null;
   cleaningSteps: CleaningStep[];
   savedAnalyses: SavedAnalysis[];
@@ -147,6 +152,10 @@ export interface Store {
   undoCleaning: () => Promise<void>;
   resetCleaning: () => Promise<void>;
   restoreDatasetVersion: (versionId: string) => Promise<{ success: boolean; error?: string }>;
+  resolvePersistenceConflict: (
+    conflictId: string,
+    resolution: "keep-local" | "use-saved",
+  ) => Promise<{ success: boolean; error?: string }>;
 
   // Analyses History
   saveAnalysis: (analysis: SavedAnalysis) => void;
@@ -216,6 +225,28 @@ function toLocalVersionMetadata(version: CloudDatasetVersion): DatasetVersionMet
   };
 }
 
+async function loadProjectDatasetVersions(
+  projectId: string,
+  userId: string | null,
+): Promise<DatasetVersionMetadata[]> {
+  const localVersions = await listDatasetVersions(projectId);
+  const cloudVersions =
+    userId && isSupabaseConfigured()
+      ? await getSupabaseClient().listDatasetVersionRecords(projectId, userId)
+      : [];
+  const merged = new Map<string, DatasetVersionMetadata>(
+    localVersions.map((version) => [version.id, version]),
+  );
+  for (const remote of cloudVersions) {
+    const metadata = toLocalVersionMetadata(remote);
+    await cacheDatasetVersionMetadata(metadata);
+    if (!merged.has(remote.id)) merged.set(remote.id, metadata);
+  }
+  return [...merged.values()].sort(
+    (left, right) => right.version - left.version || right.createdAt.localeCompare(left.createdAt),
+  );
+}
+
 export function computeSyncStatus(
   configured: boolean,
   u: UserProfile | null,
@@ -282,6 +313,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [active, setActiveState] = useState<Active | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [datasetVersions, setDatasetVersions] = useState<DatasetVersionMetadata[]>([]);
+  const [persistenceConflicts, setPersistenceConflicts] = useState<LocalPersistenceConflict[]>([]);
   const [cleaningSteps, setCleaningSteps] = useState<CleaningStep[]>([]);
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -319,6 +351,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     activeProjectIdRef.current = null;
     setActiveProjectId(null);
     setDatasetVersions([]);
+    setPersistenceConflicts([]);
     setCleaningSteps([]);
     cleaningStepsRef.current = [];
     setSavedAnalyses([]);
@@ -385,6 +418,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 status: (rem.status as ProjectStatus) || "no-data",
                 dataset: rem.dataset_name
                   ? {
+                      ...(rem.dataset_id ? { id: rem.dataset_id } : {}),
                       name: rem.dataset_name,
                       rows: rem.dataset_rows || 0,
                       columns: rem.dataset_columns || 0,
@@ -487,6 +521,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                     status: (rem.status as ProjectStatus) || "no-data",
                     dataset: rem.dataset_name
                       ? {
+                          ...(rem.dataset_id ? { id: rem.dataset_id } : {}),
                           name: rem.dataset_name,
                           rows: rem.dataset_rows || 0,
                           columns: rem.dataset_columns || 0,
@@ -580,7 +615,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         projectId: current.projectId,
         userId: user?.id ?? null,
         dataset,
-        csv: current.csv,
         cleaningSteps: steps,
         description,
         force,
@@ -811,6 +845,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               );
               if (version) {
                 importedDataset.version = version.version;
+                importedDataset.versionId = version.id;
+                await saveDataset(importedDataset, { projectId: targetProjectId, csv });
                 setActive({
                   dataset: importedDataset,
                   rawDataset: importedDataset,
@@ -954,6 +990,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               status: (cloudRecord.status as ProjectStatus) || "no-data",
               dataset: cloudRecord.dataset_name
                 ? {
+                    ...(cloudRecord.dataset_id ? { id: cloudRecord.dataset_id } : {}),
                     name: cloudRecord.dataset_name,
                     rows: cloudRecord.dataset_rows || 0,
                     columns: cloudRecord.dataset_columns || 0,
@@ -1013,6 +1050,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
           const rawDataset: Dataset = {
             id: stored.id,
+            ...(stored.version !== undefined ? { version: stored.version } : {}),
+            ...(stored.versionId !== undefined ? { versionId: stored.versionId } : {}),
             name: stored.name,
             source: stored.source,
             columns: stored.columns,
@@ -1028,6 +1067,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             const replayed = replayCleaningSteps(rawDataset, projectCleaningSteps);
             analyticalDataset = replayed.dataset;
           }
+          const versions = await loadProjectDatasetVersions(id, openingUserId);
+          const currentVersion = versions.find((version) => version.datasetId === rawDataset.id);
+          if (currentVersion) {
+            analyticalDataset = {
+              ...analyticalDataset,
+              version: currentVersion.version,
+              versionId: currentVersion.id,
+            };
+          }
+          setDatasetVersions(versions);
 
           setActive({
             dataset: analyticalDataset,
@@ -1080,6 +1129,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const replayed = replayCleaningSteps(rawDataset, projectCleaningSteps);
         analyticalDataset = replayed.dataset;
       }
+      const versions = await loadProjectDatasetVersions(id, openingUserId);
+      const currentVersion = versions.find((version) => version.datasetId === rawDataset.id);
+      if (currentVersion) {
+        analyticalDataset = {
+          ...analyticalDataset,
+          version: currentVersion.version,
+          versionId: currentVersion.id,
+        };
+      }
+      setDatasetVersions(versions);
 
       // Cache in IndexedDB in background
       saveDataset(rawDataset, { projectId: id, csv }).catch(() => {});
@@ -1282,9 +1341,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       "Undid the last transformation",
       true,
     );
-    const restoredDataset = {
+    const restoredDataset: Dataset = {
       ...replayedDataset,
-      version: savedVersion?.version ?? cur.dataset.version,
+      ...(savedVersion
+        ? { version: savedVersion.version, versionId: savedVersion.id }
+        : cur.dataset.version !== undefined
+          ? {
+              version: cur.dataset.version,
+              ...(cur.dataset.versionId ? { versionId: cur.dataset.versionId } : {}),
+            }
+          : {}),
     };
 
     setCleaningSteps(nextSteps);
@@ -1341,7 +1407,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       "Reset transformations to the imported dataset",
       true,
     );
-    const restoredDataset = { ...cur.rawDataset, version: savedVersion?.version ?? 1 };
+    const restoredDataset = {
+      ...cur.rawDataset,
+      version: savedVersion?.version ?? 1,
+      ...(savedVersion?.id
+        ? { versionId: savedVersion.id }
+        : cur.rawDataset.versionId
+          ? { versionId: cur.rawDataset.versionId }
+          : {}),
+    };
 
     setCleaningSteps([]);
     cleaningStepsRef.current = [];
@@ -1391,16 +1465,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!version && user?.id) {
           const remote = await getSupabaseClient().downloadDatasetVersionRecord(versionId, user.id);
           if (!remote) return { success: false, error: "This saved version is not available." };
-          const parsed = parseCsvText(remote.csv, current.dataset.name, current.dataset.source);
-          if (!parsed.ok) return { success: false, error: parsed.errors.join(" ") };
           version = await saveDatasetVersion({
             id: remote.metadata.id,
             version: remote.metadata.version,
             force: true,
             projectId: current.projectId,
             userId: remote.metadata.userId,
-            dataset: { ...parsed.dataset, id: remote.metadata.datasetId },
-            csv: remote.csv,
+            dataset: {
+              id: remote.dataset.id,
+              name: remote.dataset.name,
+              source: remote.dataset.source,
+              columns: remote.dataset.columns,
+              rows: remote.dataset.rows,
+              sizeBytes: remote.dataset.sizeBytes,
+              warnings: remote.dataset.warnings,
+              ...(remote.dataset.delimiter !== undefined
+                ? { delimiter: remote.dataset.delimiter }
+                : {}),
+              ...(remote.dataset.typeOverrides !== undefined
+                ? { typeOverrides: remote.dataset.typeOverrides }
+                : {}),
+            },
             cleaningSteps: remote.metadata.cleaningSteps,
             description: remote.metadata.description,
           });
@@ -1416,7 +1501,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         );
         const restoredCsv =
           version.dataset.csv ?? toCsv([version.dataset.columns, ...version.dataset.rows]);
-        const restored = {
+        const restored: Dataset = {
           id: current.dataset.id,
           name: version.dataset.name,
           source: version.dataset.source,
@@ -1430,7 +1515,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(version.dataset.typeOverrides !== undefined
             ? { typeOverrides: version.dataset.typeOverrides }
             : {}),
-        } satisfies Dataset;
+        };
         const restoredVersion = await preserveDatasetVersion(
           current,
           restored,
@@ -1439,6 +1524,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           true,
         );
         restored.version = restoredVersion?.version ?? version.version + 1;
+        if (restoredVersion) restored.versionId = restoredVersion.id;
         await saveDataset(restored, { projectId: current.projectId, csv: restoredCsv });
         setCleaningSteps([]);
         cleaningStepsRef.current = [];
@@ -1490,13 +1576,148 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [preserveDatasetVersion, setActive, update, user],
   );
 
+  const resolvePersistenceConflict = useCallback(
+    async (
+      conflictId: string,
+      resolution: "keep-local" | "use-saved",
+    ): Promise<{ success: boolean; error?: string }> => {
+      const conflict = persistenceConflicts.find((entry) => entry.id === conflictId);
+      if (!conflict || !user?.id || conflict.userId !== user.id) {
+        return { success: false, error: "This recovery choice is no longer available." };
+      }
+      if (
+        resolution === "use-saved" &&
+        conflict.entityType === "dataset" &&
+        !conflict.remoteVersionId
+      ) {
+        return {
+          success: false,
+          error: "The newer saved data could not be recovered on this device.",
+        };
+      }
+
+      try {
+        if (resolution === "keep-local") {
+          await coordinator.keepLocalConflict(conflict);
+        } else {
+          await coordinator.discardLocalConflict(conflict);
+          if (conflict.entityType === "dataset") {
+            updateProjectRevision(conflict.projectId, user.id, "dataset", conflict.remoteRevision);
+            const remoteVersionId = conflict.remoteVersionId;
+            if (!remoteVersionId) {
+              return {
+                success: false,
+                error: "The newer saved data could not be recovered on this device.",
+              };
+            }
+            const restored = await restoreDatasetVersion(remoteVersionId);
+            if (!restored.success) return restored;
+          } else if (conflict.entityType === "project" && conflict.remoteSnapshot) {
+            const snapshot = conflict.remoteSnapshot;
+            const currentProjects = loadProjects();
+            const nextProjects = currentProjects.map((project) =>
+              project.id === conflict.projectId && project.userId === user.id
+                ? {
+                    ...project,
+                    name: String(snapshot["name"] ?? project.name),
+                    ...(typeof snapshot["description"] === "string"
+                      ? { description: snapshot["description"] }
+                      : {}),
+                    ...(typeof snapshot["objective"] === "string"
+                      ? { objective: snapshot["objective"] }
+                      : {}),
+                    status: (snapshot["status"] as ProjectStatus) ?? project.status,
+                    revision: conflict.remoteRevision,
+                    isCloudSynced: true,
+                    updatedAt: String(snapshot["updated_at"] ?? project.updatedAt),
+                  }
+                : project,
+            );
+            if (!saveProjects(nextProjects)) {
+              return { success: false, error: "The saved project copy could not be restored." };
+            }
+            setProjects(loadProjectsForUser(user.id));
+          } else if (conflict.entityType === "analysis" && conflict.remoteSnapshot) {
+            const snapshot = conflict.remoteSnapshot;
+            const remoteAnalysis: SavedAnalysis = {
+              id: conflict.entityId,
+              revision: conflict.remoteRevision,
+              name: String(snapshot["name"] ?? "Saved analysis"),
+              type: snapshot["type"] as SavedAnalysis["type"],
+              timestamp: String(snapshot["created_at"] ?? conflict.createdAt),
+              datasetId: typeof snapshot["dataset_id"] === "string" ? snapshot["dataset_id"] : "",
+              ...(typeof snapshot["dataset_version"] === "number"
+                ? { datasetVersion: snapshot["dataset_version"] }
+                : {}),
+              datasetName: String(snapshot["dataset_name"] ?? ""),
+              datasetSignature: String(snapshot["dataset_signature"] ?? ""),
+              variables: Array.isArray(snapshot["variables"])
+                ? (snapshot["variables"] as string[])
+                : [],
+              configuration:
+                (snapshot["configuration"] as Record<string, unknown> | undefined) ?? {},
+              sampleSize: Number(snapshot["sample_size"]) || 0,
+              missingCount: Number(snapshot["missing_count"]) || 0,
+              missingHandling: String(snapshot["missing_handling"] ?? "exclude"),
+              results: (snapshot["results"] as Record<string, unknown> | undefined) ?? {},
+              interpretation:
+                snapshot["interpretation"] && typeof snapshot["interpretation"] === "object"
+                  ? (snapshot["interpretation"] as SavedAnalysis["interpretation"])
+                  : {
+                      observedResults: [],
+                      statisticalInference: [],
+                      assumptions: [],
+                      limitations: [],
+                      recommendations: [],
+                    },
+              methodNotes: Array.isArray(snapshot["method_notes"])
+                ? (snapshot["method_notes"] as string[])
+                : [],
+            };
+            const nextAnalyses = [
+              remoteAnalysis,
+              ...savedAnalysesRef.current.filter((entry) => entry.id !== remoteAnalysis.id),
+            ];
+            savedAnalysesRef.current = nextAnalyses;
+            setSavedAnalyses(nextAnalyses);
+            const nextProjects = loadProjects().map((project) =>
+              project.id === conflict.projectId && project.userId === user.id
+                ? { ...project, savedAnalyses: nextAnalyses }
+                : project,
+            );
+            if (!saveProjects(nextProjects)) {
+              return { success: false, error: "The saved analysis copy could not be restored." };
+            }
+          }
+        }
+        setPersistenceConflicts((previous) => previous.filter((entry) => entry.id !== conflictId));
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "The recovery choice could not be saved.",
+        };
+      }
+    },
+    [persistenceConflicts, restoreDatasetVersion, user],
+  );
+
   // Saved Analyses handlers
   const saveAnalysis = useCallback(
     (analysis: SavedAnalysis) => {
       const cur = activeRef.current;
       const versionedAnalysis: SavedAnalysis = {
         ...analysis,
-        datasetVersion: cur?.dataset.version ?? 1,
+        ...(cur?.dataset.version !== undefined
+          ? { datasetVersion: cur.dataset.version }
+          : analysis.datasetVersion !== undefined
+            ? { datasetVersion: analysis.datasetVersion }
+            : {}),
+        ...(cur?.dataset.versionId
+          ? { datasetVersionId: cur.dataset.versionId }
+          : analysis.datasetVersionId
+            ? { datasetVersionId: analysis.datasetVersionId }
+            : {}),
       };
       const next = [
         versionedAnalysis,
@@ -1681,21 +1902,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
     try {
       const guestProjects = loadProjectsForUser(null);
-      const result = await supabase.importLocalProjects(guestProjects, async (p) => {
-        let csv: string | null = null;
-        if (p.dataset?.id) {
-          const stored = await loadDataset(p.dataset.id).catch(() => null);
-          csv = stored?.csv || null;
-        }
-        if (!csv) {
-          const stored = await loadDatasetByProject(p.id).catch(() => null);
-          csv = stored?.csv || null;
-        }
-        if (!csv) {
-          csv = loadCsv(p.id);
-        }
-        return csv;
-      });
+      const result = await supabase.importLocalProjects(
+        guestProjects,
+        async (p) => {
+          let csv: string | null = null;
+          if (p.dataset?.id) {
+            const stored = await loadDataset(p.dataset.id).catch(() => null);
+            csv = stored?.csv || null;
+          }
+          if (!csv) {
+            const stored = await loadDatasetByProject(p.id).catch(() => null);
+            csv = stored?.csv || null;
+          }
+          if (!csv) {
+            csv = loadCsv(p.id);
+          }
+          return csv;
+        },
+        {
+          getDatasetVersions: async (project): Promise<StoredDatasetVersion[]> => {
+            const metadata = await listDatasetVersions(project.id);
+            const versions = await Promise.all(
+              metadata.map((version) => loadDatasetVersion(version.id)),
+            );
+            return versions.filter((version): version is StoredDatasetVersion => version !== null);
+          },
+        },
+      );
 
       if (result.success && result.projects.length > 0) {
         const importedUuids = new Set(result.projects.map((p) => p.id));
@@ -1738,6 +1971,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let activeRequest = true;
     if (!activeProjectId) {
       setDatasetVersions([]);
+      setPersistenceConflicts([]);
       return () => {
         activeRequest = false;
       };
@@ -1745,26 +1979,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const loadVersions = async () => {
       try {
-        const localVersions = await listDatasetVersions(activeProjectId);
-        const cloudVersions =
-          user?.id && isSupabaseConfigured()
-            ? await getSupabaseClient().listDatasetVersionRecords(activeProjectId, user.id)
-            : [];
+        const availableVersions = await loadProjectDatasetVersions(
+          activeProjectId,
+          user?.id ?? null,
+        );
+        const localConflicts = user?.id
+          ? await listLocalPersistenceConflicts(activeProjectId, user.id)
+          : [];
         if (!activeRequest || userIdRef.current !== (user?.id ?? null)) return;
-        const merged = new Map<string, DatasetVersionMetadata>(
-          localVersions.map((version) => [version.id, version]),
-        );
-        for (const remote of cloudVersions) {
-          const metadata = toLocalVersionMetadata(remote);
-          await cacheDatasetVersionMetadata(metadata);
-          if (!merged.has(remote.id)) merged.set(remote.id, metadata);
-        }
-        setDatasetVersions(
-          [...merged.values()].sort(
-            (left, right) =>
-              right.version - left.version || right.createdAt.localeCompare(left.createdAt),
-          ),
-        );
+        setDatasetVersions(availableVersions);
+        setPersistenceConflicts(localConflicts);
       } catch (error) {
         console.warn("Could not load recovery history:", error);
       }
@@ -1774,7 +1998,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       activeRequest = false;
     };
-  }, [activeProjectId, active?.dataset.id, user?.id]);
+  }, [activeProjectId, active?.dataset.id, user?.id, persistenceState.status]);
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === (active?.projectId ?? activeProjectId)) ?? null,
@@ -1788,6 +2012,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     activeProject,
     activeProjectId,
     datasetVersions,
+    persistenceConflicts,
     rawDataset: active?.rawDataset ?? null,
     cleaningSteps,
     savedAnalyses,
@@ -1814,6 +2039,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     undoCleaning,
     resetCleaning,
     restoreDatasetVersion,
+    resolvePersistenceConflict,
     saveAnalysis,
     removeAnalysis,
     saveReport: handleSaveReport,

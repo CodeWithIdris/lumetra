@@ -10,6 +10,7 @@
 
 import type { Cell, ColumnType, Dataset } from "../data/types";
 import { parseCsvText } from "../data/parse";
+import { toCsv } from "../data/export";
 import { loadProjects, saveProjects, type ProjectMeta } from "./projects";
 
 export const DB_NAME = "lumetra_storage";
@@ -23,6 +24,8 @@ export const MAX_INDEXEDDB_DATASET_BYTES = 20 * 1024 * 1024; // 20 MB limit? why
 
 export interface StoredDataset {
   id: string;
+  version?: number;
+  versionId?: string;
   projectId?: string;
   name: string;
   source: "upload" | "sample";
@@ -78,6 +81,7 @@ export interface LocalPersistenceConflict {
   remoteRevision: number;
   localVersionId?: string;
   remoteVersionId?: string;
+  remoteSnapshot?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -94,7 +98,7 @@ export class PersistenceError extends Error {
   constructor(
     public readonly type: PersistenceErrorType,
     message: string,
-    public readonly cause?: unknown,
+    override readonly cause?: unknown,
   ) {
     super(message);
     this.name = "PersistenceError";
@@ -242,7 +246,7 @@ export function openDatabase(): Promise<IDBDatabase> {
   return dbOpeningPromise;
 }
 
-function hashDataset(dataset: Dataset): string {
+export function hashDataset(dataset: Dataset): string {
   const content = JSON.stringify({
     columns: dataset.columns,
     rows: dataset.rows,
@@ -258,6 +262,15 @@ function hashDataset(dataset: Dataset): string {
   return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0).toString(16).padStart(8, "0")}`;
 }
 
+function createVersionId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 export async function saveDatasetVersion(input: {
   id?: string;
   version?: number;
@@ -265,7 +278,6 @@ export async function saveDatasetVersion(input: {
   projectId: string;
   userId: string | null;
   dataset: Dataset;
-  csv?: string;
   cleaningSteps: unknown[];
   description: string;
 }): Promise<StoredDatasetVersion> {
@@ -284,18 +296,16 @@ export async function saveDatasetVersion(input: {
   }
   const now = new Date().toISOString();
   const version = input.version ?? (latest?.version ?? 0) + 1;
-  const id =
-    input.id ??
-    (typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${input.dataset.id}-version-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const id = input.id ?? createVersionId();
   const dataset: StoredDataset = {
     ...input.dataset,
+    version,
+    versionId: id,
     projectId: input.projectId,
     rows: input.dataset.rows.map((row) => [...row]),
     columns: [...input.dataset.columns],
     warnings: [...input.dataset.warnings],
-    csv: input.csv,
+    csv: toCsv([input.dataset.columns, ...input.dataset.rows]),
     createdAt: now,
     updatedAt: now,
   };
@@ -335,7 +345,19 @@ export async function loadDatasetVersion(id: string): Promise<StoredDatasetVersi
   return new Promise((resolve, reject) => {
     const tx = db.transaction([DATASET_VERSIONS_STORE], "readonly");
     const request = tx.objectStore(DATASET_VERSIONS_STORE).get(id);
-    request.onsuccess = () => resolve((request.result as StoredDatasetVersion | undefined) ?? null);
+    request.onsuccess = () => {
+      const version = request.result as StoredDatasetVersion | undefined;
+      if (version && hashDataset(version.dataset) !== version.contentHash) {
+        reject(
+          new PersistenceError(
+            "VERIFICATION_FAILED",
+            "The saved dataset content does not match its version details.",
+          ),
+        );
+        return;
+      }
+      resolve(version ?? null);
+    };
     request.onerror = () =>
       reject(
         new PersistenceError("DATABASE_ERROR", "Could not load dataset version.", request.error),
@@ -496,14 +518,14 @@ export async function checkStorageAvailable(
 function extractMeta(record: StoredDataset): StoredDatasetMeta {
   return {
     id: record.id,
-    projectId: record.projectId,
+    ...(record.projectId !== undefined ? { projectId: record.projectId } : {}),
     name: record.name,
     source: record.source,
     columnCount: record.columns.length,
     rowCount: record.rows.length,
     sizeBytes: record.sizeBytes,
     columns: record.columns,
-    delimiter: record.delimiter,
+    ...(record.delimiter !== undefined ? { delimiter: record.delimiter } : {}),
     hasCsv: Boolean(record.csv),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -523,16 +545,18 @@ export async function saveDataset(
 
   const record: StoredDataset = {
     id: dataset.id,
-    projectId: options?.projectId,
+    ...(dataset.version !== undefined ? { version: dataset.version } : {}),
+    ...(dataset.versionId !== undefined ? { versionId: dataset.versionId } : {}),
+    ...(options?.projectId !== undefined ? { projectId: options.projectId } : {}),
     name: dataset.name,
     source: dataset.source,
     columns: dataset.columns,
     rows: dataset.rows,
     sizeBytes: dataset.sizeBytes,
     warnings: dataset.warnings,
-    delimiter: dataset.delimiter,
-    typeOverrides: dataset.typeOverrides,
-    csv: options?.csv,
+    ...(dataset.delimiter !== undefined ? { delimiter: dataset.delimiter } : {}),
+    ...(dataset.typeOverrides !== undefined ? { typeOverrides: dataset.typeOverrides } : {}),
+    ...(options?.csv !== undefined ? { csv: options.csv } : {}),
     createdAt: options?.createdAt ?? now,
     updatedAt: now,
   };
@@ -866,13 +890,13 @@ export async function duplicateDataset(
     rows: clonedRows,
     sizeBytes: source.sizeBytes,
     warnings: [...source.warnings],
-    delimiter: source.delimiter,
-    typeOverrides: source.typeOverrides ? { ...source.typeOverrides } : undefined,
+    ...(source.delimiter !== undefined ? { delimiter: source.delimiter } : {}),
+    ...(source.typeOverrides ? { typeOverrides: { ...source.typeOverrides } } : {}),
   };
 
   return saveDataset(clonedDataset, {
     projectId: newProjectId,
-    csv: source.csv,
+    ...(source.csv !== undefined ? { csv: source.csv } : {}),
     createdAt: new Date().toISOString(),
   });
 }

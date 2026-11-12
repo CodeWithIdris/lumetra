@@ -24,7 +24,12 @@ import type { ProjectMeta } from "@/lib/persistence/projects";
 import type { SavedAnalysis } from "@/lib/stats/analysis";
 import type { Dataset } from "@/lib/data/types";
 import { loadProjects, saveProjects, loadProjectsForUser } from "@/lib/persistence/projects";
-import { saveDataset, loadDataset, clearAllDatasets } from "@/lib/persistence/indexeddb";
+import {
+  saveDataset,
+  loadDataset,
+  clearAllDatasets,
+  listLocalPersistenceConflicts,
+} from "@/lib/persistence/indexeddb";
 
 const USER_A_ID = "33333333-3333-4333-8333-333333333333";
 const USER_B_ID = "44444444-4444-4444-8444-444444444444";
@@ -753,6 +758,48 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain("Authentication required");
+  });
+
+  it("preserves both copies and rejects a stale project revision until the user resolves it", async () => {
+    const projectId = generateUuid();
+    const project: ProjectMeta = {
+      id: projectId,
+      userId: USER_A_ID,
+      revision: 1,
+      isCloudSynced: true,
+      name: "Local edit",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "no-data",
+      dataset: null,
+    };
+    vi.spyOn(supabase, "upsertProjectRecord").mockResolvedValueOnce({
+      ok: false,
+      conflict: true,
+      remoteRevision: 2,
+      remoteRecord: {
+        id: projectId,
+        user_id: USER_A_ID,
+        name: "Newer saved copy",
+        status: "no-data",
+      },
+      error: "This project has a newer saved version.",
+    });
+
+    coordinator.queueProjectSave(project, USER_A_ID, { immediate: true });
+    await coordinator.flushQueue();
+
+    const conflicts = await listLocalPersistenceConflicts(projectId, USER_A_ID);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]?.expectedRevision).toBe(1);
+    expect(conflicts[0]?.remoteRevision).toBe(2);
+    expect(conflicts[0]?.remoteSnapshot?.["name"]).toBe("Newer saved copy");
+    expect(coordinator.getState().status).toBe("conflict");
+    expect(coordinator.getState().pendingCount).toBe(1);
+
+    await coordinator.keepLocalConflict(conflicts[0]!);
+    expect(coordinator.getState().pendingCount).toBe(0);
+    expect(coordinator.getState().status).toBe("saved");
   });
 
   // Scenario 11: Simulate a failed write and confirm application does not falsely display "Saved".

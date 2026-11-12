@@ -12,7 +12,12 @@
 import type { CleaningStep } from "../data/clean";
 import type { SavedAnalysis } from "../stats/analysis";
 import type { ProjectMeta } from "./projects";
-import type { DatasetVersionMetadata } from "./indexeddb";
+import {
+  hashDataset,
+  type DatasetVersionMetadata,
+  type StoredDataset,
+  type StoredDatasetVersion,
+} from "./indexeddb";
 import {
   supabase,
   getSupabaseClientInstance,
@@ -47,6 +52,33 @@ export interface CloudRecord {
   updated_at: string;
   revision?: number;
   dataset_revision?: number;
+}
+
+function mapSavedAnalysis(record: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: record["id"],
+    revision: record["revision"],
+    name: record["name"],
+    type: record["type"],
+    timestamp: record["created_at"] ?? record["timestamp"],
+    datasetId: record["dataset_id"] ?? record["datasetId"],
+    datasetVersion: record["dataset_version"] ?? record["datasetVersion"],
+    datasetVersionId: record["dataset_version_id"] ?? record["datasetVersionId"],
+    datasetName: record["dataset_name"] ?? record["datasetName"],
+    datasetSignature: record["dataset_signature"] ?? record["datasetSignature"],
+    variables: record["variables"],
+    configuration: record["configuration"],
+    sampleSize: record["sample_size"] ?? record["sampleSize"],
+    missingCount: record["missing_count"] ?? record["missingCount"],
+    missingHandling: record["missing_handling"] ?? record["missingHandling"],
+    results: record["results"],
+    interpretation: record["interpretation"],
+    methodNotes: record["method_notes"] ?? record["methodNotes"],
+  };
+}
+
+function serializeSavedAnalyses(records: Array<Record<string, unknown>>): string | undefined {
+  return records.length > 0 ? JSON.stringify(records.map(mapSavedAnalysis)) : undefined;
 }
 
 export interface CloudDatasetVersion {
@@ -406,8 +438,14 @@ class SupabaseService {
     project: ProjectMeta,
     csvContent: string | null,
     userId?: string,
-    options?: { columns?: string[] },
-  ): Promise<{ ok: boolean; error?: string; remoteId?: string; datasetId?: string }> {
+    options?: { columns?: string[]; datasetVersions?: StoredDatasetVersion[] },
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    remoteId?: string;
+    datasetId?: string;
+    revision?: number;
+  }> {
     if (!this.isConfigured()) {
       return {
         ok: false,
@@ -498,6 +536,20 @@ class SupabaseService {
         if (!datasetResult.ok) return datasetResult;
       }
 
+      for (const version of options?.datasetVersions ?? []) {
+        const versionResult = await this.saveDatasetVersionRecord(
+          version,
+          version.dataset,
+          sessionUserId,
+        );
+        if (!versionResult.ok) {
+          return {
+            ok: false,
+            error: versionResult.error ?? "Could not import a saved dataset version.",
+          };
+        }
+      }
+
       if (project.savedAnalyses && project.savedAnalyses.length > 0) {
         for (const analysis of project.savedAnalyses) {
           const analysisResult = await this.upsertAnalysisRecord(
@@ -511,12 +563,12 @@ class SupabaseService {
 
       const verification = await this.verifyRemoteProject(projectUuid, sessionUserId, {
         hasDataset: Boolean(project.dataset || csvContent),
-        datasetUuid: datasetUuid ?? undefined,
+        ...(datasetUuid ? { datasetUuid } : {}),
         expectedAnalysesCount: project.savedAnalyses?.length ?? 0,
       });
 
       if (!verification.ok) {
-        return { ok: false, error: verification.error };
+        return { ok: false, error: verification.error ?? "Remote verification failed." };
       }
 
       return {
@@ -679,9 +731,7 @@ class SupabaseService {
           ? JSON.stringify(primaryDataset.cleaning_steps)
           : (row.cleaning_steps as string) || undefined,
         saved_analyses:
-          analyses.length > 0
-            ? JSON.stringify(analyses)
-            : (row.saved_analyses as string) || undefined,
+          serializeSavedAnalyses(analyses) ?? ((row.saved_analyses as string) || undefined),
         created_at: (row.created_at as string) || new Date().toISOString(),
         updated_at: (row.updated_at as string) || new Date().toISOString(),
         revision: Number(row.revision) || 1,
@@ -750,9 +800,7 @@ class SupabaseService {
             ? JSON.stringify(ds.cleaning_steps)
             : (row.cleaning_steps as string) || undefined,
           saved_analyses:
-            analyses.length > 0
-              ? JSON.stringify(analyses)
-              : (row.saved_analyses as string) || undefined,
+            serializeSavedAnalyses(analyses) ?? ((row.saved_analyses as string) || undefined),
           created_at: row.created_at as string,
           updated_at: row.updated_at as string,
           revision: Number(row.revision) || 1,
@@ -840,10 +888,12 @@ class SupabaseService {
 
   public async saveDatasetVersionRecord(
     version: DatasetVersionMetadata,
-    csv: string | undefined,
+    dataset: StoredDataset,
     userId: string,
   ): Promise<{ ok: boolean; error?: string }> {
-    if (!csv) return { ok: false, error: "The dataset snapshot is missing its content." };
+    if (hashDataset(dataset) !== version.contentHash) {
+      return { ok: false, error: "The dataset snapshot does not match its saved version." };
+    }
     const client = getSupabaseClientInstance();
     if (!client) return { ok: false, error: "Database client unavailable." };
     const sessionUserId = await this.resolveSessionUserId(userId);
@@ -852,31 +902,46 @@ class SupabaseService {
     }
 
     const projectUuid = toValidUuid(version.projectId);
-    const storagePath = `${userId}/${projectUuid}/${version.id}.csv`;
+    const storagePath = `${userId}/${projectUuid}/${version.id}.json`;
     try {
+      const { data: existing, error: lookupError } = await client
+        .from("dataset_versions")
+        .select("id, dataset_id, version_number, content_hash, content_path")
+        .eq("id", version.id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (lookupError) return { ok: false, error: lookupError.message };
+      if (
+        existing &&
+        (existing.dataset_id !== version.datasetId ||
+          existing.version_number !== version.version ||
+          existing.content_hash !== version.contentHash)
+      ) {
+        return { ok: false, error: "This saved version identifier already belongs to other data." };
+      }
+
       const { error: uploadError } = await client.storage
         .from("lumetra-dataset-versions")
-        .upload(storagePath, new Blob([csv], { type: "text/csv" }), {
+        .upload(storagePath, new Blob([JSON.stringify(dataset)], { type: "application/json" }), {
           upsert: true,
-          contentType: "text/csv",
+          contentType: "application/json",
         });
       if (uploadError) return { ok: false, error: uploadError.message };
 
-      const { error } = await client.from("dataset_versions").upsert(
-        {
-          id: version.id,
-          project_id: projectUuid,
-          dataset_id: version.datasetId,
-          user_id: userId,
-          version_number: version.version,
-          content_hash: version.contentHash,
-          content_path: storagePath,
-          cleaning_steps: version.cleaningSteps as never,
-          change_description: version.description,
-          created_at: version.createdAt,
-        },
-        { onConflict: "id" },
-      );
+      if (existing) return { ok: true };
+
+      const { error } = await client.from("dataset_versions").insert({
+        id: version.id,
+        project_id: projectUuid,
+        dataset_id: version.datasetId,
+        user_id: userId,
+        version_number: version.version,
+        content_hash: version.contentHash,
+        content_path: storagePath,
+        cleaning_steps: version.cleaningSteps as never,
+        change_description: version.description,
+        created_at: version.createdAt,
+      });
       if (error) return { ok: false, error: error.message };
       return { ok: true };
     } catch (error) {
@@ -917,7 +982,7 @@ class SupabaseService {
   public async downloadDatasetVersionRecord(
     versionId: string,
     userId: string,
-  ): Promise<{ metadata: CloudDatasetVersion; csv: string } | null> {
+  ): Promise<{ metadata: CloudDatasetVersion; dataset: StoredDataset } | null> {
     const client = getSupabaseClientInstance();
     if (!client) return null;
     try {
@@ -932,6 +997,32 @@ class SupabaseService {
         .from("lumetra-dataset-versions")
         .download(record.content_path);
       if (downloadError || !file) return null;
+      const content = await file.text();
+      let dataset: StoredDataset;
+      try {
+        const parsed = JSON.parse(content) as StoredDataset;
+        if (
+          parsed.id !== record.dataset_id ||
+          !Array.isArray(parsed.columns) ||
+          !Array.isArray(parsed.rows) ||
+          hashDataset(parsed) !== record.content_hash
+        ) {
+          throw new Error("The saved dataset content did not match its version details.");
+        }
+        dataset = parsed;
+      } catch (error) {
+        if (record.content_path.endsWith(".json")) throw error;
+        const { parseCsvText } = await import("../data/parse");
+        const parsed = parseCsvText(content, "Recovered dataset");
+        if (!parsed.ok) return null;
+        dataset = {
+          ...parsed.dataset,
+          id: record.dataset_id,
+          projectId: record.project_id,
+          createdAt: record.created_at,
+          updatedAt: record.created_at,
+        };
+      }
       return {
         metadata: {
           id: record.id,
@@ -944,7 +1035,7 @@ class SupabaseService {
           description: record.change_description,
           cleaningSteps: Array.isArray(record.cleaning_steps) ? record.cleaning_steps : [],
         },
-        csv: await file.text(),
+        dataset,
       };
     } catch {
       return null;
@@ -1001,7 +1092,7 @@ class SupabaseService {
             ok: false,
             conflict: true,
             remoteRevision: current.data?.revision ?? 1,
-            remoteRecord: current.data ?? undefined,
+            ...(current.data ? { remoteRecord: current.data } : {}),
             error: "This project was created on another device.",
           };
         }
@@ -1021,7 +1112,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: previous?.revision ?? 0,
-          remoteRecord: previous ?? undefined,
+          ...(previous ? { remoteRecord: previous } : {}),
           error: "This project has a newer saved version.",
         };
       }
@@ -1065,7 +1156,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: current.data?.revision ?? 0,
-          remoteRecord: current.data ?? undefined,
+          ...(current.data ? { remoteRecord: current.data } : {}),
           error: "This project changed while it was being saved.",
         };
       }
@@ -1127,7 +1218,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: revision,
-          remoteRecord: current.data ?? undefined,
+          ...(current.data ? { remoteRecord: current.data } : {}),
           error: "This dataset has a newer saved version.",
         };
       }
@@ -1169,7 +1260,7 @@ class SupabaseService {
             ok: false,
             conflict: true,
             remoteRevision: remote.data?.revision ?? 1,
-            remoteRecord: remote.data ?? undefined,
+            ...(remote.data ? { remoteRecord: remote.data } : {}),
             error: "This dataset was saved on another device.",
           };
         }
@@ -1197,7 +1288,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: remote.data?.revision ?? 0,
-          remoteRecord: remote.data ?? undefined,
+          ...(remote.data ? { remoteRecord: remote.data } : {}),
           error: "This dataset changed while it was being saved.",
         };
       }
@@ -1245,7 +1336,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: revision,
-          remoteRecord: current.data ?? undefined,
+          ...(current.data ? { remoteRecord: current.data } : {}),
           error: "This analysis has a newer saved version.",
         };
       }
@@ -1259,6 +1350,7 @@ class SupabaseService {
         dataset_name: analysis.datasetName || null,
         dataset_signature: analysis.datasetSignature,
         dataset_version: analysis.datasetVersion ?? null,
+        dataset_version_id: analysis.datasetVersionId ?? null,
         variables: analysis.variables,
         configuration: analysis.configuration,
         sample_size: analysis.sampleSize,
@@ -1287,7 +1379,7 @@ class SupabaseService {
             ok: false,
             conflict: true,
             remoteRevision: remote.data?.revision ?? 1,
-            remoteRecord: remote.data ?? undefined,
+            ...(remote.data ? { remoteRecord: remote.data } : {}),
             error: "This analysis was saved on another device.",
           };
         }
@@ -1340,7 +1432,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: remote.data?.revision ?? 0,
-          remoteRecord: remote.data ?? undefined,
+          ...(remote.data ? { remoteRecord: remote.data } : {}),
           error: "This analysis changed while it was being saved.",
         };
       }
@@ -1425,7 +1517,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: revision,
-          remoteRecord: current.data ?? undefined,
+          ...(current.data ? { remoteRecord: current.data } : {}),
           error: "This report has a newer saved version.",
         };
       }
@@ -1456,7 +1548,7 @@ class SupabaseService {
             ok: false,
             conflict: true,
             remoteRevision: remote.data?.revision ?? 1,
-            remoteRecord: remote.data ?? undefined,
+            ...(remote.data ? { remoteRecord: remote.data } : {}),
             error: "This report was saved on another device.",
           };
         }
@@ -1502,7 +1594,7 @@ class SupabaseService {
           ok: false,
           conflict: true,
           remoteRevision: remote.data?.revision ?? 0,
-          remoteRecord: remote.data ?? undefined,
+          ...(remote.data ? { remoteRecord: remote.data } : {}),
           error: "This report changed while it was being saved.",
         };
       }
@@ -1578,7 +1670,11 @@ class SupabaseService {
   public async importLocalProjects(
     localProjects: ProjectMeta[],
     getCsvContent: (project: ProjectMeta) => Promise<string | null>,
-    options?: { onProgress?: (current: number, total: number) => void; userId?: string },
+    options?: {
+      onProgress?: (current: number, total: number) => void;
+      userId?: string;
+      getDatasetVersions?: (project: ProjectMeta) => Promise<StoredDatasetVersion[]>;
+    },
   ): Promise<CloudImportResult> {
     const result: CloudImportResult = {
       success: true,
@@ -1647,7 +1743,10 @@ class SupabaseService {
 
       try {
         const csv = await getCsvContent(project);
-        const saveRes = await this.saveProject(project, csv, currentUserId);
+        const datasetVersions = await options?.getDatasetVersions?.(project);
+        const saveRes = await this.saveProject(project, csv, currentUserId, {
+          ...(datasetVersions ? { datasetVersions } : {}),
+        });
 
         if (!saveRes.ok) {
           result.errors.push(`Project "${project.name}": ${saveRes.error || "Save failed"}`);

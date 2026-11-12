@@ -50,6 +50,7 @@ export interface SavedAnalysis {
   timestamp: string;
   datasetId: string;
   datasetVersion?: number;
+  datasetVersionId?: string;
   datasetName: string;
   datasetSignature: string; // Used to detect if the dataset changed since run
   variables: string[];

@@ -37,6 +37,7 @@ export interface Database {
           updated_at?: string;
           revision?: number;
         };
+        Relationships: [];
       };
       datasets: {
         Row: {
@@ -90,6 +91,15 @@ export interface Database {
           updated_at?: string;
           revision?: number;
         };
+        Relationships: [
+          {
+            foreignKeyName: "datasets_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "lumetra_projects";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       saved_analyses: {
         Row: {
@@ -113,6 +123,7 @@ export interface Database {
           updated_at: string;
           revision: number;
           dataset_version: number | null;
+          dataset_version_id: string | null;
         };
         Insert: {
           id?: string;
@@ -135,6 +146,7 @@ export interface Database {
           updated_at?: string;
           revision?: number;
           dataset_version?: number | null;
+          dataset_version_id?: string | null;
         };
         Update: {
           id?: string;
@@ -157,7 +169,24 @@ export interface Database {
           updated_at?: string;
           revision?: number;
           dataset_version?: number | null;
+          dataset_version_id?: string | null;
         };
+        Relationships: [
+          {
+            foreignKeyName: "saved_analyses_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "lumetra_projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "saved_analyses_dataset_version_project_fkey";
+            columns: ["project_id", "dataset_version_id"];
+            isOneToOne: false;
+            referencedRelation: "dataset_versions";
+            referencedColumns: ["project_id", "id"];
+          },
+        ];
       };
       reports: {
         Row: {
@@ -196,6 +225,15 @@ export interface Database {
           updated_at?: string;
           revision?: number;
         };
+        Relationships: [
+          {
+            foreignKeyName: "reports_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "lumetra_projects";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       dataset_versions: {
         Row: {
@@ -234,6 +272,15 @@ export interface Database {
           change_description?: string;
           created_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "dataset_versions_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "lumetra_projects";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       project_history: {
         Row: {
@@ -269,6 +316,15 @@ export interface Database {
           snapshot?: Json;
           created_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "project_history_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "lumetra_projects";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
     Views: Record<string, never>;

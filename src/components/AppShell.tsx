@@ -247,17 +247,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Save & Persistence Indicator (Requirement 1 & 9) */}
             <div
               className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono border ${
-                persistenceState.status === "error"
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : persistenceState.status === "retrying"
-                    ? "border-amber-200 bg-amber-50 text-amber-700"
-                    : persistenceState.status === "saving"
-                      ? "border-blue-200 bg-blue-50 text-blue-700"
-                      : persistenceState.status === "offline"
-                        ? "border-slate-200 bg-slate-100 text-slate-600"
-                        : persistenceState.status === "pending"
-                          ? "border-amber-200 bg-amber-50 text-amber-700"
-                          : "border-slate-200 bg-slate-50 text-slate-600"
+                persistenceState.status === "conflict"
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : persistenceState.status === "error"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : persistenceState.status === "retrying"
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : persistenceState.status === "saving"
+                        ? "border-blue-200 bg-blue-50 text-blue-700"
+                        : persistenceState.status === "offline"
+                          ? "border-slate-200 bg-slate-100 text-slate-600"
+                          : persistenceState.status === "pending"
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-slate-200 bg-slate-50 text-slate-600"
               }`}
               title={persistenceState.error ?? persistenceState.statusText}
             >
@@ -299,6 +301,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <>
                   <AlertCircle className="size-3 text-red-600" />
                   <span className="text-red-600 hidden sm:inline">Save failed</span>
+                </>
+              )}
+              {persistenceState.status === "conflict" && (
+                <>
+                  <AlertCircle className="size-3 text-amber-700" />
+                  <span className="text-amber-800 hidden sm:inline">Review saved copies</span>
                 </>
               )}
             </div>
