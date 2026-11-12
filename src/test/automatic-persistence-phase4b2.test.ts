@@ -1036,4 +1036,18 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     expect(remoteDb.lumetra_projects.get(projectId)?.["name"]).toBe("Newest edit");
     expect(coordinator.getState().pendingCount).toBe(0);
   });
+
+  it("retains a failed project deletion with its cleanup error for automatic retry", async () => {
+    vi.spyOn(supabase, "deleteProject").mockResolvedValue({
+      ok: false,
+      error: "Project files could not be removed. Retry deletion to finish.",
+    });
+
+    coordinator.queueProjectDelete(generateUuid(), USER_A_ID);
+    await coordinator.flushQueue();
+
+    expect(coordinator.getState().status).toBe("retrying");
+    expect(coordinator.getState().pendingCount).toBe(1);
+    expect(coordinator.getState().error).toContain("Project files could not be removed");
+  });
 });

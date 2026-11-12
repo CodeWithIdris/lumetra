@@ -925,8 +925,13 @@ class SupabaseService {
           .eq("project_id", projectUuid)
           .eq("user_id", sessionUserId),
       ]);
-      if (datasets.error) return { ok: false, error: datasets.error.message };
-      if (versions.error) return { ok: false, error: versions.error.message };
+      if (datasets.error || versions.error) {
+        return {
+          ok: false,
+          error:
+            "Project files could not be prepared for deletion. Nothing was deleted; retry to finish.",
+        };
+      }
       const storagePaths = [
         ...(datasets.data ?? []).map((record) => record.content_path),
         ...(versions.data ?? []).map((record) => record.content_path),
@@ -936,7 +941,8 @@ class SupabaseService {
       if (storagePaths.some((path) => !path.startsWith(projectStoragePrefix))) {
         return {
           ok: false,
-          error: "Project files could not be verified as belonging to this project. Nothing was deleted.",
+          error:
+            "Project files could not be verified as belonging to this project. Nothing was deleted.",
         };
       }
 
@@ -945,7 +951,8 @@ class SupabaseService {
         if (activeUserId !== sessionUserId) {
           return {
             ok: false,
-            error: "The active account changed during project deletion. Retry while signed in to the same account.",
+            error:
+              "The active account changed during project deletion. Retry while signed in to the same account.",
           };
         }
         const { error: storageError } = await client.storage
@@ -954,7 +961,8 @@ class SupabaseService {
         if (storageError) {
           return {
             ok: false,
-            error: `Project files could not be removed (${storageError.message}). The project is still saved; retry deletion to finish.`,
+            error:
+              "Project files could not be removed. The project is still saved; retry deletion to finish.",
           };
         }
       }
@@ -963,7 +971,8 @@ class SupabaseService {
       if (activeUserId !== sessionUserId) {
         return {
           ok: false,
-          error: "The active account changed during project deletion. Retry while signed in to the same account.",
+          error:
+            "The active account changed during project deletion. Retry while signed in to the same account.",
         };
       }
 
@@ -975,13 +984,19 @@ class SupabaseService {
       if (error) {
         return {
           ok: false,
-          error: `Project files were removed, but the project records could not be deleted (${error.message}). Retry deletion to finish.`,
+          error:
+            "Project files were removed, but some project information could not be deleted. Retry deletion to finish.",
         };
       }
       this.deleteFromLocalCloudVault(id);
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Project delete error." };
+      console.warn("Project deletion did not finish.", e);
+      return {
+        ok: false,
+        error:
+          "Project deletion did not finish. Your remaining changes are kept; retry deletion to finish.",
+      };
     }
   }
 
