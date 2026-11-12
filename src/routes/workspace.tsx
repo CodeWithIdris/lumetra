@@ -61,6 +61,7 @@ import {
   Plus,
   HelpCircle,
   Eye,
+  History,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -97,6 +98,9 @@ function Workspace() {
     applyCleaning,
     undoCleaning,
     resetCleaning,
+    restoreDatasetVersion,
+    datasetVersions,
+    savedAnalyses,
     loadFile,
     attachDataset,
     loadPersonaSample,
@@ -120,6 +124,7 @@ function Workspace() {
   const [selectedCol, setSelectedCol] = useState<string>("all");
   const [page, setPage] = useState(0);
   const [activeTab, setActiveTab] = useState<string>("data");
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   // Import Preview Modal State with detection options (Requirement 2)
   const [pendingImport, setPendingImport] = useState<{
@@ -263,7 +268,7 @@ function Workspace() {
     />
   );
 
-  const handleApplyClean = () => {
+  const handleApplyClean = async () => {
     if (!ds) return;
     let res: { success: boolean; error?: string };
 
@@ -273,25 +278,25 @@ function Workspace() {
           toast.error("Please specify both current column and new name.");
           return;
         }
-        res = applyCleaning("rename_column", { from: cleanCol, to: cleanNewName.trim() });
+        res = await applyCleaning("rename_column", { from: cleanCol, to: cleanNewName.trim() });
         break;
       case "remove_columns":
         if (cleanColsToRemove.length === 0) {
           toast.error("Select at least one column to remove.");
           return;
         }
-        res = applyCleaning("remove_columns", { columns: cleanColsToRemove });
+        res = await applyCleaning("remove_columns", { columns: cleanColsToRemove });
         setCleanColsToRemove([]);
         break;
       case "remove_duplicates":
-        res = applyCleaning("remove_duplicates", {});
+        res = await applyCleaning("remove_duplicates", {});
         break;
       case "filter_rows":
         if (!cleanCol) {
           toast.error("Please choose a column to filter on.");
           return;
         }
-        res = applyCleaning("filter_rows", {
+        res = await applyCleaning("filter_rows", {
           column: cleanCol,
           operator: cleanFilterOp,
           value: cleanFilterVal,
@@ -302,7 +307,7 @@ function Workspace() {
           toast.error("Please choose a column.");
           return;
         }
-        res = applyCleaning("handle_missing", {
+        res = await applyCleaning("handle_missing", {
           column: cleanCol,
           strategy: cleanMissingStrategy,
           customValue: cleanMissingCustomVal,
@@ -313,14 +318,14 @@ function Workspace() {
           toast.error("Please choose a column to change its data type.");
           return;
         }
-        res = applyCleaning("change_type", { column: cleanCol, targetType: cleanTargetType });
+        res = await applyCleaning("change_type", { column: cleanCol, targetType: cleanTargetType });
         break;
       case "recode_categorical":
         if (!cleanCol || !cleanRecodeFrom.trim() || !cleanRecodeTo.trim()) {
           toast.error("Please specify column, original value and replacement value.");
           return;
         }
-        res = applyCleaning("recode_categorical", {
+        res = await applyCleaning("recode_categorical", {
           column: cleanCol,
           fromValue: cleanRecodeFrom.trim(),
           toValue: cleanRecodeTo.trim(),
@@ -559,7 +564,11 @@ function Workspace() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={undoCleaning}
+                      onClick={() =>
+                        void undoCleaning().catch((error: unknown) =>
+                          toast.error(error instanceof Error ? error.message : "Could not undo."),
+                        )
+                      }
                       className="h-6 text-[10px] text-blue-700 hover:bg-blue-100/60 px-2"
                     >
                       <Undo2 className="size-3 mr-1" />
@@ -578,6 +587,90 @@ function Workspace() {
                 </div>
               )}
             </div>
+
+            {activeProject && (
+              <section className="rounded border border-slate-200 bg-white">
+                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="text-xs font-medium text-slate-700">
+                    Recovery history
+                    <span className="ml-1 text-slate-400">({datasetVersions.length})</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-slate-600"
+                    onClick={() => setShowVersionHistory((shown) => !shown)}
+                    aria-expanded={showVersionHistory}
+                  >
+                    <History className="mr-1.5 size-3.5" />
+                    {showVersionHistory ? "Hide history" : "View history"}
+                  </Button>
+                </div>
+                {showVersionHistory && (
+                  <div className="border-t border-slate-100 px-3 py-2">
+                    {datasetVersions.length === 0 ? (
+                      <p className="text-xs text-slate-500">No saved versions yet.</p>
+                    ) : (
+                      <ol className="divide-y divide-slate-100">
+                        {datasetVersions.map((version) => {
+                          const analyses = savedAnalyses.filter(
+                            (analysis) =>
+                              analysis.datasetId === version.datasetId &&
+                              analysis.datasetVersion === version.version,
+                          );
+                          const isCurrent = active?.dataset.version === version.version;
+                          return (
+                            <li
+                              key={version.id}
+                              className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium text-slate-800">
+                                  Version {version.version}
+                                  {isCurrent && (
+                                    <span className="ml-2 text-[10px] font-normal text-emerald-700">
+                                      Current
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {new Date(version.createdAt).toLocaleString()} ·{" "}
+                                  {version.description}
+                                </div>
+                                {analyses.length > 0 && (
+                                  <div className="text-[10px] text-blue-700">
+                                    Used by {analyses.length} saved{" "}
+                                    {analyses.length === 1 ? "analysis" : "analyses"}
+                                  </div>
+                                )}
+                              </div>
+                              {!isCurrent && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-[11px]"
+                                  onClick={async () => {
+                                    const result = await restoreDatasetVersion(version.id);
+                                    if (result.success)
+                                      toast.success(`Restored version ${version.version}.`);
+                                    else
+                                      toast.error(
+                                        result.error || "Could not restore this version.",
+                                      );
+                                  }}
+                                >
+                                  Restore
+                                </Button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* Workspace Secondary Tabs: Data Preview, Schema, Clean & Transform, Quality */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-3">
@@ -1296,7 +1389,13 @@ function Workspace() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={undoCleaning}
+                          onClick={() =>
+                            void undoCleaning().catch((error: unknown) =>
+                              toast.error(
+                                error instanceof Error ? error.message : "Could not undo.",
+                              ),
+                            )
+                          }
                           className="h-7 text-xs border-slate-300 text-slate-700"
                         >
                           <Undo2 className="size-3 mr-1" />
@@ -1652,10 +1751,15 @@ function Workspace() {
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 text-xs text-white hover:bg-red-700"
-              onClick={() => {
-                resetCleaning();
-                toast.success("Dataset reset to original raw state.");
-              }}
+              onClick={() =>
+                void resetCleaning()
+                  .then(() => toast.success("Dataset reset to original raw state."))
+                  .catch((error: unknown) =>
+                    toast.error(
+                      error instanceof Error ? error.message : "Could not restore the raw dataset.",
+                    ),
+                  )
+              }
             >
               Reset to Raw
             </AlertDialogAction>

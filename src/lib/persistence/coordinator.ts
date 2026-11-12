@@ -13,14 +13,25 @@
  */
 
 import type { CleaningStep } from "../data/clean";
+import type { Dataset } from "../data/types";
 import { parseCsvText } from "../data/parse";
 import type { SavedAnalysis } from "../stats/analysis";
-import { loadDataset, loadDatasetByProject, saveDataset } from "./indexeddb";
+import {
+  loadDataset,
+  loadDatasetByProject,
+  loadDatasetVersion,
+  saveDatasetVersion,
+  saveLocalPersistenceConflict,
+  type LocalPersistenceConflict,
+  saveDataset,
+} from "./indexeddb";
+import type { DatasetVersionMetadata } from "./indexeddb";
 import type { ProjectMeta } from "./projects";
-import { loadCsv } from "./projects";
+import { loadCsv, updateProjectRevision } from "./projects";
 import { getSupabaseClient, isValidUuid, toValidUuid, generateUuid } from "./supabase";
 
-export type PersistenceStatus = "saved" | "saving" | "pending" | "offline" | "retrying" | "error";
+export type PersistenceStatus =
+  "saved" | "saving" | "pending" | "offline" | "retrying" | "conflict" | "error";
 
 export interface PersistenceState {
   status: PersistenceStatus;
@@ -34,6 +45,8 @@ export interface PersistenceState {
 export type EntityType =
   | "project"
   | "dataset"
+  | "dataset_version"
+  | "dataset_version"
   | "analysis"
   | "analysis_delete"
   | "report"
@@ -114,6 +127,8 @@ class PersistenceCoordinator {
       statusText = "Working offline";
     } else if (this.status === "retrying") {
       statusText = "Couldn't save changes. Retrying...";
+    } else if (this.status === "conflict") {
+      statusText = "A newer version needs your attention.";
     } else if (this.status === "pending") {
       statusText = "Changes pending";
     } else if (this.status === "error") {
@@ -134,6 +149,43 @@ class PersistenceCoordinator {
 
   public hasPendingWritesForUser(userId: string): boolean {
     return this.queue.some((item) => item.userId === userId);
+  }
+
+  public async keepLocalConflict(conflict: LocalPersistenceConflict): Promise<void> {
+    if (conflict.userId !== this.currentUserId) {
+      throw new Error("Sign in to the account that created these changes to recover them.");
+    }
+    const item = this.queue.find((queued) => queued.data["conflictId"] === conflict.id);
+    if (!item) throw new Error("The pending local change for this recovery record is unavailable.");
+    delete item.data["conflictId"];
+    if (item.entityType === "project") {
+      const project = item.data["project"] as ProjectMeta;
+      project.revision = conflict.remoteRevision;
+      project.isCloudSynced = conflict.remoteRevision > 0;
+    } else if (item.entityType === "dataset") {
+      (item.data["dataset"] as { revision?: number }).revision = conflict.remoteRevision;
+    } else if (item.entityType === "analysis") {
+      (item.data["analysis"] as SavedAnalysis).revision = conflict.remoteRevision;
+    } else if (item.entityType === "report") {
+      (item.data["report"] as { revision?: number }).revision = conflict.remoteRevision;
+    }
+    await deleteLocalPersistenceConflict(conflict.id);
+    this.saveQueueToStorage();
+    this.status = "pending";
+    this.notify();
+    await this.flushQueue(true);
+  }
+
+  public async discardLocalConflict(conflict: LocalPersistenceConflict): Promise<void> {
+    if (conflict.userId !== this.currentUserId) {
+      throw new Error("Sign in to the account that created these changes to recover them.");
+    }
+    this.queue = this.queue.filter((queued) => queued.data["conflictId"] !== conflict.id);
+    await deleteLocalPersistenceConflict(conflict.id);
+    this.saveQueueToStorage();
+    this.status = this.queue.length > 0 ? "pending" : "saved";
+    this.lastError = null;
+    this.notify();
   }
 
   public setOnlineStatus(online: boolean) {
@@ -325,6 +377,7 @@ class PersistenceCoordinator {
       csvContent?: string | null;
       delimiter?: string;
       typeOverrides?: Record<string, unknown>;
+      revision?: number;
     },
     userId: string | undefined,
     options?: { immediate?: boolean },
@@ -339,6 +392,20 @@ class PersistenceCoordinator {
         data: { dataset },
       },
       Boolean(options?.immediate),
+    );
+  }
+
+  public queueDatasetVersionSave(version: DatasetVersionMetadata, userId: string | undefined) {
+    if (!userId) return;
+    this.enqueue(
+      {
+        entityType: "dataset_version",
+        entityId: version.id,
+        projectId: version.projectId,
+        userId,
+        data: { version },
+      },
+      true,
     );
   }
 
@@ -387,6 +454,7 @@ class PersistenceCoordinator {
       markdown: string;
       objective?: string;
       summary?: Record<string, unknown>;
+      revision?: number;
     },
     userId: string | undefined,
     options?: { immediate?: boolean },
@@ -460,6 +528,9 @@ class PersistenceCoordinator {
     };
 
     if (existingIndex >= 0) {
+      const existing = this.queue[existingIndex]!;
+      const conflictId = existing.data["conflictId"];
+      if (conflictId) writeItem.data["conflictId"] = conflictId;
       this.queue[existingIndex] = writeItem;
     } else {
       this.queue.push(writeItem);
@@ -566,22 +637,59 @@ class PersistenceCoordinator {
           break;
         }
 
-        const itemIndex = this.queue.findIndex((queued) => queued.userId === activeUserId);
+        const itemIndex = this.queue.findIndex(
+          (queued) => queued.userId === activeUserId && !queued.data["conflictId"],
+        );
         if (itemIndex < 0) {
-          this.status = "pending";
+          this.status = this.queue.some(
+            (queued) => queued.userId === activeUserId && Boolean(queued.data["conflictId"]),
+          )
+            ? "conflict"
+            : "pending";
           this.notify();
           break;
         }
         const item = this.queue[itemIndex];
         if (!item) break;
 
-        const success = await this.executeWriteItem(item, activeUserId);
-        if (success) {
+        const result = await this.executeWriteItem(item, activeUserId);
+        if (result.ok) {
+          if (result.revision !== undefined) {
+            this.applyRevisionToQueue(item, activeUserId, result.revision);
+          }
           const completedIndex = this.queue.findIndex((queued) => queued.id === item.id);
           if (completedIndex >= 0) this.queue.splice(completedIndex, 1);
           this.saveQueueToStorage();
           this.updateLastSaved();
           this.lastError = null;
+        } else if (result.conflict) {
+          const versionIds = await this.saveConflictVersions(item, activeUserId, result);
+          const conflict: LocalPersistenceConflict = {
+            id: generateUuid(),
+            userId: activeUserId,
+            projectId: item.projectId,
+            entityType:
+              item.entityType === "dataset"
+                ? "dataset"
+                : item.entityType === "analysis"
+                  ? "analysis"
+                  : item.entityType === "report"
+                    ? "report"
+                    : "project",
+            entityId: item.entityId,
+            expectedRevision: this.getExpectedRevision(item),
+            remoteRevision: result.remoteRevision ?? 0,
+            ...(versionIds?.local ? { localVersionId: versionIds.local } : {}),
+            ...(versionIds?.remote ? { remoteVersionId: versionIds.remote } : {}),
+            createdAt: new Date().toISOString(),
+          };
+          await saveLocalPersistenceConflict(conflict);
+          item.data["conflictId"] = conflict.id;
+          this.saveQueueToStorage();
+          this.lastError = "Your changes and a newer saved version are both preserved.";
+          this.status = "conflict";
+          this.notify();
+          break;
         } else {
           item.retryCount++;
           if (item.retryCount > MAX_RETRIES) {
@@ -626,11 +734,12 @@ class PersistenceCoordinator {
     const typePriority: Record<EntityType, number> = {
       delete_project: 0,
       project: 1,
-      dataset: 2,
-      analysis: 3,
-      analysis_delete: 3,
-      report: 4,
-      report_delete: 4,
+      dataset_version: 2,
+      dataset: 3,
+      analysis: 4,
+      analysis_delete: 4,
+      report: 5,
+      report_delete: 5,
     };
 
     this.queue.sort((a, b) => {
@@ -644,15 +753,23 @@ class PersistenceCoordinator {
     });
   }
 
-  private async executeWriteItem(item: PendingWriteItem, userId: string): Promise<boolean> {
+  private async executeWriteItem(
+    item: PendingWriteItem,
+    userId: string,
+  ): Promise<{
+    ok: boolean;
+    revision?: number;
+    conflict?: boolean;
+    remoteRevision?: number;
+    remoteRecord?: Record<string, unknown>;
+  }> {
     const supabase = getSupabaseClient();
 
     try {
       switch (item.entityType) {
         case "project": {
           const project = item.data["project"] as ProjectMeta;
-          const res = await supabase.upsertProjectRecord(project, userId);
-          return res.ok;
+          return await supabase.upsertProjectRecord(project, userId);
         }
 
         case "dataset": {
@@ -667,6 +784,7 @@ class PersistenceCoordinator {
             csvContent?: string | null;
             delimiter?: string;
             typeOverrides?: Record<string, unknown>;
+            revision?: number;
           };
           if (item.data["csvContentStoredExternally"]) {
             const storedDataset = dataset.id ? await loadDataset(dataset.id) : null;
@@ -677,19 +795,29 @@ class PersistenceCoordinator {
             }
             dataset = { ...dataset, csvContent };
           }
-          const res = await supabase.upsertDatasetRecord(item.projectId, dataset, userId);
-          return res.ok;
+          return await supabase.upsertDatasetRecord(item.projectId, dataset, userId);
+        }
+
+        case "dataset_version": {
+          const metadata = item.data["version"] as DatasetVersionMetadata;
+          const version = await loadDatasetVersion(metadata.id);
+          if (!version) throw new Error("The saved dataset version is unavailable locally.");
+          const res = await supabase.saveDatasetVersionRecord(
+            metadata,
+            version.dataset.csv,
+            userId,
+          );
+          return { ok: res.ok };
         }
 
         case "analysis": {
           const analysis = item.data["analysis"] as SavedAnalysis;
-          const res = await supabase.upsertAnalysisRecord(item.projectId, analysis, userId);
-          return res.ok;
+          return await supabase.upsertAnalysisRecord(item.projectId, analysis, userId);
         }
 
         case "analysis_delete": {
           const res = await supabase.deleteAnalysisRecord(item.entityId, userId);
-          return res.ok;
+          return { ok: res.ok };
         }
 
         case "report": {
@@ -700,28 +828,155 @@ class PersistenceCoordinator {
             markdown: string;
             objective?: string;
             summary?: Record<string, unknown>;
+            revision?: number;
           };
           const res = await supabase.upsertReportRecord(report, userId);
-          return res.ok;
+          return { ok: res.ok };
         }
 
         case "report_delete": {
           const res = await supabase.deleteReportRecord(item.entityId, userId);
-          return res.ok;
+          return { ok: res.ok };
         }
 
         case "delete_project": {
           const res = await supabase.deleteProject(item.projectId, userId);
-          return res.ok;
+          return { ok: res.ok };
         }
 
         default:
-          return true;
+          return { ok: true };
       }
     } catch (e) {
       console.warn(`Write execution failed for ${item.entityType}:`, e);
-      return false;
+      return { ok: false };
     }
+  }
+
+  private getExpectedRevision(item: PendingWriteItem): number {
+    if (item.entityType === "project") {
+      const project = item.data["project"] as ProjectMeta;
+      return project.revision ?? (project.isCloudSynced ? 1 : 0);
+    }
+    if (item.entityType === "dataset") {
+      return (item.data["dataset"] as { revision?: number }).revision ?? 0;
+    }
+    if (item.entityType === "analysis") {
+      return (item.data["analysis"] as SavedAnalysis).revision ?? 0;
+    }
+    if (item.entityType === "report") {
+      return (item.data["report"] as { revision?: number }).revision ?? 0;
+    }
+    return 0;
+  }
+
+  private applyRevisionToQueue(item: PendingWriteItem, userId: string, revision: number) {
+    if (item.entityType === "project") {
+      const project = item.data["project"] as ProjectMeta;
+      project.revision = revision;
+      project.isCloudSynced = true;
+      updateProjectRevision(item.projectId, userId, "project", revision);
+      for (const queued of this.queue) {
+        if (
+          queued.id === item.id ||
+          queued.userId !== userId ||
+          queued.entityType !== "project" ||
+          queued.entityId !== item.entityId
+        ) {
+          continue;
+        }
+        const nextProject = queued.data["project"] as ProjectMeta;
+        nextProject.revision = revision;
+        nextProject.isCloudSynced = true;
+      }
+      return;
+    }
+    const entity =
+      item.entityType === "dataset"
+        ? "dataset"
+        : item.entityType === "analysis"
+          ? "analysis"
+          : item.entityType === "report"
+            ? "report"
+            : null;
+    if (!entity) return;
+    updateProjectRevision(item.projectId, userId, entity, revision, item.entityId);
+    for (const queued of this.queue) {
+      if (
+        queued.id === item.id ||
+        queued.userId !== userId ||
+        queued.projectId !== item.projectId ||
+        queued.entityType !== item.entityType ||
+        queued.entityId !== item.entityId
+      ) {
+        continue;
+      }
+      const payload =
+        entity === "dataset"
+          ? (queued.data["dataset"] as { revision?: number })
+          : entity === "analysis"
+            ? (queued.data["analysis"] as SavedAnalysis)
+            : (queued.data["report"] as { revision?: number });
+      payload.revision = revision;
+    }
+  }
+
+  private async saveConflictVersions(
+    item: PendingWriteItem,
+    userId: string,
+    result: { remoteRecord?: Record<string, unknown> },
+  ): Promise<{ local?: string; remote?: string } | null> {
+    if (item.entityType !== "dataset") return null;
+    const datasetInfo = item.data["dataset"] as {
+      id?: string;
+      name: string;
+      source?: "upload" | "sample";
+      cleaningSteps?: CleaningStep[];
+    };
+    const stored = datasetInfo.id
+      ? await loadDataset(datasetInfo.id)
+      : await loadDatasetByProject(item.projectId);
+    if (!stored) return null;
+    const localDataset: Dataset = {
+      id: stored.id,
+      name: stored.name,
+      source: stored.source,
+      columns: stored.columns,
+      rows: stored.rows,
+      sizeBytes: stored.sizeBytes,
+      warnings: stored.warnings,
+      ...(stored.delimiter !== undefined ? { delimiter: stored.delimiter } : {}),
+      ...(stored.typeOverrides !== undefined ? { typeOverrides: stored.typeOverrides } : {}),
+    };
+    const localVersion = await saveDatasetVersion({
+      projectId: item.projectId,
+      userId,
+      dataset: localDataset,
+      ...(stored.csv !== undefined ? { csv: stored.csv } : {}),
+      cleaningSteps: datasetInfo.cleaningSteps ?? [],
+      description: "Your changes before a newer saved version",
+    });
+
+    const remote = result.remoteRecord;
+    const remoteCsv = remote?.["csv_content"];
+    if (typeof remoteCsv !== "string") return { local: localVersion.id };
+    const parsed = parseCsvText(
+      remoteCsv,
+      String(remote["name"] ?? stored.name),
+      remote["source"] === "sample" ? "sample" : "upload",
+    );
+    if (!parsed.ok) return { local: localVersion.id };
+    const remoteVersion = await saveDatasetVersion({
+      projectId: item.projectId,
+      userId,
+      dataset: { ...parsed.dataset, id: stored.id },
+      csv: remoteCsv,
+      cleaningSteps: Array.isArray(remote["cleaning_steps"])
+        ? (remote["cleaning_steps"] as CleaningStep[])
+        : [],
+      description: "A newer version saved from another session",
+    });
+    return { local: localVersion.id, remote: remoteVersion.id };
   }
 
   private scheduleRetry(delayMs: number) {

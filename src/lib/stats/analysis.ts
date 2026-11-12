@@ -44,10 +44,12 @@ export type AnalysisType =
 
 export interface SavedAnalysis {
   id: string;
+  revision?: number;
   name: string;
   type: AnalysisType;
   timestamp: string;
   datasetId: string;
+  datasetVersion?: number;
   datasetName: string;
   datasetSignature: string; // Used to detect if the dataset changed since run
   variables: string[];

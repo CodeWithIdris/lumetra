@@ -12,6 +12,7 @@
 import type { CleaningStep } from "../data/clean";
 import type { SavedAnalysis } from "../stats/analysis";
 import type { ProjectMeta } from "./projects";
+import type { DatasetVersionMetadata } from "./indexeddb";
 import {
   supabase,
   getSupabaseClientInstance,
@@ -35,6 +36,7 @@ export interface CloudRecord {
   status: string;
   objective?: string | undefined;
   dataset_name?: string | undefined;
+  dataset_id?: string | undefined;
   dataset_rows?: number | undefined;
   dataset_columns?: number | undefined;
   dataset_source?: string | undefined;
@@ -43,7 +45,45 @@ export interface CloudRecord {
   saved_analyses?: string | undefined;
   created_at: string;
   updated_at: string;
+  revision?: number;
+  dataset_revision?: number;
 }
+
+export interface CloudDatasetVersion {
+  id: string;
+  projectId: string;
+  datasetId: string;
+  userId: string;
+  version: number;
+  contentHash: string;
+  createdAt: string;
+  description: string;
+  cleaningSteps: unknown[];
+}
+
+export interface RevisionConflict {
+  ok: false;
+  conflict: true;
+  remoteRevision: number;
+  remoteRecord?: Record<string, unknown>;
+  error: string;
+}
+
+export type RevisionWriteResult =
+  | {
+      ok: true;
+      revision: number;
+      remoteId?: string;
+      datasetId?: string;
+      analysisId?: string;
+      id?: string;
+    }
+  | {
+      ok: false;
+      conflict?: false;
+      error: string;
+    }
+  | RevisionConflict;
 
 export interface CloudReport {
   id: string;
@@ -433,104 +473,42 @@ class SupabaseService {
     this.saveToLocalCloudVault(record);
 
     const projectUuid = toValidUuid(project.id);
-    const now = new Date().toISOString();
-
     try {
-      // 1. Upsert project in lumetra_projects
-      const { error: projectError } = await client.from("lumetra_projects").upsert(
-        {
-          id: projectUuid,
-          user_id: sessionUserId,
-          name: project.name,
-          description: project.description || null,
-          objective: project.objective || null,
-          status: project.status,
-          updated_at: now,
-        },
-        { onConflict: "id" },
-      );
-
-      if (projectError) {
-        if (projectError.code === "PGRST205") {
-          return {
-            ok: false,
-            error:
-              "PostgreSQL tables not found (PGRST205). Migration 'supabase/migrations/20261029101800_create_lumetra_schema_and_rls.sql' needs to be applied in Supabase.",
-          };
-        }
-        return { ok: false, error: `Failed to save project record: ${projectError.message}` };
-      }
-
-      // 2. Upsert dataset if present (using deterministic stable UUID)
+      const projectResult = await this.upsertProjectRecord(project, sessionUserId);
+      if (!projectResult.ok) return projectResult;
       let datasetUuid: string | null = null;
       if (project.dataset || csvContent) {
         datasetUuid = toValidUuid(project.dataset?.id || `${projectUuid}_dataset`);
         const columnsList = options?.columns || [];
-
-        const { error: datasetError } = await client.from("datasets").upsert(
+        const datasetResult = await this.upsertDatasetRecord(
+          project.id,
           {
-            id: datasetUuid,
-            project_id: projectUuid,
-            user_id: sessionUserId,
+            id: project.dataset?.id || datasetUuid,
             name: project.dataset?.name || `${project.name}.csv`,
             source: project.dataset?.source || "upload",
-            row_count: project.dataset?.rows || 0,
-            column_count:
-              project.dataset?.columns || (columnsList.length > 0 ? columnsList.length : 0),
-            columns: (columnsList as unknown) || [],
-            delimiter: ",",
-            cleaning_steps: (project.cleaningSteps as unknown) || [],
-            csv_content: csvContent || null,
-            updated_at: now,
+            rows: project.dataset?.rows || 0,
+            columns: project.dataset?.columns || columnsList.length,
+            columnList: columnsList,
+            cleaningSteps: project.cleaningSteps || [],
+            csvContent,
+            revision: project.datasetRevision ?? 0,
           },
-          { onConflict: "id" },
+          sessionUserId,
         );
-
-        if (datasetError) {
-          return {
-            ok: false,
-            error: `Project metadata was saved, but dataset persistence failed: ${datasetError.message}`,
-          };
-        }
+        if (!datasetResult.ok) return datasetResult;
       }
 
-      // 3. Upsert saved analyses if present (using deterministic stable UUIDs)
       if (project.savedAnalyses && project.savedAnalyses.length > 0) {
         for (const analysis of project.savedAnalyses) {
-          const analysisUuid = toValidUuid(analysis.id);
-          const { error: analysisError } = await client.from("saved_analyses").upsert(
-            {
-              id: analysisUuid,
-              project_id: projectUuid,
-              user_id: sessionUserId,
-              name: analysis.name,
-              type: analysis.type,
-              dataset_id: analysis.datasetId ? toValidUuid(analysis.datasetId) : null,
-              dataset_name: analysis.datasetName || null,
-              dataset_signature: analysis.datasetSignature || `${analysis.name}:${now}`,
-              variables: (analysis.variables as unknown) || [],
-              configuration: (analysis.configuration as unknown) || {},
-              sample_size: analysis.sampleSize || 0,
-              missing_count: analysis.missingCount || 0,
-              missing_handling: analysis.missingHandling || "exclude",
-              results: (analysis.results as unknown) || {},
-              interpretation: (analysis.interpretation as unknown) || {},
-              method_notes: (analysis.methodNotes as unknown) || [],
-              updated_at: now,
-            },
-            { onConflict: "id" },
+          const analysisResult = await this.upsertAnalysisRecord(
+            project.id,
+            analysis,
+            sessionUserId,
           );
-
-          if (analysisError) {
-            return {
-              ok: false,
-              error: `Project and dataset were saved, but analysis "${analysis.name}" failed to persist: ${analysisError.message}`,
-            };
-          }
+          if (!analysisResult.ok) return analysisResult;
         }
       }
 
-      // 4. Strict Remote Verification Read-Back
       const verification = await this.verifyRemoteProject(projectUuid, sessionUserId, {
         hasDataset: Boolean(project.dataset || csvContent),
         datasetUuid: datasetUuid ?? undefined,
@@ -545,6 +523,7 @@ class SupabaseService {
         ok: true,
         remoteId: projectUuid,
         datasetId: datasetUuid ?? undefined,
+        revision: projectResult.revision,
       };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Network error" };
@@ -687,6 +666,7 @@ class SupabaseService {
         status: (row.status as string) || "no-data",
         objective: (row.objective as string) || undefined,
         dataset_name: (primaryDataset?.name as string) || (row.dataset_name as string) || undefined,
+        dataset_id: (primaryDataset?.id as string) || undefined,
         dataset_rows:
           (primaryDataset?.row_count as number) || (row.dataset_rows as number) || undefined,
         dataset_columns:
@@ -704,6 +684,8 @@ class SupabaseService {
             : (row.saved_analyses as string) || undefined,
         created_at: (row.created_at as string) || new Date().toISOString(),
         updated_at: (row.updated_at as string) || new Date().toISOString(),
+        revision: Number(row.revision) || 1,
+        dataset_revision: Number(primaryDataset?.revision) || 0,
       };
 
       return record;
@@ -758,6 +740,7 @@ class SupabaseService {
           status: row.status as string,
           objective: (row.objective as string) || undefined,
           dataset_name: (ds?.name as string) || (row.dataset_name as string) || undefined,
+          dataset_id: (ds?.id as string) || undefined,
           dataset_rows: (ds?.row_count as number) || (row.dataset_rows as number) || undefined,
           dataset_columns:
             (ds?.column_count as number) || (row.dataset_columns as number) || undefined,
@@ -772,6 +755,8 @@ class SupabaseService {
               : (row.saved_analyses as string) || undefined,
           created_at: row.created_at as string,
           updated_at: row.updated_at as string,
+          revision: Number(row.revision) || 1,
+          dataset_revision: Number(ds?.revision) || 0,
         };
       });
 
@@ -828,7 +813,7 @@ class SupabaseService {
     objective?: string;
     summary?: Record<string, unknown>;
     userId?: string;
-  }): Promise<{ ok: boolean; id?: string; error?: string }> {
+  }): Promise<RevisionWriteResult> {
     return this.upsertReportRecord(report, report.userId);
   }
 
@@ -853,13 +838,126 @@ class SupabaseService {
     return fallbackUserId ?? null;
   }
 
+  public async saveDatasetVersionRecord(
+    version: DatasetVersionMetadata,
+    csv: string | undefined,
+    userId: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!csv) return { ok: false, error: "The dataset snapshot is missing its content." };
+    const client = getSupabaseClientInstance();
+    if (!client) return { ok: false, error: "Database client unavailable." };
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId || sessionUserId !== userId) {
+      return { ok: false, error: "Authenticated account changed before saving this version." };
+    }
+
+    const projectUuid = toValidUuid(version.projectId);
+    const storagePath = `${userId}/${projectUuid}/${version.id}.csv`;
+    try {
+      const { error: uploadError } = await client.storage
+        .from("lumetra-dataset-versions")
+        .upload(storagePath, new Blob([csv], { type: "text/csv" }), {
+          upsert: true,
+          contentType: "text/csv",
+        });
+      if (uploadError) return { ok: false, error: uploadError.message };
+
+      const { error } = await client.from("dataset_versions").upsert(
+        {
+          id: version.id,
+          project_id: projectUuid,
+          dataset_id: version.datasetId,
+          user_id: userId,
+          version_number: version.version,
+          content_hash: version.contentHash,
+          content_path: storagePath,
+          cleaning_steps: version.cleaningSteps as never,
+          change_description: version.description,
+          created_at: version.createdAt,
+        },
+        { onConflict: "id" },
+      );
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Version save failed." };
+    }
+  }
+
+  public async listDatasetVersionRecords(
+    projectId: string,
+    userId: string,
+  ): Promise<CloudDatasetVersion[]> {
+    const client = getSupabaseClientInstance();
+    if (!client) return [];
+    try {
+      const { data, error } = await client
+        .from("dataset_versions")
+        .select("*")
+        .eq("project_id", toValidUuid(projectId))
+        .eq("user_id", userId)
+        .order("version_number", { ascending: false });
+      if (error || !data) return [];
+      return data.map((record) => ({
+        id: record.id,
+        projectId,
+        datasetId: record.dataset_id,
+        userId: record.user_id,
+        version: record.version_number,
+        contentHash: record.content_hash,
+        createdAt: record.created_at,
+        description: record.change_description,
+        cleaningSteps: Array.isArray(record.cleaning_steps) ? record.cleaning_steps : [],
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  public async downloadDatasetVersionRecord(
+    versionId: string,
+    userId: string,
+  ): Promise<{ metadata: CloudDatasetVersion; csv: string } | null> {
+    const client = getSupabaseClientInstance();
+    if (!client) return null;
+    try {
+      const { data: record, error } = await client
+        .from("dataset_versions")
+        .select("*")
+        .eq("id", versionId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (error || !record) return null;
+      const { data: file, error: downloadError } = await client.storage
+        .from("lumetra-dataset-versions")
+        .download(record.content_path);
+      if (downloadError || !file) return null;
+      return {
+        metadata: {
+          id: record.id,
+          projectId: record.project_id,
+          datasetId: record.dataset_id,
+          userId: record.user_id,
+          version: record.version_number,
+          contentHash: record.content_hash,
+          createdAt: record.created_at,
+          description: record.change_description,
+          cleaningSteps: Array.isArray(record.cleaning_steps) ? record.cleaning_steps : [],
+        },
+        csv: await file.text(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Granular, idempotent upsert for a project record.
    */
   public async upsertProjectRecord(
     project: ProjectMeta,
     userId?: string,
-  ): Promise<{ ok: boolean; remoteId?: string; error?: string }> {
+  ): Promise<RevisionWriteResult> {
     if (!this.isConfigured()) {
       return { ok: false, error: "Database not configured." };
     }
@@ -874,39 +972,104 @@ class SupabaseService {
     }
 
     const projectUuid = toValidUuid(project.id);
-    const now = new Date().toISOString();
-
     try {
-      const { error } = await client.from("lumetra_projects").upsert(
-        {
-          id: projectUuid,
-          user_id: sessionUserId,
-          name: project.name,
-          description: project.description || null,
-          objective: project.objective || null,
-          status: project.status,
-          updated_at: now,
-        },
-        { onConflict: "id" },
-      );
+      const expectedRevision = project.revision ?? (project.isCloudSynced ? 1 : 0);
+      const values = {
+        id: projectUuid,
+        user_id: sessionUserId,
+        name: project.name,
+        description: project.description || null,
+        objective: project.objective || null,
+        status: project.status,
+        updated_at: new Date().toISOString(),
+      };
 
-      if (error) {
-        return { ok: false, error: error.message };
+      if (expectedRevision <= 0) {
+        const { data, error } = await client
+          .from("lumetra_projects")
+          .insert({ ...values, revision: 1 })
+          .select("revision")
+          .maybeSingle();
+        if (error?.code === "23505") {
+          const current = await client
+            .from("lumetra_projects")
+            .select("*")
+            .eq("id", projectUuid)
+            .eq("user_id", sessionUserId)
+            .maybeSingle();
+          return {
+            ok: false,
+            conflict: true,
+            remoteRevision: current.data?.revision ?? 1,
+            remoteRecord: current.data ?? undefined,
+            error: "This project was created on another device.",
+          };
+        }
+        if (error || !data) return { ok: false, error: error?.message || "Project insert failed." };
+        return { ok: true, revision: data.revision, remoteId: projectUuid };
       }
 
-      // Verification read-back
-      const { data, error: vErr } = await client
+      const { data: previous, error: readError } = await client
         .from("lumetra_projects")
-        .select("id")
+        .select("*")
         .eq("id", projectUuid)
         .eq("user_id", sessionUserId)
         .maybeSingle();
-
-      if (vErr || !data) {
-        return { ok: false, error: "Project write verification failed." };
+      if (readError) return { ok: false, error: readError.message };
+      if (!previous || previous.revision !== expectedRevision) {
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: previous?.revision ?? 0,
+          remoteRecord: previous ?? undefined,
+          error: "This project has a newer saved version.",
+        };
       }
 
-      return { ok: true, remoteId: projectUuid };
+      const { error: historyError } = await client.from("project_history").insert({
+        project_id: projectUuid,
+        user_id: sessionUserId,
+        entity_type: "project",
+        entity_id: projectUuid,
+        revision: expectedRevision,
+        change_description: "Project details changed",
+        snapshot: {
+          id: previous.id,
+          name: previous.name,
+          description: previous.description,
+          objective: previous.objective,
+          status: previous.status,
+          revision: previous.revision,
+          updated_at: previous.updated_at,
+        },
+      });
+      if (historyError) return { ok: false, error: historyError.message };
+
+      const { data, error } = await client
+        .from("lumetra_projects")
+        .update({ ...values, revision: expectedRevision + 1 })
+        .eq("id", projectUuid)
+        .eq("user_id", sessionUserId)
+        .eq("revision", expectedRevision)
+        .select("revision")
+        .maybeSingle();
+      if (error) return { ok: false, error: error.message };
+      if (!data) {
+        const current = await client
+          .from("lumetra_projects")
+          .select("*")
+          .eq("id", projectUuid)
+          .eq("user_id", sessionUserId)
+          .maybeSingle();
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: current.data?.revision ?? 0,
+          remoteRecord: current.data ?? undefined,
+          error: "This project changed while it was being saved.",
+        };
+      }
+      return { ok: true, revision: data.revision, remoteId: projectUuid };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Project write error" };
     }
@@ -930,9 +1093,10 @@ class SupabaseService {
       csvContent?: string | null;
       delimiter?: string;
       typeOverrides?: Record<string, unknown>;
+      revision?: number;
     },
     userId?: string,
-  ): Promise<{ ok: boolean; datasetId?: string; error?: string }> {
+  ): Promise<RevisionWriteResult> {
     if (!this.isConfigured()) {
       return { ok: false, error: "Database not configured." };
     }
@@ -948,50 +1112,96 @@ class SupabaseService {
 
     const projectUuid = toValidUuid(projectId);
     const datasetUuid = toValidUuid(dataset.id || `${projectUuid}_dataset`);
-    const now = new Date().toISOString();
-
     try {
-      const payload: Record<string, unknown> = {
-        id: datasetUuid,
+      const current = await client
+        .from("datasets")
+        .select("*")
+        .eq("id", datasetUuid)
+        .eq("user_id", sessionUserId)
+        .maybeSingle();
+      if (current.error) return { ok: false, error: current.error.message };
+      const expectedRevision = dataset.revision ?? 0;
+      const revision = current.data?.revision ?? 0;
+      if (revision !== expectedRevision) {
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: revision,
+          remoteRecord: current.data ?? undefined,
+          error: "This dataset has a newer saved version.",
+        };
+      }
+
+      const values = {
         project_id: projectUuid,
         user_id: sessionUserId,
         name: dataset.name,
-        source: dataset.source || "upload",
+        source: dataset.source === "sample" ? ("sample" as const) : ("upload" as const),
         row_count: dataset.rows,
         column_count: dataset.columns,
         columns: dataset.columnList || [],
         delimiter: dataset.delimiter || ",",
         cleaning_steps: dataset.cleaningSteps || [],
-        updated_at: now,
+        ...(dataset.typeOverrides !== undefined ? { type_overrides: dataset.typeOverrides } : {}),
+        ...(dataset.csvContent !== undefined ? { csv_content: dataset.csvContent } : {}),
+        updated_at: new Date().toISOString(),
       };
 
-      if (dataset.typeOverrides) {
-        payload.type_overrides = dataset.typeOverrides;
+      if (!current.data) {
+        const { data, error } = await client
+          .from("datasets")
+          .insert({
+            id: datasetUuid,
+            ...values,
+            csv_content: dataset.csvContent ?? null,
+            revision: 1,
+          })
+          .select("revision")
+          .maybeSingle();
+        if (error?.code === "23505") {
+          const remote = await client
+            .from("datasets")
+            .select("*")
+            .eq("id", datasetUuid)
+            .eq("user_id", sessionUserId)
+            .maybeSingle();
+          return {
+            ok: false,
+            conflict: true,
+            remoteRevision: remote.data?.revision ?? 1,
+            remoteRecord: remote.data ?? undefined,
+            error: "This dataset was saved on another device.",
+          };
+        }
+        if (error || !data) return { ok: false, error: error?.message || "Dataset insert failed." };
+        return { ok: true, revision: data.revision, datasetId: datasetUuid };
       }
 
-      if (dataset.csvContent !== undefined) {
-        payload.csv_content = dataset.csvContent;
-      }
-
-      const { error } = await client.from("datasets").upsert(payload, { onConflict: "id" });
-
-      if (error) {
-        return { ok: false, error: error.message };
-      }
-
-      // Verification read-back
-      const { data, error: vErr } = await client
+      const { data, error } = await client
         .from("datasets")
-        .select("id")
+        .update({ ...values, revision: expectedRevision + 1 })
         .eq("id", datasetUuid)
         .eq("user_id", sessionUserId)
+        .eq("revision", expectedRevision)
+        .select("revision")
         .maybeSingle();
-
-      if (vErr || !data) {
-        return { ok: false, error: "Dataset write verification failed." };
+      if (error) return { ok: false, error: error.message };
+      if (!data) {
+        const remote = await client
+          .from("datasets")
+          .select("*")
+          .eq("id", datasetUuid)
+          .eq("user_id", sessionUserId)
+          .maybeSingle();
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: remote.data?.revision ?? 0,
+          remoteRecord: remote.data ?? undefined,
+          error: "This dataset changed while it was being saved.",
+        };
       }
-
-      return { ok: true, datasetId: datasetUuid };
+      return { ok: true, revision: data.revision, datasetId: datasetUuid };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Dataset write error" };
     }
@@ -1004,7 +1214,7 @@ class SupabaseService {
     projectId: string,
     analysis: SavedAnalysis,
     userId?: string,
-  ): Promise<{ ok: boolean; analysisId?: string; error?: string }> {
+  ): Promise<RevisionWriteResult> {
     if (!this.isConfigured()) {
       return { ok: false, error: "Database not configured." };
     }
@@ -1020,49 +1230,121 @@ class SupabaseService {
 
     const projectUuid = toValidUuid(projectId);
     const analysisUuid = toValidUuid(analysis.id);
-    const now = new Date().toISOString();
-
     try {
-      const { error } = await client.from("saved_analyses").upsert(
-        {
-          id: analysisUuid,
-          project_id: projectUuid,
-          user_id: sessionUserId,
-          name: analysis.name,
-          type: analysis.type,
-          dataset_id: analysis.datasetId ? toValidUuid(analysis.datasetId) : null,
-          dataset_name: analysis.datasetName || null,
-          dataset_signature: analysis.datasetSignature || `${analysis.name}:${now}`,
-          variables: (analysis.variables as unknown) || [],
-          configuration: (analysis.configuration as unknown) || {},
-          sample_size: analysis.sampleSize || 0,
-          missing_count: analysis.missingCount || 0,
-          missing_handling: analysis.missingHandling || "exclude",
-          results: (analysis.results as unknown) || {},
-          interpretation: (analysis.interpretation as unknown) || {},
-          method_notes: (analysis.methodNotes as unknown) || [],
-          updated_at: now,
-        },
-        { onConflict: "id" },
-      );
-
-      if (error) {
-        return { ok: false, error: error.message };
-      }
-
-      // Verification read-back
-      const { data, error: vErr } = await client
+      const current = await client
         .from("saved_analyses")
-        .select("id")
+        .select("*")
         .eq("id", analysisUuid)
         .eq("user_id", sessionUserId)
         .maybeSingle();
-
-      if (vErr || !data) {
-        return { ok: false, error: "Analysis write verification failed." };
+      if (current.error) return { ok: false, error: current.error.message };
+      const expectedRevision = analysis.revision ?? 0;
+      const revision = current.data?.revision ?? 0;
+      if (revision !== expectedRevision) {
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: revision,
+          remoteRecord: current.data ?? undefined,
+          error: "This analysis has a newer saved version.",
+        };
       }
 
-      return { ok: true, analysisId: analysisUuid };
+      const values = {
+        project_id: projectUuid,
+        user_id: sessionUserId,
+        name: analysis.name,
+        type: analysis.type,
+        dataset_id: analysis.datasetId ? toValidUuid(analysis.datasetId) : null,
+        dataset_name: analysis.datasetName || null,
+        dataset_signature: analysis.datasetSignature,
+        dataset_version: analysis.datasetVersion ?? null,
+        variables: analysis.variables,
+        configuration: analysis.configuration,
+        sample_size: analysis.sampleSize,
+        missing_count: analysis.missingCount,
+        missing_handling: analysis.missingHandling,
+        results: analysis.results,
+        interpretation: analysis.interpretation,
+        method_notes: analysis.methodNotes,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (!current.data) {
+        const { data, error } = await client
+          .from("saved_analyses")
+          .insert({ id: analysisUuid, ...values, revision: 1 })
+          .select("revision")
+          .maybeSingle();
+        if (error?.code === "23505") {
+          const remote = await client
+            .from("saved_analyses")
+            .select("*")
+            .eq("id", analysisUuid)
+            .eq("user_id", sessionUserId)
+            .maybeSingle();
+          return {
+            ok: false,
+            conflict: true,
+            remoteRevision: remote.data?.revision ?? 1,
+            remoteRecord: remote.data ?? undefined,
+            error: "This analysis was saved on another device.",
+          };
+        }
+        if (error || !data)
+          return { ok: false, error: error?.message || "Analysis insert failed." };
+        return { ok: true, revision: data.revision, analysisId: analysisUuid };
+      }
+
+      const { error: historyError } = await client.from("project_history").insert({
+        project_id: projectUuid,
+        user_id: sessionUserId,
+        entity_type: "analysis",
+        entity_id: analysisUuid,
+        revision: expectedRevision,
+        change_description: "Saved analysis changed",
+        snapshot: {
+          id: current.data.id,
+          name: current.data.name,
+          type: current.data.type,
+          dataset_id: current.data.dataset_id,
+          dataset_version: current.data.dataset_version,
+          dataset_signature: current.data.dataset_signature,
+          variables: current.data.variables,
+          configuration: current.data.configuration,
+          sample_size: current.data.sample_size,
+          missing_count: current.data.missing_count,
+          results: current.data.results,
+          interpretation: current.data.interpretation,
+        },
+      });
+      if (historyError) return { ok: false, error: historyError.message };
+
+      const { data, error } = await client
+        .from("saved_analyses")
+        .update({ ...values, revision: expectedRevision + 1 })
+        .eq("id", analysisUuid)
+        .eq("user_id", sessionUserId)
+        .eq("revision", expectedRevision)
+        .select("revision")
+        .maybeSingle();
+      if (error) return { ok: false, error: error.message };
+      if (!data) {
+        const remote = await client
+          .from("saved_analyses")
+          .select("*")
+          .eq("id", analysisUuid)
+          .eq("user_id", sessionUserId)
+          .maybeSingle();
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: remote.data?.revision ?? 0,
+          remoteRecord: remote.data ?? undefined,
+          error: "This analysis changed while it was being saved.",
+        };
+      }
+      return { ok: true, revision: data.revision, analysisId: analysisUuid };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Analysis write error" };
     }
@@ -1109,11 +1391,12 @@ class SupabaseService {
       markdown: string;
       objective?: string;
       summary?: Record<string, unknown>;
+      revision?: number;
     },
     userId?: string,
-  ): Promise<{ ok: boolean; id?: string; error?: string }> {
+  ): Promise<RevisionWriteResult> {
     if (!this.isConfigured()) {
-      return { ok: true, id: report.id || generateUuid() };
+      return { ok: true, revision: report.revision ?? 0, id: report.id || generateUuid() };
     }
     const client = getSupabaseClientInstance();
     if (!client) {
@@ -1127,40 +1410,103 @@ class SupabaseService {
 
     const reportUuid = toValidUuid(report.id || generateUuid());
     const projectUuid = toValidUuid(report.projectId);
-    const now = new Date().toISOString();
-
     try {
-      const { error } = await client.from("reports").upsert(
-        {
-          id: reportUuid,
-          project_id: projectUuid,
-          user_id: sessionUserId,
-          title: report.title,
-          objective: report.objective || null,
-          content_markdown: report.markdown,
-          summary: (report.summary as unknown) || null,
-          updated_at: now,
-        },
-        { onConflict: "id" },
-      );
-
-      if (error) {
-        return { ok: false, error: error.message };
-      }
-
-      // Verification read-back
-      const { data, error: vErr } = await client
+      const current = await client
         .from("reports")
-        .select("id")
+        .select("*")
         .eq("id", reportUuid)
         .eq("user_id", sessionUserId)
         .maybeSingle();
-
-      if (vErr || !data) {
-        return { ok: false, error: "Report write verification failed." };
+      if (current.error) return { ok: false, error: current.error.message };
+      const expectedRevision = report.revision ?? 0;
+      const revision = current.data?.revision ?? 0;
+      if (revision !== expectedRevision) {
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: revision,
+          remoteRecord: current.data ?? undefined,
+          error: "This report has a newer saved version.",
+        };
       }
 
-      return { ok: true, id: reportUuid };
+      const values = {
+        project_id: projectUuid,
+        user_id: sessionUserId,
+        title: report.title,
+        objective: report.objective || null,
+        content_markdown: report.markdown,
+        summary: report.summary ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      if (!current.data) {
+        const { data, error } = await client
+          .from("reports")
+          .insert({ id: reportUuid, ...values, revision: 1 })
+          .select("revision")
+          .maybeSingle();
+        if (error?.code === "23505") {
+          const remote = await client
+            .from("reports")
+            .select("*")
+            .eq("id", reportUuid)
+            .eq("user_id", sessionUserId)
+            .maybeSingle();
+          return {
+            ok: false,
+            conflict: true,
+            remoteRevision: remote.data?.revision ?? 1,
+            remoteRecord: remote.data ?? undefined,
+            error: "This report was saved on another device.",
+          };
+        }
+        if (error || !data) return { ok: false, error: error?.message || "Report insert failed." };
+        return { ok: true, revision: data.revision, id: reportUuid };
+      }
+
+      const { error: historyError } = await client.from("project_history").insert({
+        project_id: projectUuid,
+        user_id: sessionUserId,
+        entity_type: "report",
+        entity_id: reportUuid,
+        revision: expectedRevision,
+        change_description: "Saved report changed",
+        snapshot: {
+          id: current.data.id,
+          title: current.data.title,
+          objective: current.data.objective,
+          content_markdown: current.data.content_markdown,
+          summary: current.data.summary,
+          revision: current.data.revision,
+        },
+      });
+      if (historyError) return { ok: false, error: historyError.message };
+
+      const { data, error } = await client
+        .from("reports")
+        .update({ ...values, revision: expectedRevision + 1 })
+        .eq("id", reportUuid)
+        .eq("user_id", sessionUserId)
+        .eq("revision", expectedRevision)
+        .select("revision")
+        .maybeSingle();
+      if (error) return { ok: false, error: error.message };
+      if (!data) {
+        const remote = await client
+          .from("reports")
+          .select("*")
+          .eq("id", reportUuid)
+          .eq("user_id", sessionUserId)
+          .maybeSingle();
+        return {
+          ok: false,
+          conflict: true,
+          remoteRevision: remote.data?.revision ?? 0,
+          remoteRecord: remote.data ?? undefined,
+          error: "This report changed while it was being saved.",
+        };
+      }
+      return { ok: true, revision: data.revision, id: reportUuid };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Report write error" };
     }

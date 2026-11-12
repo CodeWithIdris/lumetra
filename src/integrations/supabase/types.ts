@@ -13,6 +13,7 @@ export interface Database {
           status: "no-data" | "data-loaded" | "analysed";
           created_at: string;
           updated_at: string;
+          revision: number;
         };
         Insert: {
           id?: string;
@@ -23,6 +24,7 @@ export interface Database {
           status?: "no-data" | "data-loaded" | "analysed";
           created_at?: string;
           updated_at?: string;
+          revision?: number;
         };
         Update: {
           id?: string;
@@ -33,6 +35,7 @@ export interface Database {
           status?: "no-data" | "data-loaded" | "analysed";
           created_at?: string;
           updated_at?: string;
+          revision?: number;
         };
       };
       datasets: {
@@ -51,6 +54,7 @@ export interface Database {
           csv_content: string | null;
           created_at: string;
           updated_at: string;
+          revision: number;
         };
         Insert: {
           id?: string;
@@ -67,6 +71,7 @@ export interface Database {
           csv_content?: string | null;
           created_at?: string;
           updated_at?: string;
+          revision?: number;
         };
         Update: {
           id?: string;
@@ -83,6 +88,7 @@ export interface Database {
           csv_content?: string | null;
           created_at?: string;
           updated_at?: string;
+          revision?: number;
         };
       };
       saved_analyses: {
@@ -105,6 +111,8 @@ export interface Database {
           method_notes: Json;
           created_at: string;
           updated_at: string;
+          revision: number;
+          dataset_version: number | null;
         };
         Insert: {
           id?: string;
@@ -125,6 +133,8 @@ export interface Database {
           method_notes?: Json;
           created_at?: string;
           updated_at?: string;
+          revision?: number;
+          dataset_version?: number | null;
         };
         Update: {
           id?: string;
@@ -145,6 +155,8 @@ export interface Database {
           method_notes?: Json;
           created_at?: string;
           updated_at?: string;
+          revision?: number;
+          dataset_version?: number | null;
         };
       };
       reports: {
@@ -158,6 +170,7 @@ export interface Database {
           summary: Json | null;
           created_at: string;
           updated_at: string;
+          revision: number;
         };
         Insert: {
           id?: string;
@@ -169,6 +182,7 @@ export interface Database {
           summary?: Json | null;
           created_at?: string;
           updated_at?: string;
+          revision?: number;
         };
         Update: {
           id?: string;
@@ -180,6 +194,80 @@ export interface Database {
           summary?: Json | null;
           created_at?: string;
           updated_at?: string;
+          revision?: number;
+        };
+      };
+      dataset_versions: {
+        Row: {
+          id: string;
+          project_id: string;
+          dataset_id: string;
+          user_id: string;
+          version_number: number;
+          content_hash: string;
+          content_path: string;
+          cleaning_steps: Json;
+          change_description: string;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          project_id: string;
+          dataset_id: string;
+          user_id: string;
+          version_number: number;
+          content_hash: string;
+          content_path: string;
+          cleaning_steps?: Json;
+          change_description: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          dataset_id?: string;
+          user_id?: string;
+          version_number?: number;
+          content_hash?: string;
+          content_path?: string;
+          cleaning_steps?: Json;
+          change_description?: string;
+          created_at?: string;
+        };
+      };
+      project_history: {
+        Row: {
+          id: string;
+          project_id: string;
+          user_id: string;
+          entity_type: "project" | "analysis" | "report";
+          entity_id: string;
+          revision: number;
+          change_description: string;
+          snapshot: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          user_id: string;
+          entity_type: "project" | "analysis" | "report";
+          entity_id: string;
+          revision: number;
+          change_description: string;
+          snapshot: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          user_id?: string;
+          entity_type?: "project" | "analysis" | "report";
+          entity_id?: string;
+          revision?: number;
+          change_description?: string;
+          snapshot?: Json;
+          created_at?: string;
         };
       };
     };

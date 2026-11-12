@@ -5,6 +5,7 @@ export type ColumnType = "numeric" | "categorical" | "date" | "text" | "empty";
 
 export interface Dataset {
   id: string;
+  version?: number;
   name: string;
   source: "upload" | "sample";
   columns: string[];

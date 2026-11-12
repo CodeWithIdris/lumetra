@@ -13,9 +13,12 @@ import { parseCsvText } from "../data/parse";
 import { loadProjects, saveProjects, type ProjectMeta } from "./projects";
 
 export const DB_NAME = "lumetra_storage";
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const DATASETS_STORE = "datasets";
 export const METADATA_STORE = "dataset_meta";
+export const DATASET_VERSIONS_STORE = "dataset_versions";
+export const DATASET_VERSION_METADATA_STORE = "dataset_version_meta";
+export const PERSISTENCE_CONFLICTS_STORE = "persistence_conflicts";
 export const MAX_INDEXEDDB_DATASET_BYTES = 20 * 1024 * 1024; // 20 MB limit? why 20mb limit?
 
 export interface StoredDataset {
@@ -47,6 +50,35 @@ export interface StoredDatasetMeta {
   hasCsv: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DatasetVersionMetadata {
+  id: string;
+  projectId: string;
+  datasetId: string;
+  userId: string | null;
+  version: number;
+  contentHash: string;
+  createdAt: string;
+  description: string;
+  cleaningSteps: unknown[];
+}
+
+export interface StoredDatasetVersion extends DatasetVersionMetadata {
+  dataset: StoredDataset;
+}
+
+export interface LocalPersistenceConflict {
+  id: string;
+  userId: string;
+  projectId: string;
+  entityType: "project" | "dataset" | "analysis" | "report";
+  entityId: string;
+  expectedRevision: number;
+  remoteRevision: number;
+  localVersionId?: string;
+  remoteVersionId?: string;
+  createdAt: string;
 }
 
 export type PersistenceErrorType =
@@ -164,6 +196,28 @@ export function openDatabase(): Promise<IDBDatabase> {
         metaStore.createIndex("projectId", "projectId", { unique: false });
         metaStore.createIndex("updatedAt", "updatedAt", { unique: false });
       }
+
+      if (!db.objectStoreNames.contains(DATASET_VERSIONS_STORE)) {
+        const versionsStore = db.createObjectStore(DATASET_VERSIONS_STORE, { keyPath: "id" });
+        versionsStore.createIndex("projectId", "projectId", { unique: false });
+        versionsStore.createIndex("datasetId", "datasetId", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(DATASET_VERSION_METADATA_STORE)) {
+        const versionMetaStore = db.createObjectStore(DATASET_VERSION_METADATA_STORE, {
+          keyPath: "id",
+        });
+        versionMetaStore.createIndex("projectId", "projectId", { unique: false });
+        versionMetaStore.createIndex("datasetId", "datasetId", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(PERSISTENCE_CONFLICTS_STORE)) {
+        const conflictsStore = db.createObjectStore(PERSISTENCE_CONFLICTS_STORE, {
+          keyPath: "id",
+        });
+        conflictsStore.createIndex("projectId", "projectId", { unique: false });
+        conflictsStore.createIndex("userId", "userId", { unique: false });
+      }
     };
 
     request.onsuccess = () => {
@@ -186,6 +240,193 @@ export function openDatabase(): Promise<IDBDatabase> {
   });
 
   return dbOpeningPromise;
+}
+
+function hashDataset(dataset: Dataset): string {
+  const content = JSON.stringify({
+    columns: dataset.columns,
+    rows: dataset.rows,
+    typeOverrides: dataset.typeOverrides ?? null,
+  });
+  let first = 0x811c9dc5;
+  let second = 0x01000193;
+  for (let i = 0; i < content.length; i++) {
+    const code = content.charCodeAt(i);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export async function saveDatasetVersion(input: {
+  id?: string;
+  version?: number;
+  force?: boolean;
+  projectId: string;
+  userId: string | null;
+  dataset: Dataset;
+  csv?: string;
+  cleaningSteps: unknown[];
+  description: string;
+}): Promise<StoredDatasetVersion> {
+  const db = await openDatabase();
+  const existing = await listDatasetVersions(input.projectId, input.dataset.id);
+  const contentHash = hashDataset(input.dataset);
+  const cleaningStepsJson = JSON.stringify(input.cleaningSteps);
+  const latest = existing[0];
+  if (
+    !input.force &&
+    latest?.contentHash === contentHash &&
+    JSON.stringify(latest.cleaningSteps) === cleaningStepsJson
+  ) {
+    const savedLatest = await loadDatasetVersion(latest.id);
+    if (savedLatest) return savedLatest;
+  }
+  const now = new Date().toISOString();
+  const version = input.version ?? (latest?.version ?? 0) + 1;
+  const id =
+    input.id ??
+    (typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${input.dataset.id}-version-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const dataset: StoredDataset = {
+    ...input.dataset,
+    projectId: input.projectId,
+    rows: input.dataset.rows.map((row) => [...row]),
+    columns: [...input.dataset.columns],
+    warnings: [...input.dataset.warnings],
+    csv: input.csv,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const metadata: DatasetVersionMetadata = {
+    id,
+    projectId: input.projectId,
+    datasetId: input.dataset.id,
+    userId: input.userId,
+    version,
+    contentHash,
+    createdAt: now,
+    description: input.description,
+    cleaningSteps: structuredClone(input.cleaningSteps),
+  };
+  const record: StoredDatasetVersion = { ...metadata, dataset };
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(
+      [DATASET_VERSIONS_STORE, DATASET_VERSION_METADATA_STORE],
+      "readwrite",
+    );
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(new PersistenceError("DATABASE_ERROR", "Could not save dataset version.", tx.error));
+    tx.onabort = () =>
+      reject(
+        new PersistenceError("DATABASE_ERROR", "Dataset version save was interrupted.", tx.error),
+      );
+    tx.objectStore(DATASET_VERSIONS_STORE).put(record);
+    tx.objectStore(DATASET_VERSION_METADATA_STORE).put(metadata);
+  });
+  return record;
+}
+
+export async function loadDatasetVersion(id: string): Promise<StoredDatasetVersion | null> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([DATASET_VERSIONS_STORE], "readonly");
+    const request = tx.objectStore(DATASET_VERSIONS_STORE).get(id);
+    request.onsuccess = () => resolve((request.result as StoredDatasetVersion | undefined) ?? null);
+    request.onerror = () =>
+      reject(
+        new PersistenceError("DATABASE_ERROR", "Could not load dataset version.", request.error),
+      );
+  });
+}
+
+export async function cacheDatasetVersionMetadata(metadata: DatasetVersionMetadata): Promise<void> {
+  const db = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([DATASET_VERSION_METADATA_STORE], "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(new PersistenceError("DATABASE_ERROR", "Could not cache version details.", tx.error));
+    tx.objectStore(DATASET_VERSION_METADATA_STORE).put(metadata);
+  });
+}
+
+export async function listDatasetVersions(
+  projectId: string,
+  datasetId?: string,
+): Promise<DatasetVersionMetadata[]> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([DATASET_VERSION_METADATA_STORE], "readonly");
+    const store = tx.objectStore(DATASET_VERSION_METADATA_STORE);
+    const request = datasetId
+      ? store.index("datasetId").getAll(datasetId)
+      : store.index("projectId").getAll(projectId);
+    request.onsuccess = () => {
+      const records = (request.result as DatasetVersionMetadata[]).filter(
+        (record) => record.projectId === projectId,
+      );
+      records.sort((a, b) => b.version - a.version || b.createdAt.localeCompare(a.createdAt));
+      resolve(records);
+    };
+    request.onerror = () =>
+      reject(
+        new PersistenceError("DATABASE_ERROR", "Could not list dataset versions.", request.error),
+      );
+  });
+}
+
+export async function saveLocalPersistenceConflict(
+  conflict: LocalPersistenceConflict,
+): Promise<void> {
+  const db = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([PERSISTENCE_CONFLICTS_STORE], "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(
+        new PersistenceError("DATABASE_ERROR", "Could not save the recovery record.", tx.error),
+      );
+    tx.objectStore(PERSISTENCE_CONFLICTS_STORE).put(conflict);
+  });
+}
+
+export async function listLocalPersistenceConflicts(
+  projectId: string,
+  userId: string,
+): Promise<LocalPersistenceConflict[]> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([PERSISTENCE_CONFLICTS_STORE], "readonly");
+    const request = tx
+      .objectStore(PERSISTENCE_CONFLICTS_STORE)
+      .index("projectId")
+      .getAll(projectId);
+    request.onsuccess = () =>
+      resolve(
+        (request.result as LocalPersistenceConflict[]).filter((record) => record.userId === userId),
+      );
+    request.onerror = () =>
+      reject(
+        new PersistenceError("DATABASE_ERROR", "Could not load recovery records.", request.error),
+      );
+  });
+}
+
+export async function deleteLocalPersistenceConflict(id: string): Promise<void> {
+  const db = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([PERSISTENCE_CONFLICTS_STORE], "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () =>
+      reject(
+        new PersistenceError("DATABASE_ERROR", "Could not clear the recovery record.", tx.error),
+      );
+    tx.objectStore(PERSISTENCE_CONFLICTS_STORE).delete(id);
+  });
 }
 
 /** Close cached database connection (useful during tests or reset) */

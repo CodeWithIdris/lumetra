@@ -8,6 +8,8 @@ export type ProjectStatus = "no-data" | "data-loaded" | "analysed";
 export interface ProjectMeta {
   id: string;
   userId?: string;
+  revision?: number;
+  datasetRevision?: number;
   name: string;
   description?: string;
   createdAt: string;
@@ -84,6 +86,30 @@ export function loadProjectsForUser(userId: string | null): ProjectMeta[] {
   return all.filter((p) => !p.userId);
 }
 
+export function updateProjectRevision(
+  projectId: string,
+  userId: string,
+  entity: "project" | "dataset" | "analysis" | "report",
+  revision: number,
+  entityId?: string,
+): void {
+  const projects = loadProjects();
+  const updated = projects.map((project) => {
+    if (project.id !== projectId || project.userId !== userId) return project;
+    if (entity === "project") return { ...project, revision, isCloudSynced: true };
+    if (entity === "dataset") return { ...project, datasetRevision: revision };
+    if (entity === "report") return project;
+    if (!entityId) return project;
+    return {
+      ...project,
+      savedAnalyses: (project.savedAnalyses ?? []).map((analysis) =>
+        analysis.id === entityId ? { ...analysis, revision } : analysis,
+      ),
+    };
+  });
+  saveProjects(updated);
+}
+
 /**
  * Removes cached projects for a specific user upon sign-out or account deletion.
  */
@@ -144,6 +170,9 @@ export function duplicateProject(projectId: string): ProjectMeta | null {
   const copy: ProjectMeta = {
     ...JSON.parse(JSON.stringify(source)),
     id: newId,
+    revision: 0,
+    datasetRevision: 0,
+    isCloudSynced: false,
     name: `${source.name} (Copy)`,
     createdAt: now,
     updatedAt: now,
