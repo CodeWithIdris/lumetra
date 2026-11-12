@@ -666,7 +666,9 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     coordinator.setOnlineStatus(false);
     expect(coordinator.getState().isOnline).toBe(false);
     expect(coordinator.getState().status).toBe("offline");
-    expect(coordinator.getState().statusText).toBe("Working offline");
+    expect(coordinator.getState().statusText).toBe(
+      "Offline — changes will sync when connection returns",
+    );
 
     // 2. User creates changes while offline
     coordinator.queueProjectSave(project, USER_A_ID, { immediate: true });

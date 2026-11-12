@@ -177,7 +177,19 @@ export function duplicateProject(projectId: string): ProjectMeta | null {
     createdAt: now,
     updatedAt: now,
     cleaningSteps: source.cleaningSteps ? JSON.parse(JSON.stringify(source.cleaningSteps)) : [],
-    savedAnalyses: source.savedAnalyses ? JSON.parse(JSON.stringify(source.savedAnalyses)) : [],
+    savedAnalyses: (source.savedAnalyses ?? []).map((analysis) => {
+      const {
+        revision: _revision,
+        datasetVersion: _datasetVersion,
+        datasetVersionId: _datasetVersionId,
+        ...snapshot
+      } = JSON.parse(JSON.stringify(analysis)) as SavedAnalysis;
+      return {
+        ...snapshot,
+        id: generateUuid(),
+        revision: 0,
+      };
+    }),
     dataset: source.dataset
       ? {
           ...JSON.parse(JSON.stringify(source.dataset)),

@@ -102,36 +102,22 @@ export function saveActivePersona(persona: PersonaId): void {
 export async function restoreUserSession(): Promise<UserProfile | null> {
   if (typeof window === "undefined") return null;
 
-  if (isSupabaseConfigured()) {
-    try {
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr || !sessionData.session) {
-        return null;
-      }
-      // Re-verify the session token with Supabase to ensure it is authentic and not expired
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr || !userData.user) {
-        return null;
-      }
-      return mapSupabaseUser(userData.user);
-    } catch (e) {
-      console.warn("[Lumetra Auth] Failed to restore Supabase session:", e);
+  if (!isSupabaseConfigured()) return null;
+
+  try {
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr || !sessionData.session) {
       return null;
     }
-  }
-
-  // When Supabase is not configured, check for an explicit local vault profile
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as UserProfile;
-    if (parsed && parsed.provider === "local_vault") {
-      return parsed;
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData.user) {
+      return null;
     }
-  } catch {
-    // Local parse error
+    return mapSupabaseUser(userData.user);
+  } catch (e) {
+    console.warn("[Lumetra Auth] Failed to restore authenticated session:", e);
+    return null;
   }
-  return null;
 }
 
 /**
@@ -180,53 +166,41 @@ export async function registerWithEmailPassword(
   if (!trimmedEmail || !trimmedEmail.includes("@")) {
     return { user: null, error: "Please enter a valid email address." };
   }
-  if (!password || password.length < 6) {
-    return { user: null, error: "Password must be at least 6 characters long." };
+  if (!password || password.length < 8) {
+    return { user: null, error: "Password must be at least 8 characters long." };
   }
 
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: trimmedEmail,
-        password,
-        options: {
-          data: {
-            name: trimmedName,
-            persona,
-          },
-          emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+  if (!isSupabaseConfigured()) {
+    return { user: null, error: "Account registration is not available right now." };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password,
+      options: {
+        data: {
+          name: trimmedName,
+          persona,
         },
-      });
+        emailRedirectTo:
+          typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+      },
+    });
 
-      if (error) {
-        return { user: null, error: error.message };
-      }
-
-      if (data.user) {
-        const profile = mapSupabaseUser(data.user);
-        saveActivePersona(persona);
-        const emailConfirmationRequired = !data.session;
-        return { user: profile, emailConfirmationRequired };
-      }
-    } catch (e) {
-      return { user: null, error: e instanceof Error ? e.message : "Sign up request failed." };
+    if (error) {
+      return { user: null, error: error.message };
     }
-  }
 
-  // Local vault fallback when Supabase credentials are not configured
-  const localUser: UserProfile = {
-    id: "usr_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
-    email: trimmedEmail,
-    name: trimmedName,
-    persona,
-    isCloudSynced: false,
-    provider: "local_vault",
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString(),
-  };
-  saveActivePersona(persona);
-  saveStoredUser(localUser);
-  return { user: localUser };
+    if (data.user) {
+      const profile = mapSupabaseUser(data.user);
+      saveActivePersona(persona);
+      return { user: profile, emailConfirmationRequired: !data.session };
+    }
+    return { user: null, error: "Registration did not return an account." };
+  } catch (e) {
+    return { user: null, error: e instanceof Error ? e.message : "Sign up request failed." };
+  }
 }
 
 /**
@@ -245,47 +219,25 @@ export async function loginWithEmailPassword(
     return { user: null, error: "Please enter your password." };
   }
 
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
-      });
-
-      if (error) {
-        return { user: null, error: error.message };
-      }
-
-      if (data.user) {
-        const profile = mapSupabaseUser(data.user);
-        saveActivePersona(profile.persona);
-        return { user: profile };
-      }
-    } catch (e) {
-      return { user: null, error: e instanceof Error ? e.message : "Sign in request failed." };
-    }
+  if (!isSupabaseConfigured()) {
+    return { user: null, error: "Account sign-in is not available right now." };
   }
 
-  // Local vault fallback
-  const existing = loadStoredUser();
-  if (existing && existing.email === trimmedEmail) {
-    const updated: UserProfile = { ...existing, lastLoginAt: new Date().toISOString() };
-    saveStoredUser(updated);
-    return { user: updated };
-  }
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password,
+    });
 
-  const demoUser: UserProfile = {
-    id: "usr_" + Math.random().toString(36).slice(2, 9),
-    email: trimmedEmail,
-    name: trimmedEmail.split("@")[0] || "Researcher",
-    persona: "engineer",
-    isCloudSynced: false,
-    provider: "local_vault",
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString(),
-  };
-  saveStoredUser(demoUser);
-  return { user: demoUser };
+    if (error) return { user: null, error: error.message };
+    if (!data.user) return { user: null, error: "Sign in did not return an account." };
+
+    const profile = mapSupabaseUser(data.user);
+    saveActivePersona(profile.persona);
+    return { user: profile };
+  } catch (e) {
+    return { user: null, error: e instanceof Error ? e.message : "Sign in request failed." };
+  }
 }
 
 /**
@@ -369,8 +321,8 @@ export async function sendPasswordReset(
 export async function updateUserPassword(
   newPassword: string,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!newPassword || newPassword.length < 6) {
-    return { success: false, error: "New password must be at least 6 characters long." };
+  if (!newPassword || newPassword.length < 8) {
+    return { success: false, error: "New password must be at least 8 characters long." };
   }
 
   if (!isSupabaseConfigured()) {
@@ -470,9 +422,19 @@ export async function registerUser(
   pass: string,
   name: string,
   persona: PersonaId,
-): Promise<{ user: UserProfile | null; error?: string }> {
+): Promise<{
+  user: UserProfile | null;
+  error?: string;
+  emailConfirmationRequired?: boolean;
+}> {
   const res = await registerWithEmailPassword(email, pass, name, persona);
-  return { user: res.user, error: res.error };
+  return {
+    user: res.user,
+    ...(res.error ? { error: res.error } : {}),
+    ...(res.emailConfirmationRequired !== undefined
+      ? { emailConfirmationRequired: res.emailConfirmationRequired }
+      : {}),
+  };
 }
 
 export async function loginUser(

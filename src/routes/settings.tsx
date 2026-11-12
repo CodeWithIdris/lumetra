@@ -27,7 +27,6 @@ import {
   Target,
   HeartPulse,
   Trash2,
-  CheckCircle2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({
@@ -44,10 +43,8 @@ const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
 };
 
 function Settings() {
-  const { resetAll, projects, persona, setPersona, user, persistenceState, importLocalProjects } =
-    useStore();
+  const { resetAll, projects, persona, setPersona, user, persistenceState } = useStore();
   const [confirm, setConfirm] = useState(false);
-  const [associating, setAssociating] = useState(false);
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimateInfo | null>(null);
 
   useEffect(() => {
@@ -55,25 +52,6 @@ function Settings() {
       .then((est) => setStorageEstimate(est))
       .catch(() => {});
   }, [projects]);
-
-  const handleAssociateLocalProjects = async () => {
-    if (!user) return;
-    setAssociating(true);
-    try {
-      const res = await importLocalProjects();
-      if (res.success && res.imported > 0) {
-        toast.success(`Associated and verified ${res.imported} project(s) to your account.`);
-      } else if (res.skipped > 0 && res.imported === 0) {
-        toast.info("All local projects are already associated with your account.");
-      } else if (!res.success) {
-        toast.error(res.errors[0] || "Could not associate local projects.");
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to associate projects.");
-    } finally {
-      setAssociating(false);
-    }
-  };
 
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -85,7 +63,7 @@ function Settings() {
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        description="Configure your active professional persona, local working cache, and workspace settings."
+        description="Choose your professional context and manage this device's stored work."
       />
 
       <div className="max-w-4xl space-y-6">
@@ -140,35 +118,39 @@ function Settings() {
           </div>
         </section>
 
-        {/* Section 2: Storage & Working Cache */}
+        {/* Section 2: Saved work */}
         <section className="rounded-md border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2">
                 <HardDrive className="size-4 text-blue-600" />
-                <h2 className="text-sm font-semibold text-slate-900">Workspace Storage & Cache</h2>
+                <h2 className="text-sm font-semibold text-slate-900">Your work & storage</h2>
               </div>
               <p className="mt-0.5 text-xs text-slate-600">
-                All projects and analyses are automatically persisted as you work. Local browser
-                cache provides instant offline capability.
+                Your work is saved as you go. When offline, changes remain on this device and will
+                be saved to your account when the connection returns.
               </p>
             </div>
             <div className="flex items-center gap-2">
               <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-mono text-emerald-800">
-                {user ? "Automatic Persistence Active" : "Saved to Device"}
+                {persistenceState.status === "saved"
+                  ? user
+                    ? "All changes saved"
+                    : "Saved on this device"
+                  : persistenceState.statusText}
               </span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
             <div className="rounded border border-slate-200 bg-slate-50/70 p-3 space-y-1">
-              <div className="text-[11px] text-slate-500 font-sans">Local Cache Usage</div>
+              <div className="text-[11px] text-slate-500 font-sans">Storage on this device</div>
               <div className="text-base font-bold text-slate-900 font-mono">
                 {storageEstimate ? formatBytes(storageEstimate.usage) : "—"}
               </div>
               <div className="text-[10px] text-slate-400 font-mono">
                 {storageEstimate
-                  ? `${storageEstimate.percentUsed.toFixed(2)}% of browser quota`
+                  ? `${storageEstimate.percentUsed.toFixed(2)}% used`
                   : "Calculating..."}
               </div>
             </div>
@@ -182,30 +164,17 @@ function Settings() {
             </div>
 
             <div className="rounded border border-slate-200 bg-slate-50/70 p-3 space-y-1">
-              <div className="text-[11px] text-slate-500 font-sans">Account Status</div>
+              <div className="text-[11px] text-slate-500 font-sans">Account</div>
               <div className="text-sm font-bold text-slate-900 truncate">
                 {user ? user.email : "Local Guest"}
               </div>
               <div className="text-[10px] text-slate-400 font-mono">
-                {user ? "Cross-device sync enabled" : "Stored on this device"}
+                {user ? "Available across your devices" : "This device only"}
               </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
-            {user && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={associating}
-                onClick={handleAssociateLocalProjects}
-                className="h-8 border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
-              >
-                <CheckCircle2 className="mr-1.5 size-3.5 text-blue-600" />
-                {associating ? "Importing..." : "Import Unassigned Local Projects"}
-              </Button>
-            )}
             <Button
               type="button"
               variant="outline"
@@ -214,15 +183,9 @@ function Settings() {
               className="h-8 border-red-200 text-xs text-red-600 hover:bg-red-50"
             >
               <Trash2 className="mr-1.5 size-3.5" />
-              Reset Local Storage
+              Clear this device
             </Button>
           </div>
-          {user && (
-            <p className="text-[11px] text-slate-500">
-              Only projects with no account owner are included. Importing uploads those projects and
-              their saved dataset and analyses to this account.
-            </p>
-          )}
         </section>
 
         {/* Section 3: Privacy & Computation Architecture */}
@@ -246,8 +209,8 @@ function Settings() {
             </p>
             <p>
               • <strong>Seamless Persistence:</strong> Your projects, datasets, and analysis
-              configurations are automatically persisted to your account with PostgreSQL Row Level
-              Security. All computation remains client-side.
+              projects are automatically saved to your account. Account-level access controls keep
+              each person's work private. All computation remains client-side.
             </p>
           </div>
         </section>
@@ -259,8 +222,8 @@ function Settings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Reset local working storage?</AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-slate-600">
-              This will clear cached datasets and projects stored in this browser session. Verified
-              account records remain intact.
+              This removes projects and datasets stored on this device. Your account copy remains
+              available when you sign in again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -271,7 +234,7 @@ function Settings() {
               className="bg-red-600 text-xs text-white hover:bg-red-700"
               onClick={async () => {
                 await resetAll();
-                toast.success("Local storage cache cleared.");
+                toast.success("This device's stored work was cleared.");
               }}
             >
               Reset Storage

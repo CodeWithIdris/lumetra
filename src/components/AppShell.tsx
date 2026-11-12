@@ -30,7 +30,7 @@ import {
 import { Button } from "./ui/button";
 
 const NAV = [
-  { to: "/", label: "Overview", icon: LayoutDashboard },
+  { to: "/app", label: "Overview", icon: LayoutDashboard },
   { to: "/projects", label: "My Projects", icon: FolderKanban },
   { to: "/workspace", label: "Data Workspace", icon: Table2 },
   { to: "/analyses", label: "Analyses", icon: LineChart },
@@ -73,13 +73,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [personaOpen, setPersonaOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const isActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
+  const isPublicRoute = path === "/" || path === "/login" || path === "/signup";
+  const isActive = (to: string) => (to === "/app" ? path === "/app" : path.startsWith(to));
   const PersonaIcon = PERSONA_ICONS[persona] || Cpu;
   const currentPersona = PERSONAS[persona];
 
   // Route title mapping for top bar
   const pageTitle =
-    path === "/"
+    path === "/app"
       ? "Overview"
       : path.startsWith("/projects")
         ? "My Projects"
@@ -96,6 +97,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                   : path.startsWith("/settings")
                     ? "Settings"
                     : "Workspace";
+
+  if (isPublicRoute) return <>{children}</>;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 md:grid md:grid-cols-[230px_1fr]">
@@ -116,7 +119,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* Brand Header */}
         <div className="flex h-12 items-center justify-between border-b border-slate-200 px-3.5">
           <Link
-            to="/"
+            to="/app"
             className="flex items-center gap-2.5"
             onClick={() => setMobileMenuOpen(false)}
           >
@@ -376,17 +379,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <span className="hidden sm:inline max-w-[120px] truncate">{user.name}</span>
               </button>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs border-slate-200 text-slate-700 hover:bg-slate-50 px-2.5"
-                onClick={() => {
-                  setAuthTab("signup");
-                  setAuthOpen(true);
-                }}
+              <Link
+                to="/login"
+                className="inline-flex h-7 items-center rounded border border-slate-200 px-2.5 text-xs text-slate-700 hover:bg-slate-50"
               >
                 Sign In
-              </Button>
+              </Link>
             )}
           </div>
         </header>

@@ -11,11 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalysesRouteImport } from './routes/analyses'
+import { Route as AppRouteImport } from './routes/app'
 import { Route as AskRouteImport } from './routes/ask'
 import { Route as LearnRouteImport } from './routes/learn'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as ApiAskRouteImport } from './routes/api/ask'
 
@@ -29,6 +32,11 @@ const AnalysesRoute = AnalysesRouteImport.update({
   path: '/analyses',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AskRoute = AskRouteImport.update({
   id: '/ask',
   path: '/ask',
@@ -37,6 +45,11 @@ const AskRoute = AskRouteImport.update({
 const LearnRoute = LearnRouteImport.update({
   id: '/learn',
   path: '/learn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -54,6 +67,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkspaceRoute = WorkspaceRouteImport.update({
   id: '/workspace',
   path: '/workspace',
@@ -68,22 +86,28 @@ const ApiAskRoute = ApiAskRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analyses': typeof AnalysesRoute
+  '/app': typeof AppRoute
   '/ask': typeof AskRoute
   '/learn': typeof LearnRoute
+  '/login': typeof LoginRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/workspace': typeof WorkspaceRoute
   '/api/ask': typeof ApiAskRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analyses': typeof AnalysesRoute
+  '/app': typeof AppRoute
   '/ask': typeof AskRoute
   '/learn': typeof LearnRoute
+  '/login': typeof LoginRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/workspace': typeof WorkspaceRoute
   '/api/ask': typeof ApiAskRoute
 }
@@ -91,11 +115,14 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/analyses': typeof AnalysesRoute
+  '/app': typeof AppRoute
   '/ask': typeof AskRoute
   '/learn': typeof LearnRoute
+  '/login': typeof LoginRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/signup': typeof SignupRoute
   '/workspace': typeof WorkspaceRoute
   '/api/ask': typeof ApiAskRoute
 }
@@ -104,33 +131,42 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/analyses'
+    | '/app'
     | '/ask'
     | '/learn'
+    | '/login'
     | '/projects'
     | '/reports'
     | '/settings'
+    | '/signup'
     | '/workspace'
     | '/api/ask'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/analyses'
+    | '/app'
     | '/ask'
     | '/learn'
+    | '/login'
     | '/projects'
     | '/reports'
     | '/settings'
+    | '/signup'
     | '/workspace'
     | '/api/ask'
   id:
     | '__root__'
     | '/'
     | '/analyses'
+    | '/app'
     | '/ask'
     | '/learn'
+    | '/login'
     | '/projects'
     | '/reports'
     | '/settings'
+    | '/signup'
     | '/workspace'
     | '/api/ask'
   fileRoutesById: FileRoutesById
@@ -138,11 +174,14 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalysesRoute: typeof AnalysesRoute
+  AppRoute: typeof AppRoute
   AskRoute: typeof AskRoute
   LearnRoute: typeof LearnRoute
+  LoginRoute: typeof LoginRoute
   ProjectsRoute: typeof ProjectsRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
+  SignupRoute: typeof SignupRoute
   WorkspaceRoute: typeof WorkspaceRoute
   ApiAskRoute: typeof ApiAskRoute
 }
@@ -163,6 +202,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalysesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ask': {
       id: '/ask'
       path: '/ask'
@@ -175,6 +221,13 @@ declare module '@tanstack/react-router' {
       path: '/learn'
       fullPath: '/learn'
       preLoaderRoute: typeof LearnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -198,6 +251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspace': {
       id: '/workspace'
       path: '/workspace'
@@ -218,11 +278,14 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalysesRoute: AnalysesRoute,
+  AppRoute: AppRoute,
   AskRoute: AskRoute,
   LearnRoute: LearnRoute,
+  LoginRoute: LoginRoute,
   ProjectsRoute: ProjectsRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
+  SignupRoute: SignupRoute,
   WorkspaceRoute: WorkspaceRoute,
   ApiAskRoute: ApiAskRoute,
 }

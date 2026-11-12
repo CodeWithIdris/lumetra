@@ -76,6 +76,7 @@ describe("User Authentication & Profile Persistence", () => {
     );
     expect(res.user).not.toBeNull();
     expect(res.user?.persona).toBe("engineer");
+    expect(res.emailConfirmationRequired).toBe(true);
     expect(loadActivePersona()).toBe("engineer");
   });
 
@@ -84,7 +85,7 @@ describe("User Authentication & Profile Persistence", () => {
     expect(invalidEmail.error).toContain("valid email");
 
     const shortPass = await registerUser("good@email.com", "123", "User", "engineer");
-    expect(shortPass.error).toContain("at least 6 characters");
+    expect(shortPass.error).toContain("at least 8 characters");
   });
 
   it("logs out cleanly", () => {
@@ -100,6 +101,25 @@ describe("User Authentication & Profile Persistence", () => {
     });
     logoutUser();
     expect(loadStoredUser()).toBeNull();
+  });
+
+  it("does not restore a legacy local profile as an authenticated account", async () => {
+    saveStoredUser({
+      id: "usr_legacy",
+      email: "legacy@example.com",
+      name: "Legacy User",
+      persona: "scientist",
+      isCloudSynced: false,
+      provider: "local_vault",
+      createdAt: "x",
+      lastLoginAt: "x",
+    });
+    vi.spyOn(supabase.auth, "getSession").mockResolvedValueOnce({
+      data: { session: null },
+      error: null,
+    } as never);
+
+    await expect(restoreUserSession()).resolves.toBeNull();
   });
 });
 
@@ -232,7 +252,7 @@ describe("Authentication Workflows & Security Verification", () => {
   it("validates password updates and rejects short passwords", async () => {
     const shortRes = await updateUserPassword("123");
     expect(shortRes.success).toBe(false);
-    expect(shortRes.error).toContain("at least 6 characters");
+    expect(shortRes.error).toContain("at least 8 characters");
   });
 
   it("handles Google OAuth invocation in current environment", async () => {

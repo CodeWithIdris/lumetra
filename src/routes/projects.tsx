@@ -38,7 +38,6 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AuthModal } from "@/components/AuthModal";
 
 export const Route = createFileRoute("/projects")({
   head: () => pageMeta("My Projects", "Manage analysis projects and datasets in Lumetra."),
@@ -71,7 +70,6 @@ function Projects() {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [toDelete, setToDelete] = useState<ProjectMeta | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
   const [unsavedDialogOpen, setUnsavedDialogOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"updatedAt" | "name" | "rows">("updatedAt");
@@ -192,7 +190,7 @@ function Projects() {
             size="sm"
             variant="outline"
             className="h-7 text-xs border-blue-300 bg-white text-blue-700 hover:bg-blue-50 shrink-0"
-            onClick={() => setAuthOpen(true)}
+            onClick={() => navigate({ to: "/login" })}
           >
             Sign In
           </Button>
@@ -643,7 +641,6 @@ function Projects() {
       </AlertDialog>
 
       {/* Auth Modal */}
-      <AuthModal open={authOpen} onOpenChange={setAuthOpen} defaultTab="login" />
     </div>
   );
 }

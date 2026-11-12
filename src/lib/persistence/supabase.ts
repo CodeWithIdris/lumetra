@@ -10,6 +10,7 @@
  * - Retains offline-safe local vaults and IndexedDB cache
  */
 import type { CleaningStep } from "../data/clean";
+import type { PersonaId } from "../stats/personas";
 import type { SavedAnalysis } from "../stats/analysis";
 import type { ProjectMeta } from "./projects";
 import {
@@ -158,6 +159,8 @@ const DEFAULT_CONFIG: SupabaseConfig = {
   tableName: "lumetra_projects",
   autoSync: false,
 };
+const DATASET_STORAGE_THRESHOLD_BYTES = 512 * 1024;
+const DATASET_STORAGE_BUCKET = "lumetra-dataset-versions";
 
 /** UUID Validation and Generation Helpers */
 export function isValidUuid(str: string): boolean {
@@ -707,9 +710,24 @@ class SupabaseService {
       }
 
       const row = data as Record<string, unknown>;
-      const datasets = (row.datasets as Array<Record<string, unknown>>) || [];
+      const datasets = ((row.datasets as Array<Record<string, unknown>>) || []).sort(
+        (left, right) =>
+          String(right["updated_at"] ?? "").localeCompare(String(left["updated_at"] ?? "")),
+      );
       const primaryDataset = datasets[0] || null;
       const analyses = (row.saved_analyses as Array<Record<string, unknown>>) || [];
+      let datasetCsv =
+        (primaryDataset?.csv_content as string | null) ||
+        (row.csv_content as string | null) ||
+        null;
+      const datasetContentPath = primaryDataset?.content_path as string | null | undefined;
+      if (!datasetCsv && datasetContentPath) {
+        const { data: file, error: downloadError } = await client.storage
+          .from(DATASET_STORAGE_BUCKET)
+          .download(datasetContentPath);
+        if (downloadError) throw new Error(downloadError.message);
+        datasetCsv = await file.text();
+      }
 
       const record: CloudRecord = {
         id: (row.id as string) || id,
@@ -725,8 +743,7 @@ class SupabaseService {
           (primaryDataset?.column_count as number) || (row.dataset_columns as number) || undefined,
         dataset_source:
           (primaryDataset?.source as string) || (row.dataset_source as string) || undefined,
-        csv_content:
-          (primaryDataset?.csv_content as string) || (row.csv_content as string) || undefined,
+        csv_content: datasetCsv ?? undefined,
         cleaning_steps: primaryDataset?.cleaning_steps
           ? JSON.stringify(primaryDataset.cleaning_steps)
           : (row.cleaning_steps as string) || undefined,
@@ -739,8 +756,9 @@ class SupabaseService {
       };
 
       return record;
-    } catch {
-      return null;
+    } catch (error) {
+      console.warn("Could not load a saved project.", error);
+      throw error;
     }
   }
 
@@ -779,7 +797,10 @@ class SupabaseService {
       }
 
       const records: CloudRecord[] = (data as Array<Record<string, unknown>>).map((row) => {
-        const datasets = (row.datasets as Array<Record<string, unknown>>) || [];
+        const datasets = ((row.datasets as Array<Record<string, unknown>>) || []).sort(
+          (left, right) =>
+            String(right["updated_at"] ?? "").localeCompare(String(left["updated_at"] ?? "")),
+        );
         const ds = datasets[0] || null;
         const analyses = (row.saved_analyses as Array<Record<string, unknown>>) || [];
 
@@ -837,12 +858,37 @@ class SupabaseService {
 
     const projectUuid = toValidUuid(id);
     try {
+      const [datasets, versions] = await Promise.all([
+        client
+          .from("datasets")
+          .select("content_path")
+          .eq("project_id", projectUuid)
+          .eq("user_id", sessionUserId),
+        client
+          .from("dataset_versions")
+          .select("content_path")
+          .eq("project_id", projectUuid)
+          .eq("user_id", sessionUserId),
+      ]);
+      if (datasets.error) return { ok: false, error: datasets.error.message };
+      if (versions.error) return { ok: false, error: versions.error.message };
+      const storagePaths = [
+        ...(datasets.data ?? []).map((record) => record.content_path),
+        ...(versions.data ?? []).map((record) => record.content_path),
+      ].filter((path): path is string => Boolean(path));
+
       const { error } = await client
         .from("lumetra_projects")
         .delete()
         .eq("id", projectUuid)
         .eq("user_id", sessionUserId);
       if (error) return { ok: false, error: error.message };
+      if (storagePaths.length > 0) {
+        const { error: storageError } = await client.storage
+          .from(DATASET_STORAGE_BUCKET)
+          .remove(storagePaths);
+        if (storageError) console.warn("Some removed project files could not be cleaned up.");
+      }
       this.deleteFromLocalCloudVault(id);
       return { ok: true };
     } catch (e) {
@@ -863,6 +909,40 @@ class SupabaseService {
     userId?: string;
   }): Promise<RevisionWriteResult> {
     return this.upsertReportRecord(report, report.userId);
+  }
+
+  public async loadUserPreference(userId: string): Promise<PersonaId | null> {
+    const client = getSupabaseClientInstance();
+    if (!client) return null;
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (sessionUserId !== userId) return null;
+    const { data, error } = await client
+      .from("user_preferences")
+      .select("persona")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data?.persona ?? null;
+  }
+
+  public async saveUserPreference(
+    userId: string,
+    persona: PersonaId,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const client = getSupabaseClientInstance();
+    if (!client) return { ok: false, error: "Account settings are unavailable." };
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (sessionUserId !== userId) {
+      return { ok: false, error: "The active account changed before saving this preference." };
+    }
+    const { error } = await client
+      .from("user_preferences")
+      .upsert(
+        { user_id: userId, persona, updated_at: new Date().toISOString() },
+        { onConflict: "user_id" },
+      );
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   }
 
   /**
@@ -1202,15 +1282,41 @@ class SupabaseService {
     }
 
     const projectUuid = toValidUuid(projectId);
-    const datasetUuid = toValidUuid(dataset.id || `${projectUuid}_dataset`);
+    let datasetUuid = toValidUuid(dataset.id || `${projectUuid}_dataset`);
     try {
-      const current = await client
+      let current = await client
         .from("datasets")
         .select("*")
         .eq("id", datasetUuid)
         .eq("user_id", sessionUserId)
         .maybeSingle();
       if (current.error) return { ok: false, error: current.error.message };
+      if (!current.data) {
+        const existingForProject = await client
+          .from("datasets")
+          .select("*")
+          .eq("project_id", projectUuid)
+          .eq("user_id", sessionUserId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existingForProject.error) {
+          return { ok: false, error: existingForProject.error.message };
+        }
+        if (existingForProject.data) {
+          current = existingForProject;
+          datasetUuid = existingForProject.data.id;
+        } else {
+          datasetUuid = toValidUuid(`${projectUuid}_dataset`);
+          current = await client
+            .from("datasets")
+            .select("*")
+            .eq("id", datasetUuid)
+            .eq("user_id", sessionUserId)
+            .maybeSingle();
+          if (current.error) return { ok: false, error: current.error.message };
+        }
+      }
       const expectedRevision = dataset.revision ?? 0;
       const revision = current.data?.revision ?? 0;
       if (revision !== expectedRevision) {
@@ -1221,6 +1327,31 @@ class SupabaseService {
           ...(current.data ? { remoteRecord: current.data } : {}),
           error: "This dataset has a newer saved version.",
         };
+      }
+
+      const nextRevision = expectedRevision + 1;
+      let contentPath = current.data?.content_path ?? null;
+      let csvContent: string | null | undefined;
+      let newContentPath: string | null = null;
+      if (dataset.csvContent !== undefined) {
+        if (
+          typeof dataset.csvContent === "string" &&
+          new TextEncoder().encode(dataset.csvContent).byteLength > DATASET_STORAGE_THRESHOLD_BYTES
+        ) {
+          newContentPath = `${sessionUserId}/${projectUuid}/datasets/${datasetUuid}/${nextRevision}.csv`;
+          const { error: uploadError } = await client.storage
+            .from(DATASET_STORAGE_BUCKET)
+            .upload(newContentPath, new Blob([dataset.csvContent], { type: "text/csv" }), {
+              upsert: true,
+              contentType: "text/csv",
+            });
+          if (uploadError) return { ok: false, error: uploadError.message };
+          contentPath = newContentPath;
+          csvContent = null;
+        } else {
+          csvContent = dataset.csvContent;
+          contentPath = null;
+        }
       }
 
       const values = {
@@ -1234,7 +1365,9 @@ class SupabaseService {
         delimiter: dataset.delimiter || ",",
         cleaning_steps: dataset.cleaningSteps || [],
         ...(dataset.typeOverrides !== undefined ? { type_overrides: dataset.typeOverrides } : {}),
-        ...(dataset.csvContent !== undefined ? { csv_content: dataset.csvContent } : {}),
+        ...(dataset.csvContent !== undefined
+          ? { csv_content: csvContent, content_path: contentPath }
+          : {}),
         updated_at: new Date().toISOString(),
       };
 
@@ -1244,23 +1377,19 @@ class SupabaseService {
           .insert({
             id: datasetUuid,
             ...values,
-            csv_content: dataset.csvContent ?? null,
+            csv_content: csvContent ?? null,
+            content_path: contentPath,
             revision: 1,
           })
           .select("revision")
           .maybeSingle();
         if (error?.code === "23505") {
-          const remote = await client
-            .from("datasets")
-            .select("*")
-            .eq("id", datasetUuid)
-            .eq("user_id", sessionUserId)
-            .maybeSingle();
+          const remote = await this.loadDatasetRecord(datasetUuid, sessionUserId);
           return {
             ok: false,
             conflict: true,
-            remoteRevision: remote.data?.revision ?? 1,
-            ...(remote.data ? { remoteRecord: remote.data } : {}),
+            remoteRevision: Number(remote?.["revision"]) || 1,
+            ...(remote ? { remoteRecord: remote } : {}),
             error: "This dataset was saved on another device.",
           };
         }
@@ -1278,24 +1407,99 @@ class SupabaseService {
         .maybeSingle();
       if (error) return { ok: false, error: error.message };
       if (!data) {
-        const remote = await client
-          .from("datasets")
-          .select("*")
-          .eq("id", datasetUuid)
-          .eq("user_id", sessionUserId)
-          .maybeSingle();
+        const remote = await this.loadDatasetRecord(datasetUuid, sessionUserId);
         return {
           ok: false,
           conflict: true,
-          remoteRevision: remote.data?.revision ?? 0,
-          ...(remote.data ? { remoteRecord: remote.data } : {}),
+          remoteRevision: Number(remote?.["revision"]) || 0,
+          ...(remote ? { remoteRecord: remote } : {}),
           error: "This dataset changed while it was being saved.",
         };
+      }
+      const oldContentPath = current.data.content_path as string | null;
+      if (oldContentPath && oldContentPath !== newContentPath && dataset.csvContent !== undefined) {
+        const { error: removeError } = await client.storage
+          .from(DATASET_STORAGE_BUCKET)
+          .remove([oldContentPath]);
+        if (removeError) console.warn("An outdated dataset file could not be removed.");
       }
       return { ok: true, revision: data.revision, datasetId: datasetUuid };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Dataset write error" };
     }
+  }
+
+  public async loadDatasetRecord(
+    datasetId: string,
+    userId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const client = getSupabaseClientInstance();
+    if (!client) return null;
+    const { data, error } = await client
+      .from("datasets")
+      .select("*")
+      .eq("id", toValidUuid(datasetId))
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    if (data.content_path) {
+      const { data: file, error: downloadError } = await client.storage
+        .from(DATASET_STORAGE_BUCKET)
+        .download(data.content_path);
+      if (downloadError) throw new Error(downloadError.message);
+      return { ...data, csv_content: await file.text() };
+    }
+    return data as Record<string, unknown>;
+  }
+
+  public async deleteDatasetRecord(
+    projectId: string,
+    userId: string,
+    expectedRevision: number,
+  ): Promise<RevisionWriteResult> {
+    const client = getSupabaseClientInstance();
+    if (!client) return { ok: false, error: "Database client unavailable." };
+    const sessionUserId = await this.resolveSessionUserId(userId);
+    if (!sessionUserId || sessionUserId !== userId) {
+      return { ok: false, error: "The active account changed before removing this dataset." };
+    }
+    const projectUuid = toValidUuid(projectId);
+    const current = await client
+      .from("datasets")
+      .select("id, revision, content_path")
+      .eq("project_id", projectUuid)
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (current.error) return { ok: false, error: current.error.message };
+    if (!current.data) return { ok: true, revision: 0 };
+    if (current.data.revision !== expectedRevision) {
+      const remote = await this.loadDatasetRecord(current.data.id, userId);
+      return {
+        ok: false,
+        conflict: true,
+        remoteRevision: current.data.revision,
+        ...(remote ? { remoteRecord: remote } : {}),
+        error: "This dataset has a newer saved version.",
+      };
+    }
+    const { error } = await client
+      .from("datasets")
+      .delete()
+      .eq("id", current.data.id)
+      .eq("project_id", projectUuid)
+      .eq("user_id", userId)
+      .eq("revision", expectedRevision);
+    if (error) return { ok: false, error: error.message };
+    if (current.data.content_path) {
+      const { error: storageError } = await client.storage
+        .from(DATASET_STORAGE_BUCKET)
+        .remove([current.data.content_path]);
+      if (storageError) console.warn("An outdated dataset file could not be removed.");
+    }
+    return { ok: true, revision: 0 };
   }
 
   /**

@@ -47,6 +47,7 @@ export interface PersistenceState {
 export type EntityType =
   | "project"
   | "dataset"
+  | "dataset_delete"
   | "dataset_version"
   | "analysis"
   | "analysis_delete"
@@ -125,15 +126,15 @@ class PersistenceCoordinator {
     if (this.status === "saving") {
       statusText = "Saving...";
     } else if (this.status === "offline") {
-      statusText = "Working offline";
+      statusText = "Offline — changes will sync when connection returns";
     } else if (this.status === "retrying") {
-      statusText = "Couldn't save changes. Retrying...";
+      statusText = "Unable to save — retrying";
     } else if (this.status === "conflict") {
       statusText = "A newer version needs your attention.";
     } else if (this.status === "pending") {
       statusText = "Changes pending";
     } else if (this.status === "error") {
-      statusText = this.lastError || "Couldn't save changes";
+      statusText = "Unable to save — retrying";
     } else if (!this.currentUserId) {
       statusText = "Saved to this device";
     }
@@ -144,12 +145,19 @@ class PersistenceCoordinator {
       lastSavedAt: this.lastSavedAt,
       pendingCount: this.queue.length,
       isOnline: this.isOnline,
-      error: this.lastError,
+      error:
+        this.status === "error"
+          ? "Unable to save changes right now. Your work is kept on this device."
+          : this.lastError,
     };
   }
 
   public hasPendingWritesForUser(userId: string): boolean {
     return this.queue.some((item) => item.userId === userId);
+  }
+
+  public hasPendingWritesForProject(projectId: string, userId: string): boolean {
+    return this.queue.some((item) => item.projectId === projectId && item.userId === userId);
   }
 
   public async keepLocalConflict(conflict: LocalPersistenceConflict): Promise<void> {
@@ -163,7 +171,7 @@ class PersistenceCoordinator {
       const project = item.data["project"] as ProjectMeta;
       project.revision = conflict.remoteRevision;
       project.isCloudSynced = conflict.remoteRevision > 0;
-    } else if (item.entityType === "dataset") {
+    } else if (item.entityType === "dataset" || item.entityType === "dataset_delete") {
       (item.data["dataset"] as { revision?: number }).revision = conflict.remoteRevision;
     } else if (item.entityType === "analysis") {
       (item.data["analysis"] as SavedAnalysis).revision = conflict.remoteRevision;
@@ -196,6 +204,10 @@ class PersistenceCoordinator {
       this.notify();
     } else {
       if (this.queue.length > 0) {
+        this.queue.forEach((item) => {
+          if (item.userId === this.currentUserId) item.retryCount = 0;
+        });
+        this.saveQueueToStorage();
         this.status = "pending";
         this.notify();
         this.flushQueue(true);
@@ -405,6 +417,33 @@ class PersistenceCoordinator {
         projectId: version.projectId,
         userId,
         data: { version },
+      },
+      true,
+    );
+  }
+
+  public queueDatasetDelete(
+    projectId: string,
+    dataset: {
+      id: string;
+      name: string;
+      source?: "upload" | "sample";
+      rows: number;
+      columns: number;
+      columnList?: string[];
+      cleaningSteps?: CleaningStep[];
+      revision: number;
+    },
+    userId: string | undefined,
+  ) {
+    const targetUserId = userId || this.currentUserId || "";
+    this.enqueue(
+      {
+        entityType: "dataset_delete",
+        entityId: dataset.id,
+        projectId,
+        userId: targetUserId,
+        data: { dataset },
       },
       true,
     );
@@ -670,7 +709,7 @@ class PersistenceCoordinator {
             userId: activeUserId,
             projectId: item.projectId,
             entityType:
-              item.entityType === "dataset"
+              item.entityType === "dataset" || item.entityType === "dataset_delete"
                 ? "dataset"
                 : item.entityType === "analysis"
                   ? "analysis"
@@ -700,8 +739,9 @@ class PersistenceCoordinator {
             console.warn(
               `Write item ${item.entityType}:${item.entityId} exceeded max retries. Keeping it queued.`,
             );
+            item.retryCount = 0;
             this.saveQueueToStorage();
-            this.lastError = `Failed to sync ${item.entityType}.`;
+            this.lastError = "Unable to save changes right now. Your work is kept on this device.";
             this.status = "error";
             this.notify();
             break;
@@ -740,10 +780,11 @@ class PersistenceCoordinator {
       project: 1,
       dataset_version: 2,
       dataset: 3,
-      analysis: 4,
-      analysis_delete: 4,
-      report: 5,
-      report_delete: 5,
+      dataset_delete: 4,
+      analysis: 5,
+      analysis_delete: 5,
+      report: 6,
+      report_delete: 6,
     };
 
     this.queue.sort((a, b) => {
@@ -802,6 +843,11 @@ class PersistenceCoordinator {
           return await supabase.upsertDatasetRecord(item.projectId, dataset, userId);
         }
 
+        case "dataset_delete": {
+          const dataset = item.data["dataset"] as { revision: number };
+          return await supabase.deleteDatasetRecord(item.projectId, userId, dataset.revision);
+        }
+
         case "dataset_version": {
           const metadata = item.data["version"] as DatasetVersionMetadata;
           const version = await loadDatasetVersion(metadata.id);
@@ -830,8 +876,7 @@ class PersistenceCoordinator {
             summary?: Record<string, unknown>;
             revision?: number;
           };
-          const res = await supabase.upsertReportRecord(report, userId);
-          return { ok: res.ok };
+          return await supabase.upsertReportRecord(report, userId);
         }
 
         case "report_delete": {
@@ -861,6 +906,9 @@ class PersistenceCoordinator {
     if (item.entityType === "dataset") {
       return (item.data["dataset"] as { revision?: number }).revision ?? 0;
     }
+    if (item.entityType === "dataset_delete") {
+      return (item.data["dataset"] as { revision: number }).revision;
+    }
     if (item.entityType === "analysis") {
       return (item.data["analysis"] as SavedAnalysis).revision ?? 0;
     }
@@ -888,6 +936,21 @@ class PersistenceCoordinator {
         const nextProject = queued.data["project"] as ProjectMeta;
         nextProject.revision = revision;
         nextProject.isCloudSynced = true;
+      }
+      return;
+    }
+    if (item.entityType === "dataset_delete") {
+      updateProjectRevision(item.projectId, userId, "dataset", 0);
+      for (const queued of this.queue) {
+        if (
+          queued.id === item.id ||
+          queued.userId !== userId ||
+          queued.projectId !== item.projectId ||
+          queued.entityType !== "dataset"
+        ) {
+          continue;
+        }
+        (queued.data["dataset"] as { revision?: number }).revision = 0;
       }
       return;
     }
@@ -926,7 +989,7 @@ class PersistenceCoordinator {
     userId: string,
     result: { remoteRecord?: Record<string, unknown> },
   ): Promise<{ local?: string; remote?: string } | null> {
-    if (item.entityType !== "dataset") return null;
+    if (item.entityType !== "dataset" && item.entityType !== "dataset_delete") return null;
     const datasetInfo = item.data["dataset"] as {
       id?: string;
       name: string;

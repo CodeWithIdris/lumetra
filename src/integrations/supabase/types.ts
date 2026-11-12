@@ -53,6 +53,7 @@ export interface Database {
           type_overrides: Json | null;
           cleaning_steps: Json;
           csv_content: string | null;
+          content_path: string | null;
           created_at: string;
           updated_at: string;
           revision: number;
@@ -70,6 +71,7 @@ export interface Database {
           type_overrides?: Json | null;
           cleaning_steps?: Json;
           csv_content?: string | null;
+          content_path?: string | null;
           created_at?: string;
           updated_at?: string;
           revision?: number;
@@ -87,6 +89,7 @@ export interface Database {
           type_overrides?: Json | null;
           cleaning_steps?: Json;
           csv_content?: string | null;
+          content_path?: string | null;
           created_at?: string;
           updated_at?: string;
           revision?: number;
@@ -100,6 +103,24 @@ export interface Database {
             referencedColumns: ["id"];
           },
         ];
+      };
+      user_preferences: {
+        Row: {
+          user_id: string;
+          persona: "engineer" | "economist" | "scientist" | "product" | "clinical";
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          persona?: "engineer" | "economist" | "scientist" | "product" | "clinical";
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          persona?: "engineer" | "economist" | "scientist" | "product" | "clinical";
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       saved_analyses: {
         Row: {

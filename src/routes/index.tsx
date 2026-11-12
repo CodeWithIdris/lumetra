@@ -1,515 +1,434 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { useStore } from "@/lib/store";
-import { pageMeta } from "@/lib/meta";
-import { PERSONAS, type PersonaId } from "@/lib/stats/personas";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Trash2,
-  Cpu,
-  TrendingUp,
-  Boxes,
-  Target,
-  HeartPulse,
   ArrowRight,
-  FileSpreadsheet,
+  BarChart3,
+  BookOpen,
+  Check,
+  ClipboardList,
+  Database,
+  FileBarChart2,
+  FlaskConical,
   LineChart,
-  FileText,
-  MessageSquareCode,
-  CheckCircle2,
+  LockKeyhole,
+  Menu,
+  ShieldCheck,
+  Sigma,
+  Table2,
+  X,
 } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import type { ProjectMeta } from "@/lib/persistence/projects";
-import { toast } from "sonner";
+import { useState } from "react";
+import { pageMeta } from "@/lib/meta";
+import "../styles/public-home.css";
 
 export const Route = createFileRoute("/")({
   head: () =>
     pageMeta(
-      "Overview",
-      "Production-grade analytical workspace with client-side computation and automatic persistence.",
+      "Make better decisions with your data",
+      "Prepare, analyse, understand and report your data in one dependable analytical workspace.",
     ),
-  component: Overview,
+  component: PublicHome,
 });
 
-const ROLE_ICONS: Record<PersonaId, typeof Cpu> = {
-  engineer: Cpu,
-  economist: TrendingUp,
-  scientist: Boxes,
-  product: Target,
-  clinical: HeartPulse,
-};
+const capabilities = [
+  {
+    icon: Table2,
+    title: "Prepare with confidence",
+    description:
+      "Inspect missing values, clean columns and keep a clear record of transformations.",
+  },
+  {
+    icon: BarChart3,
+    title: "Describe your data",
+    description:
+      "Summarise distributions with transparent descriptive statistics and visual checks.",
+  },
+  {
+    icon: Sigma,
+    title: "Test a question",
+    description: "Run established statistical tests with their assumptions and parameters in view.",
+  },
+  {
+    icon: LineChart,
+    title: "Explore relationships",
+    description:
+      "Examine correlations and regression results without losing sight of the evidence.",
+  },
+  {
+    icon: FlaskConical,
+    title: "Understand results",
+    description: "Translate numerical output into careful, contextual interpretation.",
+  },
+  {
+    icon: FileBarChart2,
+    title: "Report your work",
+    description: "Bring methods, results and charts together in a report you can revisit.",
+  },
+];
 
-// Persona-tailored analytical tool shortcuts
-const PERSONA_ROUTINES: Record<PersonaId, { name: string; desc: string; metric: string }[]> = {
-  engineer: [
-    {
-      name: "Tail Latency & Percentiles",
-      desc: "P50, P90, P99 and P99.9 degradation multipliers with request jitter variance.",
-      metric: "P99 / P50 ratio",
-    },
-    {
-      name: "SLO Error Budget Simulator",
-      desc: "Breach frequency, availability compliance, and error budget burn tracking.",
-      metric: "Target % availability",
-    },
-  ],
-  economist: [
-    {
-      name: "Price Elasticity of Demand",
-      desc: "Point elasticity estimation via OLS regression slope with R² goodness of fit.",
-      metric: "Ep = (dQ/dP)·(P̄/Q̄)",
-    },
-    {
-      name: "Gini Coefficient & Inequality",
-      desc: "Lorenz curve quintiles, top 10% income concentration, and Palma ratio.",
-      metric: "0 (equal) to 1 (concentrated)",
-    },
-  ],
-  scientist: [
-    {
-      name: "Feature Moments & Normality",
-      desc: "Skewness, excess kurtosis, 1.5× IQR outlier detection, and Gaussian viability.",
-      metric: "g1 skewness & g2 kurtosis",
-    },
-    {
-      name: "Pairwise Correlation Matrix",
-      desc: "Pearson correlation matrix across all numeric features in the dataset.",
-      metric: "r-coefficient & p-values",
-    },
-  ],
-  product: [
-    {
-      name: "A/B Experiment Conversion Lift",
-      desc: "Two-proportion z-test, absolute & relative lift %, and 95% confidence bounds.",
-      metric: "Relative lift % (z-score)",
-    },
-    {
-      name: "Decision Rule Evaluation",
-      desc: "Statistically significant determination against 0.05 critical threshold.",
-      metric: "p < 0.05 cutoff",
-    },
-  ],
-  clinical: [
-    {
-      name: "2×2 Contingency Odds Ratio",
-      desc: "Wald 95% confidence intervals, relative risk (RR), and Yates-corrected chi-square.",
-      metric: "Odds Ratio (OR)",
-    },
-    {
-      name: "Clinical Evidence Summary",
-      desc: "Exposure effect size interpretation and clinical outcome significance.",
-      metric: "Chi-square p-value",
-    },
-  ],
-};
+const useCases = [
+  ["Research & Academia", "Reproducible workflows for coursework, theses and research."],
+  ["Students", "Build confidence with clear steps from dataset to result."],
+  ["Data Analysts", "Explore, validate and communicate findings with transparent methods."],
+  ["Software Engineering", "Understand service metrics, experiments and product telemetry."],
+  ["Economics & Finance", "Explore trends, distributions and relationships in economic data."],
+  ["Business Analytics", "Turn operational and customer data into clearer decisions."],
+  ["Clinical Research", "Review study data with explicit methods and careful interpretation."],
+];
 
-function Overview() {
-  const {
-    projects,
-    ready,
-    loadPersonaSample,
-    openProject,
-    deleteProject,
-    startNew,
-    loadFile,
-    persona,
-    active,
-  } = useStore();
-  const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [toDelete, setToDelete] = useState<ProjectMeta | null>(null);
-
-  const currentPersona = PERSONAS[persona];
-  const PersonaIcon = ROLE_ICONS[persona] || Cpu;
-  const recent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 8);
-  const routines = PERSONA_ROUTINES[persona] || [];
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const r = await loadFile(file);
-    if (r.errors.length > 0) {
-      toast.error(`Error loading dataset: ${r.errors.join(", ")}`);
-    } else {
-      toast.success(`Loaded dataset “${file.name}”.`);
-      navigate({ to: "/workspace" });
-    }
-  };
-
+function ProductPreview() {
   return (
-    <div className="space-y-5">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".csv,text/csv,.txt"
-        className="sr-only"
-        onChange={handleFileSelect}
-      />
-
-      {/* Overview Top Header: Title, Subtitle and Actions on a Single Clean Row */}
-      <div className="flex flex-col gap-2.5 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-baseline gap-2 min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight text-slate-900">Overview</h1>
-          <span className="hidden text-slate-300 sm:inline">•</span>
-          <p className="text-xs text-slate-500">Your data, analyses and recent work.</p>
+    <div
+      className="home-preview"
+      aria-label="Preview of the Lumetra analytical workspace"
+      role="img"
+    >
+      <div className="preview-topbar">
+        <div className="preview-brand">
+          <span className="preview-mark" aria-hidden="true">
+            L
+          </span>
+          Lumetra
         </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            className="h-7.5 bg-blue-600 text-xs font-medium text-white hover:bg-blue-700 px-3 shadow-2xs"
-            onClick={() => {
-              startNew();
-              navigate({ to: "/workspace" });
-            }}
-          >
-            New analysis
-          </Button>
-
-          <Button
-            variant="outline"
-            className="h-7.5 border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 px-3"
-            onClick={() => {
-              if (fileInputRef.current) {
-                fileInputRef.current.click();
-              } else {
-                navigate({ to: "/workspace" });
-              }
-            }}
-          >
-            Open dataset
-          </Button>
-        </div>
+        <span className="preview-project">Customer study · Spring cohort</span>
+        <span className="preview-save">
+          <Check size={13} aria-hidden="true" /> All changes saved
+        </span>
       </div>
-
-      {/* Recent Projects Table Section */}
-      <section className="space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold text-slate-800">Recent Projects</h2>
-          {recent.length > 0 && (
-            <Link
-              to="/projects"
-              className="text-xs text-blue-600 hover:text-blue-700 hover:underline font-medium"
-            >
-              View all ({projects.length}) →
-            </Link>
-          )}
-        </div>
-
-        {!ready ? (
-          <div className="h-28 rounded border border-slate-200 bg-white animate-pulse" />
-        ) : recent.length === 0 ? (
-          /* Getting Started Section - Shown Only When No Projects Exist */
-          <div className="rounded border border-slate-200 bg-white p-5 shadow-2xs space-y-3.5">
+      <div className="preview-layout">
+        <aside className="preview-sidebar" aria-hidden="true">
+          <span className="preview-sidebar-label">WORKSPACE</span>
+          <span className="preview-nav active">
+            <Table2 size={14} /> Data
+          </span>
+          <span className="preview-nav">
+            <LineChart size={14} /> Analyses
+          </span>
+          <span className="preview-nav">
+            <FileBarChart2 size={14} /> Reports
+          </span>
+          <div className="preview-file">
+            <Database size={14} />
+            <span>survey_responses.csv</span>
+          </div>
+        </aside>
+        <div className="preview-content">
+          <div className="preview-heading">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">Getting Started with Lumetra</h3>
-              <p className="mt-1 text-xs text-slate-600 max-w-xl leading-relaxed">
-                Lumetra is an in-browser statistical workspace. All computations run
-                deterministically on client-side engines. Missing values are never coerced to zero.
-              </p>
+              <span className="preview-kicker">DATASET OVERVIEW</span>
+              <h3>Survey responses</h3>
             </div>
-
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 pt-1">
-              {[
-                {
-                  step: "01",
-                  title: "Load Dataset",
-                  desc: "Import any local CSV file or load a role-specific benchmark sample.",
-                },
-                {
-                  step: "02",
-                  title: "Audit Schema & Nulls",
-                  desc: "Inspect inferred types and missing values. Nulls are strictly excluded.",
-                },
-                {
-                  step: "03",
-                  title: "Run Analytical Engines",
-                  desc: "Execute tailored routines: elasticity, latency P99s, Gini, or descriptives.",
-                },
-                {
-                  step: "04",
-                  title: "Reports & Findings",
-                  desc: "Generate structured reports with automatic persistence and seamless export.",
-                },
-              ].map((s) => (
-                <div key={s.step} className="rounded border border-slate-200 bg-slate-50/70 p-3">
-                  <span className="font-mono text-xs font-bold text-blue-600">{s.step}</span>
-                  <div className="mt-1 text-xs font-semibold text-slate-900">{s.title}</div>
-                  <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">{s.desc}</p>
-                </div>
-              ))}
+            <span className="preview-tag">Version 4</span>
+          </div>
+          <div className="preview-stats">
+            <div>
+              <span>Observations</span>
+              <strong>1,248</strong>
             </div>
-
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
-              <Button
-                size="sm"
-                className="h-7.5 bg-blue-600 text-xs text-white hover:bg-blue-700 font-medium px-3"
-                onClick={() => {
-                  startNew();
-                  loadPersonaSample(persona);
-                  navigate({ to: "/workspace" });
-                }}
-              >
-                Load {currentPersona.shortRole} Sample Dataset
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7.5 border-slate-300 text-xs text-slate-700 hover:bg-slate-50 font-medium px-3"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                Upload CSV File
-              </Button>
+            <div>
+              <span>Variables</span>
+              <strong>12</strong>
+            </div>
+            <div>
+              <span>Missing values</span>
+              <strong>2.4%</strong>
             </div>
           </div>
-        ) : (
-          <div className="rounded border border-slate-200 bg-white overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="border-b border-slate-200 bg-slate-50/90 text-slate-600 font-medium">
-                  <tr>
-                    <th className="w-[36%] px-3.5 py-2">Project Name</th>
-                    <th className="w-[26%] px-3 py-2">Dataset</th>
-                    <th className="w-[12%] px-3 py-2 text-right">Rows</th>
-                    <th className="w-[14%] px-3 py-2">Last Modified</th>
-                    <th className="w-[12%] px-3.5 py-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recent.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-3.5 py-2.5 align-middle">
-                        <button
-                          onClick={async () => {
-                            await openProject(p.id);
-                            navigate({ to: "/workspace" });
-                          }}
-                          className="font-semibold text-slate-900 hover:text-blue-600 text-left block truncate max-w-sm"
-                        >
-                          {p.name}
-                        </button>
-                        {p.objective && (
-                          <div className="text-[11px] text-slate-500 truncate max-w-sm mt-0.5">
-                            {p.objective}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 align-middle text-slate-600">
-                        {p.dataset ? (
-                          <span className="truncate block font-mono text-[11px]">
-                            {p.dataset.name}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 align-middle text-right font-mono text-[11px] text-slate-600">
-                        {p.dataset ? p.dataset.rows.toLocaleString() : "—"}
-                      </td>
-                      <td className="px-3 py-2.5 align-middle text-[11px] text-slate-500 font-mono">
-                        {new Date(p.updatedAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-3.5 py-2.5 align-middle text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2"
-                            onClick={async () => {
-                              await openProject(p.id);
-                              navigate({ to: "/analyses" });
-                            }}
-                          >
-                            Analyses
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6.5 text-xs text-slate-600 hover:text-slate-900 px-2"
-                            onClick={async () => {
-                              await openProject(p.id);
-                              navigate({ to: "/workspace" });
-                            }}
-                          >
-                            Workspace
-                          </Button>
-                          <button
-                            className="p-1 text-slate-300 hover:text-red-600 transition-colors rounded"
-                            onClick={() => setToDelete(p)}
-                            aria-label={`Delete ${p.name}`}
-                            title={`Delete ${p.name}`}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Purposeful Analytical Workbench Section (Utilizes Space Intentionally) */}
-      <section className="grid gap-3.5 sm:grid-cols-2 pt-1">
-        {/* Panel 1: Domain Analytical Capabilities */}
-        <div className="rounded border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <div className="flex items-center gap-2">
-              <PersonaIcon className="size-4 text-blue-600" />
-              <h2 className="text-xs font-semibold text-slate-900">
-                {currentPersona.shortRole} Analytical Routines
-              </h2>
-            </div>
-            <Link
-              to="/analyses"
-              className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline font-medium"
-            >
-              Open toolkit →
-            </Link>
-          </div>
-
-          <div className="space-y-2">
-            {routines.map((r) => (
-              <div
-                key={r.name}
-                className="flex items-start justify-between gap-3 rounded border border-slate-100 bg-slate-50/60 p-2.5 hover:bg-slate-50 transition-colors"
-              >
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-slate-900">{r.name}</div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{r.desc}</p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6.5 text-[11px] border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-2 shrink-0 font-medium"
-                  onClick={() => navigate({ to: "/analyses" })}
-                >
-                  Run
-                </Button>
+          <div className="preview-chart-panel">
+            <div className="preview-chart-title">
+              <div>
+                <strong>Weekly satisfaction</strong>
+                <span>Mean score · 95% CI</span>
               </div>
-            ))}
+              <span className="preview-chart-legend">
+                <i /> Satisfaction
+              </span>
+            </div>
+            <svg viewBox="0 0 640 170" preserveAspectRatio="none" aria-hidden="true">
+              <path className="chart-grid" d="M0 25H640 M0 65H640 M0 105H640 M0 145H640" />
+              <path
+                className="chart-area"
+                d="M0 129 C50 120 52 98 105 107 S175 83 215 91 S284 73 325 80 S390 55 430 68 S490 44 535 57 S596 35 640 39 V170 H0Z"
+              />
+              <path
+                className="chart-line"
+                d="M0 129 C50 120 52 98 105 107 S175 83 215 91 S284 73 325 80 S390 55 430 68 S490 44 535 57 S596 35 640 39"
+              />
+              <circle cx="430" cy="68" r="4" />
+              <circle cx="535" cy="57" r="4" />
+            </svg>
+            <div className="preview-axis">
+              <span>Week 1</span>
+              <span>Week 3</span>
+              <span>Week 5</span>
+              <span>Week 7</span>
+              <span>Week 9</span>
+            </div>
           </div>
-
-          <div className="pt-1 text-[11px] text-slate-500 flex items-center justify-between">
-            <span>Deterministic client-side calculation</span>
-            <Link to="/settings" className="text-slate-400 hover:text-slate-600 underline">
-              Change context
-            </Link>
-          </div>
-        </div>
-
-        {/* Panel 2: Analytical Operations & Workspace Navigation */}
-        <div className="rounded border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <h2 className="text-xs font-semibold text-slate-900">Analytical Workflow Operations</h2>
-            <span className="text-[11px] font-mono text-slate-400">
-              {active ? "Active dataset ready" : "Awaiting data"}
+          <div className="preview-result">
+            <span className="result-icon">
+              <Sigma size={15} />
+            </span>
+            <div>
+              <strong>Correlation analysis</strong>
+              <span>r = 0.68&nbsp; · &nbsp;p &lt; .001&nbsp; · &nbsp;n = 1,216</span>
+            </div>
+            <span className="result-complete">
+              <Check size={13} /> Complete
             </span>
           </div>
-
-          <div className="space-y-2">
-            <button
-              onClick={() => navigate({ to: "/workspace" })}
-              className="w-full flex items-center justify-between rounded border border-slate-100 bg-slate-50/60 p-2.5 text-left hover:bg-slate-50 transition-colors group"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileSpreadsheet className="size-4 text-slate-500 shrink-0 group-hover:text-blue-600" />
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-slate-900">
-                    Tabular Schema & Quality Audit
-                  </div>
-                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                    Inspect column inferred types, missing counts, and null distributions.
-                  </div>
-                </div>
-              </div>
-              <ArrowRight className="size-3.5 text-slate-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-
-            <button
-              onClick={() => navigate({ to: "/reports" })}
-              className="w-full flex items-center justify-between rounded border border-slate-100 bg-slate-50/60 p-2.5 text-left hover:bg-slate-50 transition-colors group"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileText className="size-4 text-slate-500 shrink-0 group-hover:text-blue-600" />
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-slate-900">
-                    Publication Report Preview
-                  </div>
-                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                    Structured findings with methodology notes, results tables, and PDF print
-                    controls.
-                  </div>
-                </div>
-              </div>
-              <ArrowRight className="size-3.5 text-slate-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-
-            <button
-              onClick={() => navigate({ to: "/ask" })}
-              className="w-full flex items-center justify-between rounded border border-slate-100 bg-slate-50/60 p-2.5 text-left hover:bg-slate-50 transition-colors group"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <MessageSquareCode className="size-4 text-slate-500 shrink-0 group-hover:text-blue-600" />
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-slate-900">
-                    Ask Analyst (Client-Side)
-                  </div>
-                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                    Natural-language query routing backed by deterministic mathematical code.
-                  </div>
-                </div>
-              </div>
-              <ArrowRight className="size-3.5 text-slate-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          </div>
-
-          <div className="pt-1 text-[11px] text-slate-400">
-            All algorithms execute in browser memory; raw data is never exposed.
-          </div>
         </div>
-      </section>
+      </div>
+    </div>
+  );
+}
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <AlertDialogContent className="bg-white text-slate-900 border-slate-200">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete project “{toDelete?.name}”?</AlertDialogTitle>
-            <AlertDialogDescription className="text-xs text-slate-600">
-              This action cannot be undone. All stored session states and cached analyses for this
-              project will be removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="border-slate-300 text-xs text-slate-700 hover:bg-slate-50">
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 text-xs text-white hover:bg-red-700"
-              onClick={() => {
-                if (toDelete) {
-                  deleteProject(toDelete.id);
-                  setToDelete(null);
-                  toast.success("Project deleted.");
-                }
-              }}
-            >
-              Delete Project
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+function PublicHome() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  return (
+    <div className="public-home">
+      <header className="home-header">
+        <div className="home-header-inner">
+          <Link className="home-logo" to="/" aria-label="Lumetra home">
+            <span className="home-logo-mark" aria-hidden="true">
+              L
+            </span>
+            Lumetra
+          </Link>
+          <button
+            type="button"
+            className="home-menu-toggle"
+            aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+          <nav className={`home-nav ${menuOpen ? "is-open" : ""}`} aria-label="Main navigation">
+            <a href="#product" onClick={() => setMenuOpen(false)}>
+              Product
+            </a>
+            <a href="#features" onClick={() => setMenuOpen(false)}>
+              Features
+            </a>
+            <a href="#use-cases" onClick={() => setMenuOpen(false)}>
+              Use cases
+            </a>
+            <a href="#why-lumetra" onClick={() => setMenuOpen(false)}>
+              Resources
+            </a>
+            <Link className="home-signin" to="/login">
+              Sign in
+            </Link>
+            <Link className="home-nav-cta" to="/signup">
+              Get started <ArrowRight size={15} />
+            </Link>
+          </nav>
+        </div>
+      </header>
+
+      <main>
+        <section className="home-hero" id="product">
+          <div className="home-hero-copy">
+            <span className="home-overline">
+              <span /> A thoughtful workspace for real data
+            </span>
+            <h1>
+              Make better decisions
+              <br />
+              with your data.
+            </h1>
+            <p>
+              Prepare, analyse, understand and report your data in one clear workspace. Built for
+              careful work, from the first import to the final finding.
+            </p>
+            <div className="home-hero-actions">
+              <Link className="home-button primary" to="/signup">
+                Start analysing <ArrowRight size={16} />
+              </Link>
+              <a className="home-button secondary" href="#features">
+                Explore features
+              </a>
+            </div>
+            <div className="home-hero-note">
+              <ShieldCheck size={15} /> Your analysis runs in your browser.
+            </div>
+          </div>
+          <ProductPreview />
+        </section>
+
+        <section className="home-section home-capabilities" id="features">
+          <div className="home-section-heading">
+            <span className="home-eyebrow">A complete analytical workflow</span>
+            <h2>From raw data to a result you can explain.</h2>
+            <p>
+              Keep the important details close: what you changed, what you tested and what the
+              results mean.
+            </p>
+          </div>
+          <div className="capability-grid">
+            {capabilities.map(({ icon: Icon, title, description }) => (
+              <article className="capability-item" key={title}>
+                <span className="capability-icon">
+                  <Icon size={19} strokeWidth={1.8} />
+                </span>
+                <h3>{title}</h3>
+                <p>{description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="home-usecases" id="use-cases">
+          <div className="home-section home-usecases-inner">
+            <div className="home-section-heading">
+              <span className="home-eyebrow">Made for people who work with data</span>
+              <h2>
+                One considered toolkit.
+                <br />
+                Many kinds of questions.
+              </h2>
+              <p>
+                Use established methods and inspectable results in the context of your own work.
+              </p>
+            </div>
+            <div className="usecase-list">
+              {useCases.map(([title, description], index) => (
+                <article key={title} className="usecase-row">
+                  <span className="usecase-index">0{index + 1}</span>
+                  <div>
+                    <h3>{title}</h3>
+                    <p>{description}</p>
+                  </div>
+                  <ArrowRight size={17} aria-hidden="true" />
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="home-section home-workflow" id="workflow">
+          <div className="home-section-heading">
+            <span className="home-eyebrow">A clear path through the work</span>
+            <h2>Good analysis is a process.</h2>
+          </div>
+          <ol className="workflow-steps">
+            {[
+              ["Import", "Bring in a CSV and inspect its structure."],
+              ["Prepare", "Review and transform your data deliberately."],
+              ["Analyse", "Choose a suitable method and set its parameters."],
+              ["Interpret", "Read the numerical result and its context."],
+              ["Report", "Share a clear account of your approach and findings."],
+            ].map(([title, description], index) => (
+              <li key={title}>
+                <span className="workflow-number">0{index + 1}</span>
+                <div>
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
+                {index < 4 && (
+                  <ArrowRight className="workflow-arrow" size={16} aria-hidden="true" />
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className="home-why" id="why-lumetra">
+          <div className="home-why-inner">
+            <div className="home-section-heading">
+              <span className="home-eyebrow">Why Lumetra</span>
+              <h2>Analysis you can follow and revisit.</h2>
+              <p>
+                A useful result is one you can understand, check and return to when the next
+                question comes up.
+              </p>
+            </div>
+            <div className="why-principles">
+              <article>
+                <span>01</span>
+                <h3>Transparent methods</h3>
+                <p>See the method, assumptions and parameters behind your results.</p>
+              </article>
+              <article>
+                <span>02</span>
+                <h3>Reproducible work</h3>
+                <p>Keep datasets, transformations and saved analyses connected.</p>
+              </article>
+              <article>
+                <span>03</span>
+                <h3>Thoughtful data handling</h3>
+                <p>Calculations run in your browser, with account access for saved work.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="home-privacy">
+          <div className="home-privacy-inner">
+            <div className="privacy-symbol">
+              <LockKeyhole size={23} strokeWidth={1.7} />
+            </div>
+            <div className="privacy-copy">
+              <span className="home-eyebrow">Built with care for your work</span>
+              <h2>Your data stays yours.</h2>
+              <p>
+                Lumetra parses datasets and calculates statistical results in your browser. When you
+                sign in, your projects are saved to your account so you can continue on another
+                device. Access is protected by account-level security; don’t upload data unless your
+                organisation permits its use in an online service.
+              </p>
+              <div className="privacy-points">
+                <span>
+                  <Check size={15} /> Calculations run locally
+                </span>
+                <span>
+                  <Check size={15} /> Account-scoped project access
+                </span>
+                <span>
+                  <Check size={15} /> Offline work is retained on this device
+                </span>
+              </div>
+            </div>
+            <BookOpen
+              className="privacy-decoration"
+              size={100}
+              strokeWidth={0.75}
+              aria-hidden="true"
+            />
+          </div>
+        </section>
+
+        <section className="home-final-cta">
+          <ClipboardList size={23} strokeWidth={1.6} aria-hidden="true" />
+          <h2>
+            Start with a question.
+            <br />
+            Leave with a clearer answer.
+          </h2>
+          <p>Bring your data into a workspace designed to make every step easier to follow.</p>
+          <Link className="home-button primary" to="/signup">
+            Get started with Lumetra <ArrowRight size={16} />
+          </Link>
+        </section>
+      </main>
+
+      <footer className="home-footer">
+        <Link className="home-logo" to="/">
+          <span className="home-logo-mark" aria-hidden="true">
+            L
+          </span>
+          Lumetra
+        </Link>
+        <span>Analytical work, made clearer.</span>
+        <div>
+          <a href="#features">Features</a>
+          <a href="#why-lumetra">Why Lumetra</a>
+          <Link to="/login">Sign in</Link>
+          <Link to="/signup">Get started</Link>
+        </div>
+        <small>© {new Date().getFullYear()} Lumetra</small>
+      </footer>
     </div>
   );
 }
