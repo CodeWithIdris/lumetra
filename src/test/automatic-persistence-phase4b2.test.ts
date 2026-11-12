@@ -142,8 +142,9 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
 
     vi.spyOn(supabase, "upsertReportRecord").mockImplementation(async (rep, userId) => {
       const pId = toValidUuid(rep.projectId);
-      const rId = toValidUuid(rep.id || generateUuid());
+      const rId = toValidUuid(rep.id || `${rep.projectId}:lumetra-report`);
       const uId = userId || USER_A_ID;
+      const revision = Number(remoteDb.reports.get(rId)?.["revision"] ?? 0) + 1;
 
       const parent = remoteDb.lumetra_projects.get(pId);
       if (!parent || parent.user_id !== uId) {
@@ -161,9 +162,10 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
         content_markdown: rep.markdown,
         objective: rep.objective,
         summary: rep.summary,
+        revision,
         updated_at: new Date().toISOString(),
       });
-      return { ok: true, id: rId };
+      return { ok: true, id: rId, revision };
     });
 
     vi.spyOn(supabase, "deleteProject").mockImplementation(async (projId) => {
@@ -453,6 +455,42 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     const remoteRep = remoteDb.reports.get(reportId);
     expect(remoteRep?.title).toBe("Executive Review Report");
     expect(remoteRep?.content_markdown).toBe(reportMarkdown);
+  });
+
+  it("reuses a generated report record and advances its revision on subsequent saves", async () => {
+    const projectId = generateUuid();
+    const project: ProjectMeta = {
+      id: projectId,
+      userId: USER_A_ID,
+      name: "Repeated report",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: "analysed",
+      dataset: null,
+    };
+    coordinator.queueProjectSave(project, USER_A_ID, { immediate: true });
+    await coordinator.flushQueue();
+
+    coordinator.queueReportSave(
+      { projectId, title: "First draft", markdown: "First draft" },
+      USER_A_ID,
+    );
+    await coordinator.flushQueue();
+
+    coordinator.queueReportSave(
+      { projectId, title: "Updated report", markdown: "Updated report" },
+      USER_A_ID,
+    );
+    await coordinator.flushQueue();
+
+    const reportId = toValidUuid(`${projectId}:lumetra-report`);
+    expect(remoteDb.reports.size).toBe(1);
+    expect(remoteDb.reports.get(reportId)?.["title"]).toBe("Updated report");
+    expect(remoteDb.reports.get(reportId)?.["revision"]).toBe(2);
+    expect(supabase.upsertReportRecord).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: reportId, revision: 1 }),
+      USER_A_ID,
+    );
   });
 
   // Scenario 6: Refresh the browser and reopen the project.
@@ -832,7 +870,29 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
     expect(["retrying", "error", "pending"]).toContain(coordinator.getState().status);
   });
 
-  it("retains a failed write after automatic retries are exhausted", async () => {
+  it("does not report queued cloud changes as saved when cloud access is unavailable", async () => {
+    vi.spyOn(supabase, "isConfigured").mockReturnValue(false);
+    coordinator.queueProjectSave(
+      {
+        id: generateUuid(),
+        userId: USER_A_ID,
+        name: "Waiting for connection",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: "no-data",
+        dataset: null,
+      },
+      USER_A_ID,
+      { immediate: true },
+    );
+    await coordinator.flushQueue();
+
+    expect(coordinator.getState().status).toBe("pending");
+    expect(coordinator.getState().statusText).not.toBe("All changes saved");
+    expect(coordinator.getState().pendingCount).toBe(1);
+  });
+
+  it("keeps retrying failed writes while preserving them in durable storage", async () => {
     vi.useFakeTimers();
     vi.spyOn(supabase, "upsertProjectRecord").mockResolvedValue({
       ok: false,
@@ -854,11 +914,13 @@ describe("Phase 4B.2: Automatic Persistence & Invisible Infrastructure", () => {
       { immediate: true },
     );
 
-    await vi.runAllTimersAsync();
+    for (let attempt = 0; attempt < 7; attempt++) {
+      await vi.advanceTimersByTimeAsync(31_000);
+    }
     const storedQueue = JSON.parse(
       localStorage.getItem("lumetra.persistence_queue.v1") || "[]",
     ) as PendingWriteItem[];
-    expect(coordinator.getState().status).toBe("error");
+    expect(coordinator.getState().status).toBe("retrying");
     expect(coordinator.getState().pendingCount).toBe(1);
     expect(storedQueue).toHaveLength(1);
     vi.useRealTimers();

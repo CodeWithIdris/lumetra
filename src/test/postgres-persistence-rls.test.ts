@@ -6,6 +6,7 @@ import {
   isValidUuid,
   generateUuid,
   toValidUuid,
+  createDatasetContentPath,
 } from "@/lib/persistence/supabase";
 import { computeSyncStatus } from "@/lib/store";
 import type { ProjectMeta } from "@/lib/persistence/projects";
@@ -100,6 +101,19 @@ describe("Phase 4B: SQL Schema and Migration Integrity", () => {
     // Deterministic check
     expect(toValidUuid(legacyId)).toBe(converted);
   });
+
+  it("allocates a distinct object path for each dataset content write", () => {
+    const userId = generateUuid();
+    const projectId = generateUuid();
+    const datasetId = generateUuid();
+
+    const first = createDatasetContentPath(userId, projectId, datasetId, 3);
+    const second = createDatasetContentPath(userId, projectId, datasetId, 3);
+
+    expect(first).toContain(`${userId}/${projectId}/datasets/${datasetId}/3-`);
+    expect(second).toContain(`${userId}/${projectId}/datasets/${datasetId}/3-`);
+    expect(first).not.toBe(second);
+  });
 });
 
 describe("Phase 4B: PostgreSQL Persistence & Project Lifecycle", () => {
@@ -168,54 +182,99 @@ describe("Phase 4B: PostgreSQL Persistence & Project Lifecycle", () => {
 
     const csvData = "latency,qps\n12.5,450\n15.1,510";
 
-    // Mock remote Supabase PostgREST successful response
+    let projectRow: Record<string, unknown> | null = null;
+    let datasetRow: Record<string, unknown> | null = null;
+    let analysisRow: Record<string, unknown> | null = null;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const urlStr = String(url);
       if (urlStr.includes("/auth/v1/session") || urlStr.includes("/auth/v1/settings")) {
         return new Response(JSON.stringify({}), { status: 200 });
       }
 
-      // Upsert into lumetra_projects, datasets, saved_analyses
-      if (init?.method === "POST" || init?.method === "GET") {
-        const mockRow = {
-          id: projectId,
-          user_id: USER_A_ID,
-          name: "Telemetry Investigation",
-          status: "analysed",
-          objective: "Verify load correlation",
-          created_at: project.createdAt,
-          updated_at: project.updatedAt,
-          datasets: [
-            {
-              id: datasetId,
-              project_id: projectId,
-              name: "telemetry.csv",
-              source: "upload",
-              row_count: 100,
-              column_count: 2,
-              cleaning_steps: project.cleaningSteps,
-              csv_content: csvData,
-            },
-          ],
-          saved_analyses: [mockAnalysis],
-        };
-        return new Response(
-          JSON.stringify(
-            init?.method === "GET" && urlStr.includes("id=eq.") ? [mockRow] : [mockRow],
-          ),
+      const urlObject = new URL(urlStr);
+      const table = urlObject.pathname.split("/").at(-1);
+      const method = init?.method ?? "GET";
+      const json = (value: unknown) =>
+        new Response(JSON.stringify(value), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+
+      if (table === "lumetra_projects") {
+        if (method === "POST") {
+          projectRow = {
+            id: projectId,
+            user_id: USER_A_ID,
+            name: project.name,
+            status: project.status,
+            objective: project.objective,
+            created_at: project.createdAt,
+            updated_at: project.updatedAt,
+            revision: 1,
+          };
+          return json([{ revision: 1 }]);
+        }
+        return json([
           {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
+            ...projectRow,
+            datasets: datasetRow ? [datasetRow] : [],
+            saved_analyses: analysisRow ? [analysisRow] : [],
           },
-        );
+        ]);
       }
 
-      return new Response(JSON.stringify([]), { status: 200 });
+      if (table === "datasets") {
+        if (method === "POST") {
+          datasetRow = {
+            id: datasetId,
+            project_id: projectId,
+            user_id: USER_A_ID,
+            name: "telemetry.csv",
+            source: "upload",
+            row_count: 100,
+            column_count: 2,
+            cleaning_steps: project.cleaningSteps,
+            csv_content: csvData,
+            revision: 1,
+          };
+          return json([{ revision: 1 }]);
+        }
+        return json(urlObject.searchParams.has("project_id") && datasetRow ? [datasetRow] : []);
+      }
+
+      if (table === "saved_analyses") {
+        if (method === "POST") {
+          analysisRow = {
+            id: analysisId,
+            project_id: projectId,
+            user_id: USER_A_ID,
+            name: mockAnalysis.name,
+            type: mockAnalysis.type,
+            dataset_id: datasetId,
+            dataset_name: mockAnalysis.datasetName,
+            dataset_signature: mockAnalysis.datasetSignature,
+            variables: mockAnalysis.variables,
+            configuration: mockAnalysis.configuration,
+            sample_size: mockAnalysis.sampleSize,
+            missing_count: mockAnalysis.missingCount,
+            missing_handling: mockAnalysis.missingHandling,
+            results: mockAnalysis.results,
+            interpretation: mockAnalysis.interpretation,
+            method_notes: mockAnalysis.methodNotes,
+            created_at: mockAnalysis.timestamp,
+            revision: 1,
+          };
+          return json([{ revision: 1 }]);
+        }
+        return json(urlObject.searchParams.has("project_id") && analysisRow ? [analysisRow] : []);
+      }
+
+      return json([]);
     });
 
     // 1. Save project
     const saveRes = await supabaseService.saveProject(project, csvData, USER_A_ID);
-    expect(saveRes.ok).toBe(true);
+    expect(saveRes.ok, saveRes.error).toBe(true);
 
     // 2. Load project back
     const loaded = await supabaseService.loadProject(projectId);
@@ -243,7 +302,7 @@ describe("Phase 4B: PostgreSQL Persistence & Project Lifecycle", () => {
       summary: { totalRecords: 1000, violations: 0 },
     };
 
-    // Mock fetch for report insertion and query
+    let savedReport: Record<string, unknown> | null = null;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const urlStr = String(url);
       if (urlStr.includes("/auth/v1/")) {
@@ -252,31 +311,28 @@ describe("Phase 4B: PostgreSQL Persistence & Project Lifecycle", () => {
         });
       }
       if (init?.method === "POST" && urlStr.includes("/rest/v1/reports")) {
-        return new Response(JSON.stringify([{ id: generateUuid() }]), { status: 201 });
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        savedReport = {
+          ...body,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          revision: 1,
+        };
+        return new Response(JSON.stringify([{ revision: 1 }]), { status: 201 });
       }
       if (init?.method === "GET" && urlStr.includes("/rest/v1/reports")) {
-        return new Response(
-          JSON.stringify([
-            {
-              id: generateUuid(),
-              project_id: projectId,
-              user_id: USER_A_ID,
-              title: mockReport.title,
-              objective: mockReport.objective,
-              content_markdown: mockReport.markdown,
-              summary: mockReport.summary,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          ]),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        const urlObject = new URL(urlStr);
+        const rows = urlObject.searchParams.has("project_id") && savedReport ? [savedReport] : [];
+        return new Response(JSON.stringify(rows), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
       return new Response(JSON.stringify([]), { status: 200 });
     });
 
     const res = await supabaseService.saveReport(mockReport);
-    expect(res.ok).toBe(true);
+    expect(res.ok, res.error).toBe(true);
 
     const reports = await supabaseService.loadReports(projectId);
     expect(reports).toHaveLength(1);
@@ -347,7 +403,7 @@ describe("Phase 4B: Row Level Security (RLS) & Multi-User Isolation", () => {
     });
 
     const res = await supabaseService.saveProject(spoofedProject, null, USER_A_ID);
-    expect(res.ok).toBe(false);
+    expect(res.ok, res.error).toBe(false);
     expect(res.error).toContain("violates row-level security policy");
   });
 
@@ -369,7 +425,13 @@ describe("Phase 4B: Row Level Security (RLS) & Multi-User Isolation", () => {
           { status: 403, statusText: "Forbidden", headers: { "Content-Type": "application/json" } },
         );
       }
-      return new Response(JSON.stringify([{ id: userB_ProjectId }]), { status: 200 });
+      if (init?.method === "POST" && urlStr.includes("/rest/v1/lumetra_projects")) {
+        return new Response(JSON.stringify([{ revision: 1 }]), { status: 201 });
+      }
+      if (urlStr.includes("/rest/v1/datasets") && init?.method === "GET") {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
     });
 
     const project: ProjectMeta = {
@@ -391,7 +453,7 @@ describe("Phase 4B: Row Level Security (RLS) & Multi-User Isolation", () => {
 
     const res = await supabaseService.saveProject(project, "a,b\n1,2", USER_A_ID);
     expect(res.ok).toBe(false);
-    expect(res.error).toContain("dataset persistence failed");
+    expect(res.error).toContain("violates row-level security policy");
   });
 });
 
@@ -602,12 +664,15 @@ describe("Phase 4B.1: Persistence Flow Diagnostics & Robustness", () => {
           { status: 409, headers: { "Content-Type": "application/json" } },
         );
       }
+      if (init?.method === "GET" && urlStr.includes("/rest/v1/saved_analyses")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
       return new Response(JSON.stringify([{ id: projectId }]), { status: 200 });
     });
 
     const res = await supabaseService.saveProject(project, null, USER_A_ID);
     expect(res.ok).toBe(false);
-    expect(res.error).toContain("failed to persist");
+    expect(res.error).toContain("violates foreign key constraint");
   });
 
   it("fails when remote read-back verification fails to confirm records", async () => {

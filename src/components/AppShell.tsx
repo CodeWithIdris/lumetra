@@ -269,7 +269,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {persistenceState.status === "saving" && (
                 <>
                   <Loader2 className="size-3 animate-spin text-blue-600" />
-                  <span className="hidden sm:inline">Saving...</span>
+                  <span className="hidden sm:inline">Saving changes...</span>
                 </>
               )}
               {persistenceState.status === "saved" && (
@@ -283,20 +283,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               {persistenceState.status === "offline" && (
                 <>
                   <span className="size-1.5 rounded-full bg-slate-400" />
-                  <span className="text-slate-600 hidden sm:inline">Working offline</span>
+                  <span className="text-slate-600 hidden sm:inline">
+                    {persistenceState.statusText}
+                  </span>
                 </>
               )}
               {persistenceState.status === "pending" && (
                 <>
                   <span className="size-1.5 rounded-full bg-amber-500" />
-                  <span className="text-amber-700 hidden sm:inline">Changes pending</span>
+                  <span className="text-amber-700 hidden sm:inline">
+                    {persistenceState.statusText}
+                  </span>
                 </>
               )}
               {persistenceState.status === "retrying" && (
                 <>
                   <Loader2 className="size-3 animate-spin text-amber-600" />
                   <span className="text-amber-700 hidden sm:inline">
-                    Couldn't save changes. Retrying...
+                    {persistenceState.statusText}
                   </span>
                 </>
               )}

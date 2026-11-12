@@ -440,22 +440,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     savedAnalysesRef.current = [];
   }, [setActive]);
 
-  const setPersona = useCallback((next: PersonaId) => {
-    personaRef.current = next;
-    setPersonaState(next);
-    saveActivePersona(next);
-    const userId = userIdRef.current;
-    if (userId && isSupabaseConfigured()) {
-      void getSupabaseClient()
-        .saveUserPreference(userId, next)
-        .then((result) => {
-          if (!result.ok) console.warn("Could not save your account preference.");
-        })
-        .catch(() => {
-          console.warn("Could not save your account preference.");
-        });
-    }
-  }, []);
+  const setPersona = useCallback(
+    (next: PersonaId) => {
+      personaRef.current = next;
+      setPersonaState(next);
+      saveActivePersona(next);
+      const userId = userIdRef.current;
+      if (userId && isSupabaseConfigured()) coordinator.queuePreferenceSave(next, userId);
+    },
+    [coordinator],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -1919,7 +1913,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return { ok: false };
       }
 
-      const reportId = toValidUuid(report.id || generateUuid());
+      const reportId = toValidUuid(report.id || `${targetProjectId}:lumetra-report`);
+      if (user?.id && !coordinator.hasKnownRevision("report", reportId, user.id)) {
+        try {
+          const remoteReports = await getSupabaseClient().loadReports(targetProjectId);
+          if (userIdRef.current !== user.id) return { ok: false };
+          const current = remoteReports.find((entry) => entry.id === reportId);
+          coordinator.rememberRevision("report", reportId, user.id, current?.revision ?? 0);
+        } catch (error) {
+          console.warn("Could not check the saved report revision.", error);
+        }
+      }
       coordinator.queueReportSave(
         {
           id: reportId,
@@ -1935,15 +1939,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       return { ok: true, id: reportId };
     },
-    [user],
+    [coordinator, user],
   );
 
   const handleLoadProjectReports = useCallback(
     async (projectId: string): Promise<CloudReport[]> => {
       const supabase = getSupabaseClient();
-      return supabase.loadReports(projectId);
+      const reports = await supabase.loadReports(projectId);
+      if (user?.id) {
+        for (const report of reports) {
+          if (typeof report.revision === "number") {
+            coordinator.rememberRevision("report", report.id, user.id, report.revision);
+          }
+        }
+      }
+      return reports;
     },
-    [],
+    [coordinator, user],
   );
 
   // Auth handlers

@@ -16,6 +16,8 @@ import type { CleaningStep } from "../data/clean";
 import type { Dataset } from "../data/types";
 import { parseCsvText } from "../data/parse";
 import type { SavedAnalysis } from "../stats/analysis";
+import type { PersonaId } from "../stats/personas";
+import { PERSONAS } from "../stats/personas";
 import {
   loadDataset,
   loadDatasetByProject,
@@ -53,6 +55,7 @@ export type EntityType =
   | "analysis_delete"
   | "report"
   | "report_delete"
+  | "preference"
   | "delete_project";
 
 export interface PendingWriteItem {
@@ -69,14 +72,19 @@ export interface PendingWriteItem {
 
 const QUEUE_STORAGE_KEY = "lumetra.persistence_queue.v1";
 const LAST_SAVED_KEY = "lumetra.persistence_last_saved.v1";
+const REVISION_CACHE_KEY = "lumetra.persistence_revisions.v1";
 const MAX_BACKOFF_MS = 30000;
 const BASE_BACKOFF_MS = 1000;
-const MAX_RETRIES = 5;
+
+function isPersonaId(value: unknown): value is PersonaId {
+  return typeof value === "string" && Object.hasOwn(PERSONAS, value);
+}
 
 type Listener = (state: PersistenceState) => void;
 
 class PersistenceCoordinator {
   private queue: PendingWriteItem[] = [];
+  private revisions: Record<string, number> = {};
   private sequenceCounter = 0;
   private currentUserId: string | null = null;
   private isProcessing = false;
@@ -95,6 +103,7 @@ class PersistenceCoordinator {
       this.isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
       this.lastSavedAt = localStorage.getItem(LAST_SAVED_KEY);
       this.loadQueueFromStorage();
+      this.loadRevisionsFromStorage();
 
       window.addEventListener("online", this.handleOnline);
       window.addEventListener("offline", this.handleOffline);
@@ -124,17 +133,17 @@ class PersistenceCoordinator {
   public getState(): PersistenceState {
     let statusText = "All changes saved";
     if (this.status === "saving") {
-      statusText = "Saving...";
+      statusText = "Saving changes...";
     } else if (this.status === "offline") {
       statusText = "Offline — changes will sync when connection returns";
     } else if (this.status === "retrying") {
-      statusText = "Unable to save — retrying";
+      statusText = "Unable to save changes. Retrying…";
     } else if (this.status === "conflict") {
       statusText = "A newer version needs your attention.";
     } else if (this.status === "pending") {
       statusText = "Changes pending";
     } else if (this.status === "error") {
-      statusText = "Unable to save — retrying";
+      statusText = "Unable to save changes. Retrying…";
     } else if (!this.currentUserId) {
       statusText = "Saved to this device";
     }
@@ -158,6 +167,21 @@ class PersistenceCoordinator {
 
   public hasPendingWritesForProject(projectId: string, userId: string): boolean {
     return this.queue.some((item) => item.projectId === projectId && item.userId === userId);
+  }
+
+  public rememberRevision(
+    entityType: "report",
+    entityId: string,
+    userId: string,
+    revision: number,
+  ) {
+    if (!Number.isInteger(revision) || revision < 0) return;
+    this.revisions[this.revisionCacheKey(entityType, entityId, userId)] = revision;
+    this.saveRevisionsToStorage();
+  }
+
+  public hasKnownRevision(entityType: "report", entityId: string, userId: string): boolean {
+    return this.revisionCacheKey(entityType, entityId, userId) in this.revisions;
   }
 
   public async keepLocalConflict(conflict: LocalPersistenceConflict): Promise<void> {
@@ -295,6 +319,40 @@ class PersistenceCoordinator {
     } catch {
       this.status = "error";
       this.lastError = "Pending changes could not be read from this device.";
+    }
+  }
+
+  private revisionCacheKey(entityType: "report", entityId: string, userId: string): string {
+    return `${userId}:${entityType}:${entityId}`;
+  }
+
+  private loadRevisionsFromStorage() {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(REVISION_CACHE_KEY);
+      if (!raw) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      this.revisions = Object.fromEntries(
+        Object.entries(parsed).filter(
+          (entry): entry is [string, number] =>
+            Number.isInteger(entry[1]) && (entry[1] as number) >= 0,
+        ),
+      );
+    } catch {
+      this.lastError = "Saved work details could not be read from this device.";
+      this.status = "error";
+    }
+  }
+
+  private saveRevisionsToStorage() {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(REVISION_CACHE_KEY, JSON.stringify(this.revisions));
+    } catch {
+      this.lastError = "Saved work details could not be kept on this device.";
+      this.status = "error";
+      this.notify();
     }
   }
 
@@ -500,16 +558,35 @@ class PersistenceCoordinator {
     options?: { immediate?: boolean },
   ) {
     const targetUserId = userId || this.currentUserId || "";
-    const reportId = report.id || generateUuid();
+    const reportId = report.id || toValidUuid(`${report.projectId}:lumetra-report`);
+    const revision =
+      report.revision ??
+      this.revisions[this.revisionCacheKey("report", reportId, targetUserId)] ??
+      0;
     this.enqueue(
       {
         entityType: "report",
         entityId: reportId,
         projectId: report.projectId,
         userId: targetUserId,
-        data: { report: { ...report, id: reportId } },
+        data: { report: { ...report, id: reportId, revision } },
       },
       options?.immediate !== undefined ? options.immediate : true,
+    );
+  }
+
+  public queuePreferenceSave(persona: PersonaId, userId: string | undefined) {
+    const targetUserId = userId || this.currentUserId || "";
+    if (!targetUserId) return;
+    this.enqueue(
+      {
+        entityType: "preference",
+        entityId: targetUserId,
+        projectId: `user:${targetUserId}`,
+        userId: targetUserId,
+        data: { persona },
+      },
+      true,
     );
   }
 
@@ -643,8 +720,7 @@ class PersistenceCoordinator {
 
     const supabase = getSupabaseClient();
     if (!supabase.isConfigured()) {
-      // Offline/local only mode
-      this.status = "saved";
+      this.status = "pending";
       this.notify();
       return;
     }
@@ -734,28 +810,14 @@ class PersistenceCoordinator {
           this.notify();
           break;
         } else {
-          item.retryCount++;
-          if (item.retryCount > MAX_RETRIES) {
-            console.warn(
-              `Write item ${item.entityType}:${item.entityId} exceeded max retries. Keeping it queued.`,
-            );
-            item.retryCount = 0;
-            this.saveQueueToStorage();
-            this.lastError = "Unable to save changes right now. Your work is kept on this device.";
-            this.status = "error";
-            this.notify();
-            break;
-          } else {
-            this.saveQueueToStorage();
-            const backoff = Math.min(
-              MAX_BACKOFF_MS,
-              BASE_BACKOFF_MS * Math.pow(2, item.retryCount),
-            );
-            this.status = "retrying";
-            this.notify();
-            this.scheduleRetry(backoff);
-            break;
-          }
+          item.retryCount = Math.min(item.retryCount + 1, 6);
+          this.saveQueueToStorage();
+          const backoff = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** item.retryCount);
+          this.status = "retrying";
+          this.lastError = "Unable to save changes. Retrying…";
+          this.notify();
+          this.scheduleRetry(backoff);
+          break;
         }
       }
 
@@ -785,6 +847,7 @@ class PersistenceCoordinator {
       analysis_delete: 5,
       report: 6,
       report_delete: 6,
+      preference: 7,
     };
 
     this.queue.sort((a, b) => {
@@ -884,6 +947,13 @@ class PersistenceCoordinator {
           return { ok: res.ok };
         }
 
+        case "preference": {
+          const persona = item.data["persona"];
+          if (!isPersonaId(persona)) throw new Error("The saved account preference is invalid.");
+          const result = await supabase.saveUserPreference(userId, persona);
+          return { ok: result.ok };
+        }
+
         case "delete_project": {
           const res = await supabase.deleteProject(item.projectId, userId);
           return { ok: res.ok };
@@ -963,6 +1033,9 @@ class PersistenceCoordinator {
             ? "report"
             : null;
     if (!entity) return;
+    if (entity === "report") {
+      this.rememberRevision("report", item.entityId, userId, revision);
+    }
     updateProjectRevision(item.projectId, userId, entity, revision, item.entityId);
     for (const queued of this.queue) {
       if (

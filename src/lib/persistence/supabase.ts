@@ -55,6 +55,13 @@ export interface CloudRecord {
   dataset_revision?: number;
 }
 
+function formatPersistenceError(error: { code?: string; message: string }): string {
+  if (error.code === "PGRST205") {
+    return `PGRST205: ${error.message}. Apply migration 20261029101800_create_lumetra_schema_and_rls.sql.`;
+  }
+  return error.message;
+}
+
 function mapSavedAnalysis(record: Record<string, unknown>): Record<string, unknown> {
   return {
     id: record["id"],
@@ -122,6 +129,7 @@ export interface CloudReport {
   id: string;
   project_id: string;
   user_id: string;
+  revision?: number;
   title: string;
   objective?: string | null;
   content_markdown: string;
@@ -161,6 +169,15 @@ const DEFAULT_CONFIG: SupabaseConfig = {
 };
 const DATASET_STORAGE_THRESHOLD_BYTES = 512 * 1024;
 const DATASET_STORAGE_BUCKET = "lumetra-dataset-versions";
+
+export function createDatasetContentPath(
+  userId: string,
+  projectId: string,
+  datasetId: string,
+  revision: number,
+): string {
+  return `${userId}/${projectId}/datasets/${datasetId}/${revision}-${generateUuid()}.csv`;
+}
 
 /** UUID Validation and Generation Helpers */
 export function isValidUuid(str: string): boolean {
@@ -1176,7 +1193,12 @@ class SupabaseService {
             error: "This project was created on another device.",
           };
         }
-        if (error || !data) return { ok: false, error: error?.message || "Project insert failed." };
+        if (error || !data) {
+          return {
+            ok: false,
+            error: error ? formatPersistenceError(error) : "Project insert failed.",
+          };
+        }
         return { ok: true, revision: data.revision, remoteId: projectUuid };
       }
 
@@ -1333,16 +1355,27 @@ class SupabaseService {
       let contentPath = current.data?.content_path ?? null;
       let csvContent: string | null | undefined;
       let newContentPath: string | null = null;
+      const removeUnreferencedUpload = async () => {
+        if (!newContentPath) return;
+        const { error } = await client.storage
+          .from(DATASET_STORAGE_BUCKET)
+          .remove([newContentPath]);
+        if (error) console.warn("An unused dataset upload could not be removed.");
+      };
       if (dataset.csvContent !== undefined) {
         if (
           typeof dataset.csvContent === "string" &&
           new TextEncoder().encode(dataset.csvContent).byteLength > DATASET_STORAGE_THRESHOLD_BYTES
         ) {
-          newContentPath = `${sessionUserId}/${projectUuid}/datasets/${datasetUuid}/${nextRevision}.csv`;
+          newContentPath = createDatasetContentPath(
+            sessionUserId,
+            projectUuid,
+            datasetUuid,
+            nextRevision,
+          );
           const { error: uploadError } = await client.storage
             .from(DATASET_STORAGE_BUCKET)
             .upload(newContentPath, new Blob([dataset.csvContent], { type: "text/csv" }), {
-              upsert: true,
               contentType: "text/csv",
             });
           if (uploadError) return { ok: false, error: uploadError.message };
@@ -1384,6 +1417,7 @@ class SupabaseService {
           .select("revision")
           .maybeSingle();
         if (error?.code === "23505") {
+          await removeUnreferencedUpload();
           const remote = await this.loadDatasetRecord(datasetUuid, sessionUserId);
           return {
             ok: false,
@@ -1393,7 +1427,10 @@ class SupabaseService {
             error: "This dataset was saved on another device.",
           };
         }
-        if (error || !data) return { ok: false, error: error?.message || "Dataset insert failed." };
+        if (error || !data) {
+          await removeUnreferencedUpload();
+          return { ok: false, error: error?.message || "Dataset insert failed." };
+        }
         return { ok: true, revision: data.revision, datasetId: datasetUuid };
       }
 
@@ -1405,8 +1442,12 @@ class SupabaseService {
         .eq("revision", expectedRevision)
         .select("revision")
         .maybeSingle();
-      if (error) return { ok: false, error: error.message };
+      if (error) {
+        await removeUnreferencedUpload();
+        return { ok: false, error: error.message };
+      }
       if (!data) {
+        await removeUnreferencedUpload();
         const remote = await this.loadDatasetRecord(datasetUuid, sessionUserId);
         return {
           ok: false,
@@ -1847,18 +1888,15 @@ class SupabaseService {
     if (!client) return [];
 
     const projectUuid = toValidUuid(projectId);
-    try {
-      const { data, error } = await client
-        .from("reports")
-        .select("*")
-        .eq("project_id", projectUuid)
-        .order("created_at", { ascending: false });
+    const { data, error } = await client
+      .from("reports")
+      .select("*")
+      .eq("project_id", projectUuid)
+      .order("created_at", { ascending: false });
 
-      if (error || !data) return [];
-      return data as unknown as CloudReport[];
-    } catch {
-      return [];
-    }
+    if (error) throw new Error(error.message);
+    if (!data) return [];
+    return data as unknown as CloudReport[];
   }
 
   /**
