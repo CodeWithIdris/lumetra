@@ -113,7 +113,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       } else if (mode === "signup") {
         const result = await register(email, password, name, "scientist");
         if (result.error) {
-          setError("We couldn't create your account. Check your details and try again.");
+          setError(result.error);
         } else if (result.emailConfirmationRequired) {
           setNotice("Check your inbox for a verification link to finish creating your account.");
         } else if (result.user) {
@@ -122,7 +122,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       } else {
         const result = await login(email, password);
         if (result.error || !result.user) {
-          setError("Those sign-in details could not be verified. Check them and try again.");
+          setError(result.error ?? "Sign in did not return an account.");
         } else {
           await navigate({ to: "/app" });
         }
