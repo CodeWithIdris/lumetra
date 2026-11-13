@@ -40,25 +40,13 @@
 .home-logo {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  color: #17243b;
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.045em;
 }
 
-.home-logo-mark,
-.preview-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  background: #1d2c43;
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.06em;
+.home-logo img {
+  display: block;
+  width: 148px;
+  max-width: 32vw;
+  height: auto;
 }
 
 .home-nav {
@@ -221,16 +209,12 @@
 .preview-brand {
   display: flex;
   align-items: center;
-  gap: 7px;
-  color: #17243b;
-  font-size: 12px;
-  font-weight: 600;
 }
 
-.preview-mark {
-  width: 21px;
-  height: 21px;
-  font-size: 11px;
+.preview-brand img {
+  display: block;
+  width: 82px;
+  height: auto;
 }
 
 .preview-project {
@@ -773,13 +757,11 @@
 }
 
 .home-footer .home-logo {
-  font-size: 16px;
+  width: fit-content;
 }
 
-.home-footer .home-logo-mark {
-  width: 25px;
-  height: 25px;
-  font-size: 13px;
+.home-footer .home-logo img {
+  width: 122px;
 }
 
 .home-footer > span,

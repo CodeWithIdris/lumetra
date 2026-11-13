@@ -84,10 +84,7 @@ function ProductPreview() {
     >
       <div className="preview-topbar">
         <div className="preview-brand">
-          <span className="preview-mark" aria-hidden="true">
-            L
-          </span>
-          Lumetra
+          <img src="/brand/lumetra-logo.png" alt="" />
         </div>
         <span className="preview-project">Customer study · Spring cohort</span>
         <span className="preview-save">
@@ -190,10 +187,7 @@ function PublicHome() {
       <header className="home-header">
         <div className="home-header-inner">
           <Link className="home-logo" to="/" aria-label="Lumetra home">
-            <span className="home-logo-mark" aria-hidden="true">
-              L
-            </span>
-            Lumetra
+            <img src="/brand/lumetra-logo.png" alt="" />
           </Link>
           <button
             type="button"
@@ -415,10 +409,7 @@ function PublicHome() {
 
       <footer className="home-footer">
         <Link className="home-logo" to="/">
-          <span className="home-logo-mark" aria-hidden="true">
-            L
-          </span>
-          Lumetra
+          <img src="/brand/lumetra-logo.png" alt="" />
         </Link>
         <span>Analytical work, made clearer.</span>
         <div>

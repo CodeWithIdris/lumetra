@@ -48,23 +48,6 @@ const PERSONA_ICONS: Record<PersonaId, typeof Cpu> = {
   clinical: HeartPulse,
 };
 
-function LumetraMark() {
-  return (
-    <div className="flex size-6 items-center justify-center rounded bg-slate-900 text-white shadow-2xs">
-      <svg
-        viewBox="0 0 24 24"
-        className="size-3.5 text-white"
-        aria-hidden="true"
-        fill="currentColor"
-      >
-        <rect x="3" y="14" width="3.5" height="7" rx="0.5" />
-        <rect x="10.25" y="8" width="3.5" height="13" rx="0.5" opacity=".9" />
-        <rect x="17.5" y="3" width="3.5" height="18" rx="0.5" opacity="1" />
-      </svg>
-    </div>
-  );
-}
-
 export function AppShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { active, activeProject, persona, setPersona, user, persistenceState } = useStore();
@@ -123,7 +106,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="flex items-center gap-2.5"
             onClick={() => setMobileMenuOpen(false)}
           >
-            <LumetraMark />
+            <img
+              src="/brand/lumetra-icon.png"
+              alt=""
+              className="size-6 rounded object-cover shadow-2xs"
+            />
             <div className="leading-tight">
               <div className="text-[13px] font-semibold tracking-tight text-slate-900">Lumetra</div>
               <div className="text-[11px] text-slate-500 font-normal">Analytical Workspace</div>

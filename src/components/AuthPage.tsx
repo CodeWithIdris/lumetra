@@ -139,8 +139,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       <section className="auth-card">
         <div className="auth-form-side">
           <Link className="auth-logo" to="/" aria-label="Lumetra home">
-            <span className="auth-logo-mark">L</span>
-            Lumetra
+            <img src="/brand/lumetra-logo.png" alt="" />
           </Link>
           <div className="auth-form-wrap">
             <div className="auth-mobile-title">

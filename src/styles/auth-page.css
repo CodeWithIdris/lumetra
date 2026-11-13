@@ -28,23 +28,13 @@
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  gap: 9px;
-  color: #17243b;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.04em;
   text-decoration: none;
 }
 
-.auth-logo-mark {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  place-items: center;
-  background: #1d2c43;
-  color: white;
-  font-size: 14px;
-  letter-spacing: -0.06em;
+.auth-logo img {
+  display: block;
+  width: 150px;
+  height: auto;
 }
 
 .auth-form-wrap {
